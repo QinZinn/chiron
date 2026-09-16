@@ -261,3 +261,42 @@ CREATE TABLE quiz_attempts (
 CREATE INDEX idx_quiz_attempts_question_id ON quiz_attempts (question_id);
 CREATE INDEX idx_quiz_attempts_user_id ON quiz_attempts (user_id);
 CREATE INDEX idx_quiz_attempts_user_created ON quiz_attempts (user_id, created_at);
+
+-- ---------------------------------------------------------------------------
+-- Table: weak_card_tasks
+-- The Todoist @ontap task filed for a study set whose cards keep being failed
+-- (see backend/src/weak_cards.rs). At most one OPEN row per set — the partial
+-- unique index is the only guard against a duplicate task, since Todoist has
+-- no server-side idempotency key. A task closes after 5 days with no weak
+-- review in its set; closed rows are kept as history. Added by migration
+-- 0006_add_weak_card_tasks.sql.
+-- ---------------------------------------------------------------------------
+CREATE TABLE weak_card_tasks (
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    study_set_id       UUID NOT NULL REFERENCES study_sets(id) ON DELETE CASCADE,
+    todoist_task_id    TEXT NOT NULL,       -- id Todoist returned at creation; needed to update/close it
+    opened_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_weak_card_at  TIMESTAMPTZ NOT NULL DEFAULT now(),  -- bumped by every weak review in the set; the auto-close reads it
+    closed_at          TIMESTAMPTZ,          -- NULL = open
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX weak_card_tasks_open_per_set
+    ON weak_card_tasks (study_set_id)
+    WHERE closed_at IS NULL;
+CREATE INDEX idx_weak_card_tasks_study_set_id ON weak_card_tasks (study_set_id);
+
+-- ---------------------------------------------------------------------------
+-- Table: weak_card_task_cards
+-- Which cards a weak-card task lists. Append-only for the life of the task: a
+-- card that recovers stays listed until the task closes. Added by migration
+-- 0006_add_weak_card_tasks.sql.
+-- ---------------------------------------------------------------------------
+CREATE TABLE weak_card_task_cards (
+    task_row_id  UUID NOT NULL REFERENCES weak_card_tasks(id) ON DELETE CASCADE,
+    card_id      UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    added_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (task_row_id, card_id)
+);
+
+CREATE INDEX idx_weak_card_task_cards_card_id ON weak_card_task_cards (card_id);

@@ -97,3 +97,26 @@ pub async fn record_review(
     .await
     .expect("recording a review should succeed");
 }
+
+/// Record one review where only whether it was recalled matters — the weak
+/// card check reads `is_correct` and nothing else.
+pub async fn record_answer(
+    conn: &mut sqlx::PgConnection,
+    card_id: Uuid,
+    user_id: Uuid,
+    is_correct: bool,
+    created_at: DateTime<Utc>,
+) {
+    sqlx::query(
+        r#"INSERT INTO learning_events
+             (card_id, user_id, is_correct, stability, difficulty, interval, next_review_at, created_at)
+           VALUES ($1, $2, $3, 1.0, 5.0, 1, $4, $4)"#,
+    )
+    .bind(card_id)
+    .bind(user_id)
+    .bind(is_correct)
+    .bind(created_at)
+    .execute(&mut *conn)
+    .await
+    .expect("recording an answer should succeed");
+}

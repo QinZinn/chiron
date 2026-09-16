@@ -1,4 +1,5 @@
-use actix_web::{get, web, App, HttpServer, HttpResponse};
+use actix_cors::Cors;
+use actix_web::{get, http::header, web, App, HttpServer, HttpResponse};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
@@ -8,6 +9,8 @@ mod deepseek;
 mod handlers;
 mod ks_client;
 mod llm_provider;
+mod todoist_client;
+mod weak_cards;
 
 #[get("/health")]
 async fn health() -> &'static str {
@@ -109,17 +112,51 @@ async fn main() -> std::io::Result<()> {
     }
     let ks_client = web::Data::new(ks_client);
 
-    // No CORS layer: this API has no browser-based consumer. Sessions are
-    // driven by direct HTTP calls (coding agents, curl), and CORS only
-    // constrains requests originating from a web page. If a Chiron OS shell
-    // ever calls this backend from a browser, add actix-cors back and
-    // configure it against that shell's actual origin rather than a wildcard.
+    // Todoist client for weak-card review tasks. Not fail-fast, for the same
+    // reason as KS: a review must be recorded whether or not a Todoist task
+    // can be filed about it.
+    let todoist: Option<Box<dyn todoist_client::TodoistApi>> =
+        match todoist_client::TodoistClient::from_env() {
+            Some(client) => {
+                eprintln!("[mnemosyne] Todoist client ready (weak-card review tasks enabled)");
+                Some(Box::new(client))
+            }
+            None => {
+                eprintln!(
+                    "[mnemosyne] WARNING: TODOIST_TOKEN is not set — weak-card review tasks are \
+                     DISABLED. Reviews are unaffected. Set TODOIST_TOKEN in .env to enable them \
+                     (see .env.example)."
+                );
+                None
+            }
+        };
+    let todoist = web::Data::new(todoist);
+
     HttpServer::new(move || {
+        // CORS for the Chiron web frontend (Chiron/frontend, Vite).
+        //
+        // LOCAL DEV ONLY. The allowed origins are exactly the frontend's
+        // pinned dev (5173) and preview (4173) ports on localhost — never a
+        // wildcard: the old `allow_any_origin()` setup was flagged FIXME and
+        // removed on purpose. This API has no auth and takes `user_id` in the
+        // clear, so before exposing it beyond this machine, tighten this to the
+        // real deployed origin (and add auth) rather than widening the list.
+        let cors = Cors::default()
+            .allowed_origin("http://localhost:5173")
+            .allowed_origin("http://127.0.0.1:5173")
+            .allowed_origin("http://localhost:4173")
+            .allowed_origin("http://127.0.0.1:4173")
+            .allowed_methods(["GET", "POST"])
+            .allowed_header(header::CONTENT_TYPE)
+            .max_age(3600);
+
         App::new()
+            .wrap(cors)
             .app_data(web::Data::new(pool.clone()))
             .app_data(scheduler.clone())
             .app_data(llm_provider.clone())
             .app_data(ks_client.clone())
+            .app_data(todoist.clone())
             .service(health)
             .service(health_db)
             .service(handlers::users::create_user)

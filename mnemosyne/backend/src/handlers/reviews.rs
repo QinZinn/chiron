@@ -13,6 +13,8 @@ use mnemosyne_core::models::{CardState, Rating};
 use mnemosyne_core::scheduling::{FsrsScheduler, NewCardStates};
 
 use super::{classify_db_error, error_response};
+use crate::todoist_client::TodoistApi;
+use crate::weak_cards;
 
 /// Incoming review request. `rating` is parsed case-insensitively to
 /// [`mnemosyne_core::models::Rating`]; anything else is rejected with 400.
@@ -117,6 +119,7 @@ fn interval_days_between(due: DateTime<Utc>, now: DateTime<Utc>) -> i64 {
 pub async fn review(
     pool: web::Data<PgPool>,
     scheduler: web::Data<FsrsScheduler>,
+    todoist: web::Data<Option<Box<dyn TodoistApi>>>,
     body: web::Json<ReviewRequest>,
 ) -> HttpResponse {
     // 1. Parse rating (case-insensitive). Reject bad strings with 400 — do
@@ -221,7 +224,15 @@ pub async fn review(
         }
     };
 
-    // 6. Respond with the persisted state (read back from the DB so the
+    // 6. Weak-card check: file or extend the set's Todoist review task when
+    //    this card keeps being failed, and close tasks that went quiet. Runs
+    //    only once the review is stored, and cannot fail the request — it
+    //    returns a status it has already logged, never an error. See
+    //    crate::weak_cards.
+    weak_cards::sync_after_review(pool.get_ref(), todoist.get_ref().as_deref(), body.card_id, body.user_id)
+        .await;
+
+    // 7. Respond with the persisted state (read back from the DB so the
     //    response reflects exactly what was stored, not the in-memory value).
     HttpResponse::Created().json(ReviewResponse {
         learning_event_id: inserted.id,
@@ -354,6 +365,77 @@ mod tests {
         // None is what routes the handler to schedule_new rather than
         // schedule_review; an error here would be a 500 on a first review.
         assert!(prior.is_none());
+    }
+
+    /// The handler end to end, through actix, with Todoist down.
+    ///
+    /// Unlike the tests around it this one **commits**: the handler takes its
+    /// own connections from the pool, so it cannot see rows held in a test's
+    /// open transaction. It deletes its learner at the end, and every row it
+    /// made cascades away with them.
+    #[actix_web::test]
+    #[ignore = "requires the local Postgres cluster"]
+    async fn reviews_a_todoist_outage_does_not_break_the_review() {
+        use crate::todoist_client::fake::{Call, FakeTodoist};
+        use crate::todoist_client::TodoistError;
+        use actix_web::{test, App};
+        use std::sync::Arc;
+
+        let pool = test_db::pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let (user_id, set_id) = test_db::seed_learner(&mut conn).await;
+        let card_id = test_db::seed_card(&mut conn, set_id, "e2e weak card").await;
+        drop(conn);
+
+        let todoist = Arc::new(FakeTodoist::default());
+        todoist.fail_with(Some(TodoistError::Unreachable("connection refused".into())));
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(FsrsScheduler::default()))
+                .app_data(web::Data::new(Some(Box::new(todoist.clone()) as Box<dyn TodoistApi>)))
+                .service(review),
+        )
+        .await;
+
+        // Two "again" in five: the fifth review makes the card weak, and
+        // filing its task fails.
+        let mut last = serde_json::Value::Null;
+        for rating in ["again", "good", "again", "good", "good"] {
+            let req = test::TestRequest::post()
+                .uri("/review")
+                .set_json(serde_json::json!({ "card_id": card_id, "user_id": user_id, "rating": rating }))
+                .to_request();
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), actix_web::http::StatusCode::CREATED, "rating {rating}");
+            last = test::read_body_json(resp).await;
+        }
+
+        // The weak-card path ran, and failed, on the fifth review.
+        assert!(matches!(todoist.calls()[..], [Call::Create { .. }]), "{:?}", todoist.calls());
+
+        // The response still reports exactly the stored review.
+        let stored: (Uuid, Option<f64>, Option<f64>, i32) = sqlx::query_as(
+            "SELECT id, stability, difficulty, interval FROM learning_events \
+             WHERE card_id = $1 ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(card_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let tasks: i64 = sqlx::query_scalar("SELECT count(*) FROM weak_card_tasks WHERE study_set_id = $1")
+            .bind(set_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query("DELETE FROM users WHERE id = $1").bind(user_id).execute(&pool).await.unwrap();
+
+        assert_eq!(last["learning_event_id"], serde_json::json!(stored.0));
+        assert_eq!(last["stability"].as_f64().unwrap() as f32, stored.1.unwrap() as f32);
+        assert_eq!(last["difficulty"].as_f64().unwrap() as f32, stored.2.unwrap() as f32);
+        assert_eq!(last["interval_days"], serde_json::json!(stored.3));
+        assert_eq!(tasks, 0, "no task row may exist for a task Todoist never created");
     }
 
     #[tokio::test]
