@@ -1,0 +1,9 @@
+[Unit]
+Description=Chụp số liệu instrumentation lúc 23:00
+
+[Timer]
+OnCalendar=23:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

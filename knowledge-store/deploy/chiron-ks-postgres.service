@@ -1,0 +1,24 @@
+# Cụm Postgres riêng của Chiron KS, chạy dưới user thường (không phải postgres).
+#
+# BẪY ĐÃ TRẢ GIÁ: mặc định unix_socket_directories = '/run/postgresql' (bị comment
+# trong postgresql.conf). Thư mục đó không tồn tại với user thường →
+# "FATAL: could not create lock file". Sửa dòng 68 của postgresql.conf thành PGDATA.
+#
+# Port là 5432 (mặc định initdb). Nếu thấy 55432 ở đâu đó, đó là cụm của lần build
+# trước — KHÔNG dùng lại.
+
+[Unit]
+Description=Chiron Knowledge Store — Postgres
+After=network.target
+
+[Service]
+Type=forking
+Environment=PGDATA=%h/.local/share/chiron-ks-postgres
+ExecStart=/usr/bin/pg_ctl start -D ${PGDATA} -o "-p 5432" -l ${PGDATA}/logfile -w
+ExecStop=/usr/bin/pg_ctl stop -D ${PGDATA} -m fast
+ExecReload=/usr/bin/pg_ctl reload -D ${PGDATA}
+TimeoutStartSec=60
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

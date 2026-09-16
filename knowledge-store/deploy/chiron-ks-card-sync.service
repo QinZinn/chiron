@@ -1,0 +1,18 @@
+# Đẩy node đã duyệt sang Mnemosyne thành card.
+# USER unit — mọi lệnh quản lý phải có `--user`. Xem NOTES.md.
+#
+# KHÔNG chạm LLM phía KS (Mnemosyne mới là bên gọi LLM), nhưng cần
+# KS_MNEMOSYNE_URL + KS_MNEMOSYNE_TOKEN trong .env.
+#
+# Type=oneshot — scheduler là việc của systemd, không nhét vào code module.
+
+[Unit]
+Description=Chiron Knowledge Store — đồng bộ node sang card Mnemosyne
+After=chiron-ks-postgres.service
+Requires=chiron-ks-postgres.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/Chiron/KnowledgeStore
+EnvironmentFile=%h/Projects/Chiron/KnowledgeStore/.env
+ExecStart=%h/Projects/Chiron/KnowledgeStore/.venv/bin/python -m ks.cli card-sync

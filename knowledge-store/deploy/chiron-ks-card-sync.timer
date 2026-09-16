@@ -1,0 +1,9 @@
+[Unit]
+Description=Chạy card-sync mỗi giờ
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+# Job rút khái niệm từ transcript. CẦN ĐỦ BỘ BIẾN LLM (DeepSeek).
+# Type=oneshot — scheduler là việc của systemd, không nhét vào code module.
+
+[Unit]
+Description=Chiron Knowledge Store — rút khái niệm từ transcript
+After=chiron-ks-postgres.service
+Requires=chiron-ks-postgres.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/Chiron/KnowledgeStore
+EnvironmentFile=%h/Projects/Chiron/KnowledgeStore/.env
+ExecStart=%h/Projects/Chiron/KnowledgeStore/.venv/bin/python -m ks.cli extract
