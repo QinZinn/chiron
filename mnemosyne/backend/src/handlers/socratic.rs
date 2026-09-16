@@ -87,6 +87,30 @@ pub struct EndResponse {
     pub knowledge_store: KsSyncStatus,
 }
 
+#[derive(Debug, Serialize, FromRow)]
+pub struct SocraticSummary {
+    pub id: Uuid,
+    pub set_id: Uuid,
+    pub set_name: String,
+    pub created_at: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub last_message_at: Option<DateTime<Utc>>,
+    pub message_count: i64,
+    /// Derived from `ended_at`, so every client agrees on it.
+    pub ended: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SocraticListResponse {
+    pub sessions: Vec<SocraticSummary>,
+    pub count: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SocraticListQuery {
+    pub limit: Option<i64>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SessionHistoryResponse {
     pub session_id: Uuid,
@@ -729,6 +753,14 @@ pub async fn end(
         }
     };
 
+    // Record the closure before shipping: /end is safe to call twice (KS keys
+    // the transcript by session_ref), and COALESCE keeps the first time rather
+    // than moving it on every retry.
+    let _ = sqlx::query("UPDATE socratic_sessions SET ended_at = COALESCE(ended_at, now()) WHERE id = $1")
+        .bind(session_id)
+        .execute(pool.get_ref())
+        .await;
+
     let knowledge_store =
         sync_transcript_to_ks(ks.get_ref().as_ref(), session_id, &messages).await;
 
@@ -938,5 +970,44 @@ mod tests {
             serde_json::to_value(KsSyncStatus::Disabled).unwrap()["state"],
             "disabled"
         );
+    }
+}
+
+/// Sessions belonging to this learner, most recently active first.
+///
+/// `ended` reads `ended_at`, written by `/end` (migration 0009). Before that
+/// column existed the browser kept the flag in localStorage, so a second
+/// browser saw every past session as still running.
+const LIST_SESSIONS_QUERY: &str = r#"SELECT s.id, s.set_id, ss.name AS set_name, s.created_at, s.ended_at,
+          (SELECT max(created_at) FROM socratic_messages m WHERE m.session_id = s.id) AS last_message_at,
+          (SELECT count(*) FROM socratic_messages m WHERE m.session_id = s.id) AS message_count,
+          (s.ended_at IS NOT NULL) AS ended
+   FROM socratic_sessions s
+   JOIN study_sets ss ON ss.id = s.set_id
+   WHERE s.user_id = $1
+   ORDER BY COALESCE((SELECT max(created_at) FROM socratic_messages m WHERE m.session_id = s.id), s.created_at) DESC
+   LIMIT $2"#;
+
+#[get("/socratic")]
+pub async fn list_sessions(
+    pool: web::Data<PgPool>,
+    user: AuthedUser,
+    query: web::Query<SocraticListQuery>,
+) -> HttpResponse {
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    match sqlx::query_as::<_, SocraticSummary>(LIST_SESSIONS_QUERY)
+        .bind(user.user_id)
+        .bind(limit)
+        .fetch_all(pool.get_ref())
+        .await
+    {
+        Ok(sessions) => {
+            let count = sessions.len();
+            HttpResponse::Ok().json(SocraticListResponse { sessions, count })
+        }
+        Err(e) => error_response(
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("database error listing sessions: {e}"),
+        ),
     }
 }

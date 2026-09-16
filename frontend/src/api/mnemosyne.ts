@@ -126,6 +126,35 @@ export interface WeakResponse {
   error_threshold: number;
 }
 
+export type ChatMode = 'ask' | 'solve';
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+export interface ChatSessionSummary {
+  id: string;
+  mode: ChatMode;
+  set_id: string | null;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
+export interface SocraticSummary {
+  id: string;
+  set_id: string;
+  set_name: string;
+  created_at: string;
+  ended_at: string | null;
+  last_message_at: string | null;
+  message_count: number;
+  ended: boolean;
+}
+
 /** Mirrors TURN_CAP in socratic.rs: 40 stored messages = 20 exchanges. */
 export const SOCRATIC_TURN_CAP_MESSAGES = 40;
 /** Mirrors MAX_QUESTION_COUNT in quiz.rs. */
@@ -170,6 +199,32 @@ export const mnemosyne = {
       method: 'POST',
       timeoutMs: 30_000,
     }),
+
+  socraticList: () =>
+    request<{ sessions: SocraticSummary[]; count: number }>(S, `${base}/socratic`),
+
+  chatStart: (mode: ChatMode, message: string, studySetId?: string) =>
+    request<{ session_id: string; mode: ChatMode; title: string; reply: string }>(S, `${base}/chat/start`, {
+      method: 'POST',
+      body: { mode, message, study_set_id: studySetId ?? null },
+      timeoutMs: LLM_TIMEOUT_MS,
+    }),
+
+  chatReply: (sessionId: string, message: string) =>
+    request<{ reply: string }>(S, `${base}/chat/${encodeURIComponent(sessionId)}/reply`, {
+      method: 'POST',
+      body: { message },
+      timeoutMs: LLM_TIMEOUT_MS,
+    }),
+
+  chatSession: (sessionId: string) =>
+    request<{ session_id: string; mode: ChatMode; set_id: string | null; title: string; messages: ChatMessage[] }>(
+      S,
+      `${base}/chat/${encodeURIComponent(sessionId)}`,
+    ),
+
+  chatList: () =>
+    request<{ sessions: ChatSessionSummary[]; count: number }>(S, `${base}/chat`),
 
   socraticHistory: (sessionId: string) =>
     request<{ session_id: string; messages: SocraticMessage[] }>(

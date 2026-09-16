@@ -42,7 +42,7 @@ export function Sidebar({ route }: { route: Route }) {
   ];
 
   const q = query.trim().toLowerCase();
-  const shown = q ? recent.filter((r) => r.setName.toLowerCase().includes(q)) : recent;
+  const shown = q ? recent.filter((r) => r.title.toLowerCase().includes(q)) : recent;
   const activeSession = route.view === 'chat' ? route.sessionId : undefined;
 
   const initials = user ? user.email.replace(/@.*/, '').slice(0, 2) : '?';
@@ -88,13 +88,13 @@ export function Sidebar({ route }: { route: Route }) {
         <div className="sb-recent">
           {shown.map((r) => (
             <a
-              key={r.sessionId}
-              className={`nv nv-recent${activeSession === r.sessionId ? ' nv-on' : ''}`}
-              href={href({ view: 'chat', sessionId: r.sessionId })}
-              title={`${r.setName} · bắt đầu ${new Date(r.startedAt).toLocaleString('vi-VN')}`}
+              key={`${r.kind}:${r.id}`}
+              className={`nv nv-recent${activeSession === r.id ? ' nv-on' : ''}`}
+              href={href({ view: 'chat', kind: r.kind, sessionId: r.id })}
+              title={`${r.subtitle} · ${r.title} · ${new Date(r.updatedAt).toLocaleString('vi-VN')}`}
             >
-              <i className="ph ph-chat-teardrop" />
-              <span className="nvl">{r.setName}</span>
+              <i className={`ph ${r.kind === 'socratic' ? 'ph-student' : r.subtitle === 'Giải bài' ? 'ph-function' : 'ph-chat-circle-dots'}`} />
+              <span className="nvl">{r.title}</span>
               {r.ended && <span className="nv-ended">đã kết thúc</span>}
             </a>
           ))}
