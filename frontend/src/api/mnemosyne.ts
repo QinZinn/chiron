@@ -144,6 +144,26 @@ export interface Stats {
   chat_sessions: number;
 }
 
+export interface FeynmanEvaluation {
+  evaluation_id: string;
+  clarity_score: number;
+  completeness_score: number;
+  correctness_score: number;
+  feedback: string;
+  suggestions: string;
+}
+
+export interface FeynmanHistoryEntry {
+  id: string;
+  explanation_text: string;
+  clarity_score: number;
+  completeness_score: number;
+  correctness_score: number;
+  feedback: string;
+  suggestions: string;
+  created_at: string;
+}
+
 export type ChatMode = 'ask' | 'solve';
 
 export interface ChatMessage {
@@ -192,6 +212,19 @@ export const mnemosyne = {
   /** The browser knows its own timezone; the server must not guess it. */
   stats: (days = 14) =>
     request<Stats>(S, `${base}/stats?days=${days}&tz_offset_minutes=${-new Date().getTimezoneOffset()}`),
+
+  feynmanEvaluate: (setId: string, explanation: string) =>
+    request<FeynmanEvaluation>(S, `${base}/study_sets/${encodeURIComponent(setId)}/feynman_evaluate`, {
+      method: 'POST',
+      body: { explanation_text: explanation },
+      timeoutMs: LLM_TIMEOUT_MS,
+    }),
+
+  feynmanHistory: (setId: string) =>
+    request<{ evaluations: FeynmanHistoryEntry[]; count: number }>(
+      S,
+      `${base}/study_sets/${encodeURIComponent(setId)}/feynman_evaluate/history`,
+    ),
 
   patchMe: (learningStyle: string | null) =>
     request<User>(S, `${base}/me`, { method: 'PATCH', body: { learning_style: learningStyle } }),
