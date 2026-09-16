@@ -5,6 +5,7 @@ use sqlx::PgPool;
 
 use mnemosyne_core::scheduling::FsrsScheduler;
 
+mod auth;
 mod deepseek;
 mod handlers;
 mod ks_client;
@@ -37,6 +38,95 @@ async fn health_db(pool: web::Data<PgPool>) -> HttpResponse {
     }
 }
 
+/// Operator commands, run instead of the server:
+///
+///     backend create-user <email> [learning style]   create a learner + first token
+///     backend mint-token <email> [label]             another token for a learner
+///     backend list-tokens <email>                    ids, labels, last use
+///     backend revoke-token <token-id>                delete one token
+///
+/// These exist because the first token cannot be obtained over an API that
+/// already requires a token. They need only database access, so they work
+/// before the server is up and without `MNEMOSYNE_ADMIN_TOKEN` being set.
+const USAGE: &str = "usage: backend [create-user <email> [style] | mint-token <email> [label] | list-tokens <email> | revoke-token <token-id>]";
+
+async fn run_command(pool: &sqlx::PgPool, args: &[String]) -> Result<(), String> {
+    let email_to_id = async |email: &str| -> Result<uuid::Uuid, String> {
+        sqlx::query_scalar::<_, uuid::Uuid>("SELECT id FROM users WHERE email = $1")
+            .bind(email)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| format!("database error: {e}"))?
+            .ok_or_else(|| format!("no user with email {email}"))
+    };
+
+    match args[0].as_str() {
+        "create-user" => {
+            let email = args.get(1).ok_or("create-user needs an email")?;
+            let style = args.get(2).map(String::as_str);
+            let user_id: uuid::Uuid = sqlx::query_scalar(
+                "INSERT INTO users (email, learning_style) VALUES ($1, $2) RETURNING id",
+            )
+            .bind(email)
+            .bind(style)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("could not create user: {e}"))?;
+            let token = auth::mint_token(pool, user_id, Some("first token")).await?;
+            println!("user_id: {user_id}");
+            println!("token:   {token}");
+            println!("\nThis token is shown once and cannot be recovered. Store it now.");
+            Ok(())
+        }
+        "mint-token" => {
+            let email = args.get(1).ok_or("mint-token needs an email")?;
+            let user_id = email_to_id(email).await?;
+            let token = auth::mint_token(pool, user_id, args.get(2).map(String::as_str)).await?;
+            println!("token: {token}");
+            println!("\nShown once. Store it now.");
+            Ok(())
+        }
+        "list-tokens" => {
+            let email = args.get(1).ok_or("list-tokens needs an email")?;
+            let user_id = email_to_id(email).await?;
+            let rows = auth::list_tokens(pool, user_id)
+                .await
+                .map_err(|e| format!("database error: {e}"))?;
+            if rows.is_empty() {
+                println!("no tokens for {email}");
+            }
+            for t in rows {
+                let used = t
+                    .last_used_at
+                    .map(|d| d.to_rfc3339())
+                    .unwrap_or_else(|| "never used".into());
+                println!(
+                    "{}  {:<20} created {}  last used {}",
+                    t.id,
+                    t.label.unwrap_or_default(),
+                    t.created_at.to_rfc3339(),
+                    used
+                );
+            }
+            Ok(())
+        }
+        "revoke-token" => {
+            let id = args.get(1).ok_or("revoke-token needs a token id")?;
+            let id: uuid::Uuid = id.parse().map_err(|_| format!("'{id}' is not a token id"))?;
+            if auth::revoke_token(pool, id)
+                .await
+                .map_err(|e| format!("database error: {e}"))?
+            {
+                println!("revoked {id}");
+                Ok(())
+            } else {
+                Err(format!("no token with id {id}"))
+            }
+        }
+        other => Err(format!("unknown command '{other}'\n{USAGE}")),
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     eprintln!("[mnemosyne] starting up...");
@@ -63,6 +153,19 @@ async fn main() -> std::io::Result<()> {
             panic!("Failed to connect to database: {e}");
         });
     eprintln!("[mnemosyne] DB pool ready");
+
+    // An operator command runs against that pool and exits; only a bare
+    // invocation goes on to start the server.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if !args.is_empty() {
+        return match run_command(&pool, &args).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                eprintln!("[mnemosyne] {e}");
+                std::process::exit(1);
+            }
+        };
+    }
 
     // Construct the FSRS scheduler once and share it across all workers via
     // web::Data (which is Arc internally; no Clone needed on the scheduler).
@@ -159,6 +262,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(todoist.clone())
             .service(health)
             .service(health_db)
+            .service(handlers::users::me)
             .service(handlers::users::create_user)
             .service(handlers::users::list_users)
             .service(handlers::study_sets::create_study_set)

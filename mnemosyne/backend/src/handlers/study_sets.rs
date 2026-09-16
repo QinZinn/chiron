@@ -1,7 +1,11 @@
 //! Handlers for the `study_sets` table.
 //!
-//! POST /study_sets  — create a study set for a user
-//! GET  /study_sets  — list study sets, optionally filtered by ?user_id=<uuid>
+//! POST /study_sets  — create a study set owned by the authenticated learner
+//! GET  /study_sets  — list that learner's study sets
+//!
+//! Both scope to the bearer token. There is deliberately no way to ask for
+//! another learner's sets, nor for "all sets": the unfiltered listing this
+//! endpoint used to offer was a straight read of everyone's data.
 
 use actix_web::{HttpResponse, post, get, web};
 use serde::{Deserialize, Serialize};
@@ -10,10 +14,10 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 use super::{classify_db_error, error_response};
+use crate::auth::AuthedUser;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateStudySetRequest {
-    pub user_id: Uuid,
     pub name: String,
     pub topic: Option<String>,
 }
@@ -27,14 +31,10 @@ pub struct StudySetRow {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct ListStudySetsQuery {
-    pub user_id: Option<Uuid>,
-}
-
 #[post("/study_sets")]
 pub async fn create_study_set(
     pool: web::Data<PgPool>,
+    user: AuthedUser,
     body: web::Json<CreateStudySetRequest>,
 ) -> HttpResponse {
     if body.name.trim().is_empty() {
@@ -49,7 +49,7 @@ pub async fn create_study_set(
            VALUES ($1, $2, $3)
            RETURNING id, user_id, name, topic, created_at"#,
     )
-    .bind(body.user_id)
+    .bind(user.user_id)
     .bind(&body.name)
     .bind(&body.topic)
     .fetch_one(pool.get_ref())
@@ -64,34 +64,17 @@ pub async fn create_study_set(
 }
 
 #[get("/study_sets")]
-pub async fn list_study_sets(
-    pool: web::Data<PgPool>,
-    query: web::Query<ListStudySetsQuery>,
-) -> HttpResponse {
-    let result = match query.user_id {
-        Some(uid) => {
-            sqlx::query_as::<_, StudySetRow>(
-                r#"SELECT id, user_id, name, topic, created_at
-                   FROM study_sets
-                   WHERE user_id = $1
-                   ORDER BY created_at"#,
-            )
-            .bind(uid)
-            .fetch_all(pool.get_ref())
-            .await
-        }
-        None => {
-            sqlx::query_as::<_, StudySetRow>(
-                r#"SELECT id, user_id, name, topic, created_at
-                   FROM study_sets
-                   ORDER BY created_at"#,
-            )
-            .fetch_all(pool.get_ref())
-            .await
-        }
-    };
-
-    match result {
+pub async fn list_study_sets(pool: web::Data<PgPool>, user: AuthedUser) -> HttpResponse {
+    match sqlx::query_as::<_, StudySetRow>(
+        r#"SELECT id, user_id, name, topic, created_at
+           FROM study_sets
+           WHERE user_id = $1
+           ORDER BY created_at"#,
+    )
+    .bind(user.user_id)
+    .fetch_all(pool.get_ref())
+    .await
+    {
         Ok(rows) => HttpResponse::Ok().json(rows),
         Err(e) => error_response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,

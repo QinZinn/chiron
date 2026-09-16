@@ -33,7 +33,7 @@ Mnemosyne is a backend module of the Chiron ecosystem. It is feature-complete fo
 - [x] Milestone 4 — Chiron integration (local Postgres, transcript hand-off to the Knowledge Store)
 - [x] Milestone 5 — Knowledge Store card generation loop: `POST /cards/from_node` turns one approved KS concept node into one flashcard, idempotent via a `UNIQUE(set_id, source_node_id)` constraint, with a machine-readable `reason` on every failure so a caller (namely the Knowledge Store's own `card_sync` job) can tell a token-budget truncation apart from a transient network blip. Verified end-to-end against production data, not just fixtures.
 - [x] Quiz — AI-generated multiple-choice questions (`POST /quiz/generate`) from either free-text or Knowledge Store concepts, graded server-side with no LLM in the grading path (`POST /quiz/{question_id}/attempt`)
-- [ ] User authentication (currently a known, documented limitation — see below)
+- [x] Authentication — per-learner bearer tokens; every endpoint derives `user_id` from the token instead of reading it out of the request
 
 ---
 
@@ -76,7 +76,8 @@ Mnemosyne       ──GET /nodes, /nodes/{id}→ Knowledge Store (reading a conc
 | Endpoint | Purpose |
 |---|---|
 | `GET /health`, `GET /health/db` | Liveness + DB connectivity checks |
-| `POST /users`, `GET /users` | User accounts |
+| `GET /me` | The learner the bearer token belongs to |
+| `POST /users`, `GET /users` | User accounts — operator token (`MNEMOSYNE_ADMIN_TOKEN`) |
 | `POST /study_sets`, `GET /study_sets` | Study set (topic) management |
 | `POST /cards`, `GET /cards` | Flashcard CRUD |
 | `POST /cards/from_node` | Turn one Knowledge Store concept node into one flashcard. Idempotent per `(study_set_id, node_id)` — a repeat call returns `409` with the existing card's id rather than a duplicate. On failure, `502` carries a machine-readable `reason`: `truncated` (the model hit its token budget — retrying the same input won't help), `provider_error` (network/upstream/unparseable — retry with a bound), or `knowledge_store_error` (the node couldn't be read from the Knowledge Store — usually safe to retry) |
@@ -91,7 +92,26 @@ Mnemosyne       ──GET /nodes, /nodes/{id}→ Knowledge Store (reading a conc
 
 Full request/response shapes are documented inline in each handler under `backend/src/handlers/`.
 
-> **Known limitation:** endpoints currently take `user_id` directly as a request parameter — there is no authentication/session layer yet. This is an intentional, documented simplification for a closed 2–3 user alpha, not an oversight.
+### Authentication
+
+Every learner endpoint requires `Authorization: Bearer <token>` and derives
+`user_id` from it; `user_id` is no longer accepted as a request field. A token
+is 32 bytes of CSPRNG output, stored only as a SHA-256 hash, and shown once:
+
+```bash
+cargo run -p backend -- create-user learner@example.com "Lớp 11"  # learner + first token
+cargo run -p backend -- mint-token  learner@example.com laptop    # another token
+cargo run -p backend -- list-tokens learner@example.com
+cargo run -p backend -- revoke-token <token-id>
+```
+
+Ownership is enforced per row: a study set, card, quiz question or Socratic
+session belonging to another learner answers `404`, the same as one that does
+not exist — telling the two apart would let any token probe which ids are real.
+
+`POST /users` and `GET /users` are administration rather than learning, so they
+sit behind `MNEMOSYNE_ADMIN_TOKEN` (see `.env.example`). With that unset they
+refuse everyone and the CLI above is the way in.
 
 ---
 

@@ -41,6 +41,7 @@ use uuid::Uuid;
 use crate::ks_client::{KsClient, KsNode};
 use crate::llm_provider::{LLMMessage, LLMProvider};
 use super::{describe_llm_failure, error_response};
+use crate::auth::AuthedUser;
 
 /// Upper bound on questions per request, to keep token cost predictable.
 const MAX_QUESTION_COUNT: u32 = 20;
@@ -82,7 +83,6 @@ pub struct GenerateQuizRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct AttemptRequest {
-    pub user_id: Uuid,
     pub selected_index: i32,
 }
 
@@ -347,6 +347,7 @@ pub async fn generate_quiz(
     pool: web::Data<PgPool>,
     llm: web::Data<Box<dyn LLMProvider>>,
     ks: web::Data<Option<KsClient>>,
+    user: AuthedUser,
     body: web::Json<GenerateQuizRequest>,
 ) -> HttpResponse {
     // 1. Validate count.
@@ -370,11 +371,16 @@ pub async fn generate_quiz(
         );
     }
 
-    // 3. Validate the study set exists and get its owner, needed for the
-    //    ai_interactions row (user_id is NOT NULL with an FK).
+    // 3. The study set must exist AND be this learner's. Looking it up by
+    //    (id, owner) makes someone else's set answer exactly like a missing
+    //    one, and the row doubles as the owner the ai_interactions insert
+    //    needs (user_id is NOT NULL with an FK).
     let owner: Option<StudySetOwnerRow> =
-        match sqlx::query_as::<_, StudySetOwnerRow>("SELECT user_id FROM study_sets WHERE id = $1")
+        match sqlx::query_as::<_, StudySetOwnerRow>(
+            "SELECT user_id FROM study_sets WHERE id = $1 AND user_id = $2",
+        )
             .bind(body.study_set_id)
+            .bind(user.user_id)
             .fetch_optional(pool.get_ref())
             .await
         {
@@ -584,16 +590,24 @@ pub async fn generate_quiz(
 #[post("/quiz/{question_id}/attempt")]
 pub async fn attempt(
     pool: web::Data<PgPool>,
+    user: AuthedUser,
     path: web::Path<Uuid>,
     body: web::Json<AttemptRequest>,
 ) -> HttpResponse {
     let question_id = path.into_inner();
 
-    // 1. Load only what grading needs.
+    // 1. Load only what grading needs — and only if the question belongs to a
+    //    study set this learner owns. The join is the access check: a question
+    //    from someone else's set is "not found", so a token cannot harvest
+    //    correct answers by guessing question ids.
     let row: Option<GradingRow> = match sqlx::query_as::<_, GradingRow>(
-        "SELECT correct_index, choices FROM quiz_questions WHERE id = $1",
+        r#"SELECT q.correct_index, q.choices
+           FROM quiz_questions q
+           JOIN study_sets s ON s.id = q.set_id
+           WHERE q.id = $1 AND s.user_id = $2"#,
     )
     .bind(question_id)
+    .bind(user.user_id)
     .fetch_optional(pool.get_ref())
     .await
     {
@@ -635,7 +649,7 @@ pub async fn attempt(
            VALUES ($1, $2, $3, $4)"#,
     )
     .bind(question_id)
-    .bind(body.user_id)
+    .bind(user.user_id)
     .bind(body.selected_index)
     .bind(is_correct)
     .execute(pool.get_ref())
@@ -653,13 +667,18 @@ pub async fn attempt(
 }
 
 #[get("/quiz/{set_id}")]
-pub async fn list_questions(pool: web::Data<PgPool>, path: web::Path<Uuid>) -> HttpResponse {
+pub async fn list_questions(
+    pool: web::Data<PgPool>,
+    user: AuthedUser,
+    path: web::Path<Uuid>,
+) -> HttpResponse {
     let set_id = path.into_inner();
 
     let exists: bool = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM study_sets WHERE id = $1)",
+        "SELECT EXISTS(SELECT 1 FROM study_sets WHERE id = $1 AND user_id = $2)",
     )
     .bind(set_id)
+    .bind(user.user_id)
     .fetch_one(pool.get_ref())
     .await
     {
