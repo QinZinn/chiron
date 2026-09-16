@@ -65,6 +65,8 @@ interface AppState {
   studySetsError: unknown;
   reloadSets: () => void;
 
+  stats: import('../api/mnemosyne').Stats | undefined;
+  statsError: unknown;
   dueCount: number | undefined;
   /** Cards still failing the window test — the sidebar badge on Điểm yếu. */
   weakCount: number | undefined;
@@ -151,6 +153,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refreshDue = useCallback(() => setDueTick((t) => t + 1), []);
   const dueQ = useAsync(() => mnemosyne.due(100), [token, mOk, dueTick], authed);
   const weakQ = useAsync(() => mnemosyne.weakCards(), [token, mOk, dueTick], authed);
+  const statsQ = useAsync(() => mnemosyne.stats(14), [token, mOk, dueTick], authed);
 
   // ---------------------------------------------------------------- calendar badge
   const [todayEventCount, setTodayEventCount] = useState<number>();
@@ -214,6 +217,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     studySets: setsQ.data,
     studySetsError: setsQ.error,
     reloadSets: setsQ.reload,
+    stats: statsQ.data,
+    statsError: statsQ.error,
     dueCount: dueQ.error ? undefined : dueQ.data?.count,
     weakCount: weakQ.error ? undefined : weakQ.data?.still_weak_count,
     refreshDue,

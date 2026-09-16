@@ -126,6 +126,24 @@ export interface WeakResponse {
   error_threshold: number;
 }
 
+export interface DayCount {
+  day: string;
+  total: number;
+  correct: number;
+}
+
+export interface Stats {
+  range_days: number;
+  tz_offset_minutes: number;
+  /** accuracy is null when nothing was answered — not 0, which would read as "all wrong". */
+  reviews: { total: number; correct: number; accuracy: number | null; by_day: DayCount[] };
+  quiz: { attempts: number; correct: number; accuracy: number | null };
+  cards: { total: number; due_now: number; never_reviewed: number; study_sets: number };
+  streak_days: number;
+  socratic_sessions: number;
+  chat_sessions: number;
+}
+
 export type ChatMode = 'ask' | 'solve';
 
 export interface ChatMessage {
@@ -170,6 +188,10 @@ export const mnemosyne = {
   listStudySets: () => request<StudySet[]>(S, `${base}/study_sets`),
 
   due: (limit = 100) => request<DueResponse>(S, `${base}/due?limit=${limit}`),
+
+  /** The browser knows its own timezone; the server must not guess it. */
+  stats: (days = 14) =>
+    request<Stats>(S, `${base}/stats?days=${days}&tz_offset_minutes=${-new Date().getTimezoneOffset()}`),
 
   weakCards: (includeClosed = false) =>
     request<WeakResponse>(S, `${base}/weak_cards?include_closed=${includeClosed}`),
