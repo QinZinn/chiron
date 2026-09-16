@@ -1,13 +1,21 @@
 /**
- * Main chat. "Học bài" runs a real Socratic session on Mnemosyne:
- *   POST /socratic/start → POST /socratic/{id}/reply … → POST /socratic/{id}/end
- * and GET /socratic/{id} to reopen a session from the sidebar.
+ * Main chat, all three modes:
+ *
+ *   Học bài   Socratic — POST /socratic/start → /reply → /end. Refuses to
+ *             hand over answers; that is the method.
+ *   Hỏi bài   direct answers — POST /chat/start (mode "ask") → /reply
+ *   Giải bài  worked step by step — POST /chat/start (mode "solve") → /reply
+ *
+ * A session id alone does not say which table it lives in, so the URL does:
+ * #/chat/s/<id> for Socratic, #/chat/c/<id> for the other two.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError } from '../api/http';
 import {
   mnemosyne,
   SOCRATIC_TURN_CAP_MESSAGES,
+  type ChatMessage,
+  type ChatMode,
   type EndResponse,
   type KsSyncStatus,
   type SocraticMessage,
@@ -15,7 +23,7 @@ import {
 import { useApp } from '../state/app';
 import { navigate } from '../lib/route';
 import { minutesBetween } from '../lib/time';
-import { Composer } from '../components/Composer';
+import { Composer, type Mode } from '../components/Composer';
 import { AiAvatar, Constellation, ErrorNotice, HeroMark, Loading, PageHeader } from '../components/ui';
 
 /**
@@ -24,6 +32,7 @@ import { AiAvatar, Constellation, ErrorNotice, HeroMark, Loading, PageHeader } f
  * learner typed before starting is sent as their first reply.
  */
 const handoff = new Map<string, { messages: SocraticMessage[]; firstReply?: string }>();
+const chatHandoff = new Map<string, { mode: ChatMode; title: string; messages: ChatMessage[] }>();
 
 /** Mnemosyne's known 4xx messages, in the learner's language. */
 function friendly(err: unknown): string {
@@ -43,14 +52,28 @@ function StatusTag() {
   return <span className="tag tag-dim tag-sm">Đang kiểm tra kết nối…</span>;
 }
 
-export function ChatView({ sessionId, newSetId }: { sessionId?: string; newSetId?: string }) {
-  return sessionId ? <SessionChat key={sessionId} sessionId={sessionId} /> : <NewChat preselect={newSetId} />;
+export function ChatView({
+  kind,
+  sessionId,
+  newSetId,
+}: {
+  kind?: 'socratic' | 'chat';
+  sessionId?: string;
+  newSetId?: string;
+}) {
+  if (!sessionId) return <NewChat preselect={newSetId} />;
+  return kind === 'chat' ? (
+    <AskSolveSession key={sessionId} sessionId={sessionId} />
+  ) : (
+    <SessionChat key={sessionId} sessionId={sessionId} />
+  );
 }
 
 // ─────────────────────────────────────────────────────────────── 1a — new chat
 
 function NewChat({ preselect }: { preselect?: string }) {
-  const { health, user, studySets, studySetsError, reloadSets, upsertRecent } = useApp();
+  const { health, user, studySets, studySetsError, reloadSets, refreshSessions } = useApp();
+  const [mode, setMode] = useState<Mode>('hoc');
   const [setId, setSetId] = useState('');
   const [text, setText] = useState('');
   const [starting, setStarting] = useState(false);
@@ -72,22 +95,41 @@ function NewChat({ preselect }: { preselect?: string }) {
   else if (health.mnemosyne === 'checking') blocked = undefined;
   else if (!user) blocked = 'Chưa đăng nhập Mnemosyne — dán token trong Cài đặt.';
   else if (studySetsError) blocked = friendly(studySetsError);
-  else if (studySets && studySets.length === 0) blocked = 'Người học này chưa có bộ thẻ nào trong Mnemosyne.';
+  // Only Socratic needs a study set; the other two work on anything typed.
+  else if (mode === 'hoc' && studySets && studySets.length === 0)
+    blocked = 'Học bài cần một bộ thẻ. Người học này chưa có bộ thẻ nào trong Mnemosyne.';
 
   const start = async () => {
-    if (!setId || !user) return;
+    if (!user) return;
     setStarting(true);
     setError(undefined);
     try {
-      const res = await mnemosyne.socraticStart(setId);
-      const setName = studySets?.find((s) => s.id === setId)?.name ?? 'Phiên Học bài';
+      if (mode === 'hoc') {
+        if (!setId) return;
+        const res = await mnemosyne.socraticStart(setId);
+        const now = new Date().toISOString();
+        handoff.set(res.session_id, {
+          messages: [{ role: 'assistant', content: res.opening_message, flagged_misconception: null, created_at: now }],
+          firstReply: text.trim() || undefined,
+        });
+        refreshSessions();
+        navigate({ view: 'chat', kind: 'socratic', sessionId: res.session_id });
+        return;
+      }
+      // Hỏi bài / Giải bài: the typed message IS the opening move, and the
+      // study set is optional context rather than the subject.
+      const res = await mnemosyne.chatStart(mode === 'giai' ? 'solve' : 'ask', text, setId || undefined);
       const now = new Date().toISOString();
-      handoff.set(res.session_id, {
-        messages: [{ role: 'assistant', content: res.opening_message, flagged_misconception: null, created_at: now }],
-        firstReply: text.trim() || undefined,
+      chatHandoff.set(res.session_id, {
+        mode: res.mode,
+        title: res.title,
+        messages: [
+          { role: 'user', content: text.trim(), created_at: now },
+          { role: 'assistant', content: res.reply, created_at: now },
+        ],
       });
-      upsertRecent({ sessionId: res.session_id, userId: user.id, setId, setName, startedAt: now, ended: false });
-      navigate({ view: 'chat', sessionId: res.session_id });
+      refreshSessions();
+      navigate({ view: 'chat', kind: 'chat', sessionId: res.session_id });
     } catch (e) {
       setError(friendly(e));
       setStarting(false);
@@ -107,28 +149,38 @@ function NewChat({ preselect }: { preselect?: string }) {
       </div>
       <Composer
         float
+        mode={mode}
+        onModeChange={(m) => {
+          setMode(m);
+          setError(undefined);
+        }}
         value={text}
         onChange={setText}
         onSubmit={start}
-        allowEmpty
+        allowEmpty={mode === 'hoc'}
         sending={starting}
-        disabled={Boolean(blocked) || !setId || health.mnemosyne !== 'ok'}
+        disabled={Boolean(blocked) || (mode === 'hoc' && !setId) || health.mnemosyne !== 'ok'}
         autoFocus
         placeholder={
           starting
-            ? 'Chiron đang chuẩn bị câu hỏi mở đầu…'
-            : 'Chọn bộ thẻ rồi bấm gửi — Chiron sẽ mở đầu bằng một câu hỏi. Có thể gõ sẵn điều bạn muốn hỏi trước.'
+            ? 'Chiron đang trả lời…'
+            : mode === 'hoc'
+              ? 'Chọn bộ thẻ rồi bấm gửi — Chiron sẽ mở đầu bằng một câu hỏi. Có thể gõ sẵn điều bạn muốn hỏi trước.'
+              : mode === 'giai'
+                ? 'Dán đề bài. Chiron giải từng bước, rồi bạn hỏi tiếp về bước nào chưa rõ.'
+                : 'Hỏi một câu. Chiron trả lời thẳng, không vòng vo.'
         }
         topLeft={
           <div className="set-picker">
             <i className="ph ph-cards-three" style={{ fontSize: 14, color: 'var(--frost2)' }} />
-            Bộ thẻ
+            {mode === 'hoc' ? 'Bộ thẻ' : 'Ngữ cảnh'}
             <select
               className="input"
               value={setId}
               onChange={(e) => setSetId(e.target.value)}
               disabled={!studySets || studySets.length === 0 || starting}
             >
+              {mode !== 'hoc' && <option value="">— Không dùng bộ thẻ —</option>}
               {!studySets && <option value="">—</option>}
               {studySets?.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -158,8 +210,8 @@ interface Pending {
 }
 
 function SessionChat({ sessionId }: { sessionId: string }) {
-  const { recent, upsertRecent, health } = useApp();
-  const meta = recent.find((r) => r.sessionId === sessionId);
+  const { recent, refreshSessions, health } = useApp();
+  const meta = recent.find((r) => r.kind === 'socratic' && r.id === sessionId);
   // Read during render (idempotent), consumed in an effect: reopening this
   // session later must load the real transcript, not this snapshot.
   const initial = useMemo(() => handoff.get(sessionId), [sessionId]);
@@ -236,7 +288,7 @@ function SessionChat({ sessionId }: { sessionId: string }) {
     try {
       const res = await mnemosyne.socraticEnd(sessionId);
       setEndRes(res);
-      if (meta) upsertRecent({ ...meta, ended: true });
+      refreshSessions();
     } catch (e) {
       setEndError(friendly(e));
     } finally {
@@ -257,7 +309,7 @@ function SessionChat({ sessionId }: { sessionId: string }) {
 
   return (
     <main className="main">
-      <PageHeader title={meta?.setName ?? 'Phiên Học bài'} after={<span className="tag tag-frost tag-sm">Học bài</span>}>
+      <PageHeader title={meta?.title ?? 'Phiên Học bài'} after={<span className="tag tag-frost tag-sm">Học bài</span>}>
         {messages && (
           <span className="hdr-meta">
             Phiên {elapsed} phút · {turns}/{SOCRATIC_TURN_CAP_MESSAGES / 2} lượt
@@ -287,7 +339,7 @@ function SessionChat({ sessionId }: { sessionId: string }) {
       <div className="chat-scroll" ref={scroller}>
         <div className="chat-col">
           <div className="chip-center">
-            <span>Học bài từ bộ thẻ “{meta?.setName ?? '…'}” · Chiron hỏi gợi mở, không đưa đáp án</span>
+            <span>Học bài từ bộ thẻ “{meta?.title ?? '…'}” · Chiron hỏi gợi mở, không đưa đáp án</span>
           </div>
 
           {!messages && !loadError && <Loading label="Đang tải lịch sử phiên…" />}
@@ -436,5 +488,170 @@ function EndSummary({ res, onRetry }: { res: EndResponse; onRetry: () => void })
         )}
       </div>
     </div>
+  );
+}
+
+// ───────────────────────────────────────────────── Hỏi bài / Giải bài session
+
+function AskSolveSession({ sessionId }: { sessionId: string }) {
+  const { health, refreshSessions } = useApp();
+  const initial = useMemo(() => chatHandoff.get(sessionId), [sessionId]);
+  useEffect(() => {
+    chatHandoff.delete(sessionId);
+  }, [sessionId]);
+
+  const [messages, setMessages] = useState<ChatMessage[] | undefined>(initial?.messages);
+  const [mode, setMode] = useState<ChatMode | undefined>(initial?.mode);
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [loadError, setLoadError] = useState<unknown>();
+  const [loadTick, setLoadTick] = useState(0);
+  const [text, setText] = useState('');
+  const [pending, setPending] = useState<Pending>();
+  const scroller = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (initial && loadTick === 0) return;
+    let live = true;
+    setLoadError(undefined);
+    mnemosyne.chatSession(sessionId).then(
+      (r) => {
+        if (!live) return;
+        setMessages(r.messages);
+        setMode(r.mode);
+        setTitle(r.title);
+      },
+      (e) => live && setLoadError(e),
+    );
+    return () => {
+      live = false;
+    };
+  }, [sessionId, initial, loadTick]);
+
+  useEffect(() => {
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' });
+  }, [messages, pending]);
+
+  const send = async (raw: string) => {
+    const msg = raw.trim();
+    if (!msg || (pending && !pending.failed)) return;
+    setPending({ text: msg });
+    setText('');
+    try {
+      const res = await mnemosyne.chatReply(sessionId, msg);
+      const now = new Date().toISOString();
+      setMessages((m) => [
+        ...(m ?? []),
+        { role: 'user', content: msg, created_at: now },
+        { role: 'assistant', content: res.reply, created_at: now },
+      ]);
+      setPending(undefined);
+      refreshSessions();
+    } catch (e) {
+      setPending({ text: msg, failed: friendly(e) });
+    }
+  };
+
+  const busy = Boolean(pending && !pending.failed);
+  const label = mode === 'solve' ? 'Giải bài' : 'Hỏi bài';
+  const composerBlock =
+    health.mnemosyne === 'down' ? 'Không kết nối được Mnemosyne — không gửi được câu hỏi lúc này.' : undefined;
+
+  return (
+    <main className="main">
+      <PageHeader title={title || 'Cuộc trò chuyện'} after={<span className="tag tag-frost tag-sm">{label}</span>}>
+        <span className="hdr-meta">{messages ? `${Math.ceil(messages.length / 2)} lượt` : ''}</span>
+        <button className="icon-btn" title="Tải lại" onClick={() => setLoadTick((t) => t + 1)}>
+          <i className="ph ph-arrow-clockwise" />
+        </button>
+        <button className="icon-btn" title="Cuộc trò chuyện mới" onClick={() => navigate({ view: 'chat' })}>
+          <i className="ph ph-plus" />
+        </button>
+      </PageHeader>
+
+      <div className="chat-scroll" ref={scroller}>
+        <div className="chat-col">
+          <div className="chip-center">
+            <span>
+              {mode === 'solve'
+                ? 'Giải từng bước · hỏi tiếp về bước nào chưa rõ'
+                : 'Hỏi đáp nhanh · Chiron trả lời thẳng'}
+            </span>
+          </div>
+
+          {!messages && !loadError && <Loading label="Đang tải cuộc trò chuyện…" />}
+          {loadError != null && <ErrorNotice error={loadError} onRetry={() => setLoadTick((t) => t + 1)} />}
+
+          {messages?.map((m, i) =>
+            m.role === 'assistant' ? (
+              <div className="msg-ai" key={i}>
+                <AiAvatar />
+                <div className="msg-ai-body">
+                  <div className="msg-ai-text">{m.content}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="msg-user" key={i}>
+                <div>{m.content}</div>
+              </div>
+            ),
+          )}
+
+          {pending && (
+            <>
+              <div className={`msg-user${pending.failed ? ' failed' : ''}`}>
+                <div>{pending.text}</div>
+              </div>
+              {pending.failed ? (
+                <div className="notice notice-err">
+                  <i className="ph ph-warning-circle" />
+                  <div>
+                    <div className="notice-title">Chưa gửi được</div>
+                    <div>{pending.failed}</div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-soft" onClick={() => send(pending.text)}>
+                        <i className="ph ph-arrow-clockwise" />Gửi lại
+                      </button>
+                      <button
+                        className="btn btn-soft"
+                        onClick={() => {
+                          setText(pending.text);
+                          setPending(undefined);
+                        }}
+                      >
+                        Sửa lại
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="msg-ai">
+                  <AiAvatar />
+                  <div className="thinking">
+                    <span className="pulse" /><span className="pulse" /><span className="pulse" />
+                    {mode === 'solve' ? 'Chiron đang giải…' : 'Chiron đang trả lời…'}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      <Composer
+        value={text}
+        onChange={setText}
+        onSubmit={() => send(text)}
+        sending={busy}
+        disabled={Boolean(composerBlock) || !messages}
+        autoFocus
+        placeholder={mode === 'solve' ? 'Hỏi về một bước, hoặc đưa bài tiếp theo…' : 'Hỏi tiếp…'}
+        topLeft={
+          <span className="composer-hint">
+            {mode === 'solve' ? 'Chiron giải từng bước và nói rõ vì sao' : 'Chiron trả lời thẳng, nói rõ khi không chắc'}
+          </span>
+        }
+        status={composerBlock}
+      />
+    </main>
   );
 }

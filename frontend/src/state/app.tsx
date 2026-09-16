@@ -13,7 +13,7 @@ import { getToken, onTokenChange, setToken } from '../api/session';
 import { ks, proxyStatus, type ProxyStatus } from '../api/ks';
 import { loadRange } from '../api/calendar';
 import { addDays, keyBoundsPadded, todayKey } from '../lib/time';
-import { load, loadList, save } from '../lib/storage';
+import { load, save } from '../lib/storage';
 import { useAsync } from '../lib/useAsync';
 
 export const ACCENTS = ['#88C0D0', '#81A1C1', '#B48EAD', '#A3BE8C'] as const;
@@ -28,20 +28,20 @@ const DEFAULT_SETTINGS: Settings = { accent: ACCENTS[0], sidebarCollapsed: false
 const SETTINGS_KEY = 'chiron.settings.v1';
 
 /**
- * Mnemosyne has no "list sessions" endpoint, so the sidebar's "Gần đây" is
- * this browser's own record of the sessions it started. The messages always
- * come from GET /socratic/{id}; only the index lives here.
+ * One row of the sidebar's "Gần đây", from the server rather than from this
+ * browser's memory: `GET /socratic` and `GET /chat`. The old localStorage
+ * index only knew about sessions started in this browser, and could not know
+ * that one of them had since been ended somewhere else.
  */
 export interface RecentSession {
-  sessionId: string;
-  userId: string;
-  setId: string;
-  setName: string;
-  startedAt: string;
+  kind: 'socratic' | 'chat';
+  id: string;
+  title: string;
+  subtitle: string;
+  updatedAt: string;
   ended: boolean;
+  setId?: string;
 }
-const RECENT_KEY = 'chiron.recent.v1';
-const RECENT_MAX = 40;
 
 export type Health = 'checking' | 'ok' | 'down';
 
@@ -74,7 +74,9 @@ interface AppState {
   setTodayEventCount: (n: number | undefined) => void;
 
   recent: RecentSession[];
-  upsertRecent: (s: RecentSession) => void;
+  recentError: unknown;
+  /** Call after starting or ending a conversation so the sidebar catches up. */
+  refreshSessions: () => void;
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -171,15 +173,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [gcalConfigured]);
 
   // ---------------------------------------------------------------- recent sessions
-  const [recentAll, setRecentAll] = useState<RecentSession[]>(() => loadList<RecentSession>(RECENT_KEY));
-  const upsertRecent = useCallback((s: RecentSession) => {
-    setRecentAll((list) => {
-      const next = [s, ...list.filter((x) => x.sessionId !== s.sessionId)].slice(0, RECENT_MAX);
-      save(RECENT_KEY, next);
-      return next;
-    });
-  }, []);
-  const recent = useMemo(() => recentAll.filter((r) => r.userId === (user?.id ?? '')), [recentAll, user]);
+  const [sessionTick, setSessionTick] = useState(0);
+  const refreshSessions = useCallback(() => setSessionTick((t) => t + 1), []);
+  const socraticQ = useAsync(() => mnemosyne.socraticList(), [token, mOk, sessionTick], authed);
+  const chatQ = useAsync(() => mnemosyne.chatList(), [token, mOk, sessionTick], authed);
+
+  const recent: RecentSession[] = useMemo(() => {
+    const socratic: RecentSession[] = (socraticQ.data?.sessions ?? []).map((x) => ({
+      kind: 'socratic',
+      id: x.id,
+      title: x.set_name,
+      subtitle: 'Học bài',
+      updatedAt: x.last_message_at ?? x.created_at,
+      ended: x.ended,
+      setId: x.set_id,
+    }));
+    const chats: RecentSession[] = (chatQ.data?.sessions ?? []).map((x) => ({
+      kind: 'chat',
+      id: x.id,
+      title: x.title,
+      subtitle: x.mode === 'ask' ? 'Hỏi bài' : 'Giải bài',
+      updatedAt: x.updated_at,
+      ended: false,
+      setId: x.set_id ?? undefined,
+    }));
+    return [...socratic, ...chats].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }, [socraticQ.data, chatQ.data]);
 
   const value: AppState = {
     settings,
@@ -201,7 +220,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     todayEventCount,
     setTodayEventCount,
     recent,
-    upsertRecent,
+    recentError: socraticQ.error ?? chatQ.error,
+    refreshSessions,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

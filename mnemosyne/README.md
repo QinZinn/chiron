@@ -32,6 +32,8 @@ Mnemosyne is a backend module of the Chiron ecosystem. It is feature-complete fo
 - [x] Milestone 3 — Socratic Tutor + Feynman Evaluation
 - [x] Milestone 4 — Chiron integration (local Postgres, transcript hand-off to the Knowledge Store)
 - [x] Milestone 5 — Knowledge Store card generation loop: `POST /cards/from_node` turns one approved KS concept node into one flashcard, idempotent via a `UNIQUE(set_id, source_node_id)` constraint, with a machine-readable `reason` on every failure so a caller (namely the Knowledge Store's own `card_sync` job) can tell a token-budget truncation apart from a transient network blip. Verified end-to-end against production data, not just fixtures.
+- [x] Hỏi bài / Giải bài — direct answers and step-by-step solutions (`/chat/*`), kept apart from Socratic in both prompt and storage
+- [x] Weak-card dashboard — `GET /weak_cards` reads back what `POST /review` has been writing
 - [x] Quiz — AI-generated multiple-choice questions (`POST /quiz/generate`) from either free-text or Knowledge Store concepts, graded server-side with no LLM in the grading path (`POST /quiz/{question_id}/attempt`)
 - [x] Authentication — per-learner bearer tokens; every endpoint derives `user_id` from the token instead of reading it out of the request
 
@@ -84,7 +86,10 @@ Mnemosyne       ──GET /nodes, /nodes/{id}→ Knowledge Store (reading a conc
 | `POST /review` | Submit a card review rating → FSRS reschedules it |
 | `GET /due` | Fetch cards due for review right now |
 | `POST /study_sets/{id}/generate_cards` | AI-generate flashcards from source text (`recall` or `elaboration` style) |
-| `POST /socratic/start`, `POST /socratic/{id}/reply`, `GET /socratic/{id}` | Multi-turn Socratic dialogue on a study set |
+| `POST /socratic/start`, `POST /socratic/{id}/reply`, `POST /socratic/{id}/end`, `GET /socratic/{id}` | Multi-turn Socratic dialogue on a study set. `/end` ships the transcript to the Knowledge Store and stamps `ended_at` |
+| `GET /socratic` | The learner's Socratic sessions, most recently active first |
+| `POST /chat/start`, `POST /chat/{id}/reply`, `GET /chat/{id}`, `GET /chat` | "Hỏi bài" (`mode: "ask"` — direct answers) and "Giải bài" (`mode: "solve"` — worked step by step). The opposite of Socratic, which withholds answers on purpose; a study set may be attached as context |
+| `GET /weak_cards` | Study sets with cards the learner keeps failing, with the evidence and the rule behind it. The read side of the `@ontap` tasks Horae schedules |
 | `POST /study_sets/{id}/feynman_evaluate`, `GET .../history` | Submit and score a self-explanation |
 | `POST /quiz/generate` | Generate multiple-choice quiz questions for a study set, from free-text (`source: "topic"`) or from Knowledge Store concepts the learner has already studied (`source: "knowledge_store"`) — the two sources are never mixed in one request, and `count` is capped server-side |
 | `POST /quiz/{question_id}/attempt` | Submit an answer to one quiz question. Graded by index comparison — no LLM in the grading path. An out-of-range `selected_index` is rejected as a `400` rather than silently scored wrong, since that would corrupt the learner's score history. The correct answer is only disclosed in the response after grading |

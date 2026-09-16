@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 export type Route =
-  | { view: 'chat'; sessionId?: string; newSetId?: string }
+  | { view: 'chat'; kind?: 'socratic' | 'chat'; sessionId?: string; newSetId?: string }
   | { view: 'flashcards' }
   | { view: 'quiz' }
   | { view: 'knowledge'; nodeId?: string }
@@ -16,7 +16,12 @@ export function parseHash(hash: string): Route {
       // #/chat/new/<setId> opens the composer with that study set chosen —
       // what "Học bài" on a weak point needs in order to mean something.
       if (parts[1] === 'new') return { view: 'chat', newSetId: parts[2] };
-      return { view: 'chat', sessionId: parts[1] };
+      // Socratic sessions and ask/solve conversations live in different
+      // tables and have different endpoints, so the URL says which it is
+      // rather than making the view guess from the id.
+      if (parts[1] === 's') return { view: 'chat', kind: 'socratic', sessionId: parts[2] };
+      if (parts[1] === 'c') return { view: 'chat', kind: 'chat', sessionId: parts[2] };
+      return { view: 'chat', kind: 'socratic', sessionId: parts[1] };
     case 'flashcards':
     case 'quiz':
     case 'weak':
@@ -33,7 +38,9 @@ export function parseHash(hash: string): Route {
 export function href(route: Route): string {
   switch (route.view) {
     case 'chat':
-      if (route.sessionId) return `#/chat/${encodeURIComponent(route.sessionId)}`;
+      if (route.sessionId) {
+        return `#/chat/${route.kind === 'chat' ? 'c' : 's'}/${encodeURIComponent(route.sessionId)}`;
+      }
       return route.newSetId ? `#/chat/new/${encodeURIComponent(route.newSetId)}` : '#/';
     case 'knowledge':
       return route.nodeId ? `#/knowledge/${encodeURIComponent(route.nodeId)}` : '#/knowledge';

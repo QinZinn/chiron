@@ -2,18 +2,17 @@ import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 
 export type Mode = 'giai' | 'hoc' | 'hoi';
 
-/**
- * The three modes, in the design's order. Only "Học bài" has a backend
- * (Mnemosyne /socratic/*). The other two render disabled with a visible
- * "Sắp có" pill — never selectable, so they cannot fail after a click.
- */
-const MODES: { id: Mode; icon: string; label: string; soon?: string }[] = [
-  { id: 'giai', icon: 'ph-function', label: 'Giải bài', soon: 'Giải bài từng bước — chưa có engine giải bài.' },
-  { id: 'hoc', icon: 'ph-student', label: 'Học bài' },
-  { id: 'hoi', icon: 'ph-chat-circle-dots', label: 'Hỏi bài', soon: 'Hỏi đáp nhanh — Mnemosyne chưa có endpoint riêng.' },
+/** The three modes, in the design's order. All three now have a backend. */
+const MODES: { id: Mode; icon: string; label: string; hint: string }[] = [
+  { id: 'giai', icon: 'ph-function', label: 'Giải bài', hint: 'Giải từng bước, rồi hỏi thêm về bước bất kỳ' },
+  { id: 'hoc', icon: 'ph-student', label: 'Học bài', hint: 'Socratic: Chiron hỏi gợi mở, không đưa đáp án' },
+  { id: 'hoi', icon: 'ph-chat-circle-dots', label: 'Hỏi bài', hint: 'Hỏi đáp nhanh, trả lời thẳng' },
 ];
 
 interface Props {
+  /** Omitted on the session screens, where the mode is already decided. */
+  mode?: Mode;
+  onModeChange?: (mode: Mode) => void;
   value: string;
   onChange: (v: string) => void;
   onSubmit: () => void;
@@ -63,8 +62,9 @@ export function Composer(p: Props) {
           {/* The design's model picker. Mnemosyne exposes no model choice, so
               this names the engine that actually answers instead of offering
               a dropdown that would do nothing. */}
-          <div className="engine-chip" title="Học bài chạy trên Mnemosyne (phương pháp Socratic)">
-            <i className="ph ph-sparkle" />Socratic · Mnemosyne
+          <div className="engine-chip" title="Cả ba chế độ đều chạy trên Mnemosyne">
+            <i className="ph ph-sparkle" />
+            {p.mode === 'hoc' ? 'Socratic' : p.mode === 'giai' ? 'Giải từng bước' : 'Hỏi đáp'} · Mnemosyne
           </div>
         </div>
         <textarea
@@ -85,14 +85,14 @@ export function Composer(p: Props) {
                 key={m.id}
                 type="button"
                 role="radio"
-                aria-checked={m.id === 'hoc'}
-                className={`md${m.id === 'hoc' ? ' md-on' : ''}`}
-                disabled={Boolean(m.soon)}
-                title={m.soon ? `Sắp có — ${m.soon}` : 'Học bài theo phương pháp Socratic'}
+                aria-checked={m.id === p.mode}
+                className={`md${m.id === p.mode ? ' md-on' : ''}`}
+                disabled={!p.onModeChange}
+                onClick={() => p.onModeChange?.(m.id)}
+                title={m.hint}
               >
                 <i className={`ph ${m.icon}`} />
                 {m.label}
-                {m.soon && <span className="md-soon">Sắp có</span>}
               </button>
             ))}
           </div>

@@ -118,7 +118,9 @@ CREATE TYPE ai_interaction_type AS ENUM (
     'socratic_dialogue',
     'feynman_evaluation',
     'quiz_generation',
-    'card_from_node_generation'
+    'card_from_node_generation',
+    'ask_answer',
+    'solve_steps'
 );
 
 CREATE TABLE ai_interactions (
@@ -145,7 +147,10 @@ CREATE TABLE socratic_sessions (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     set_id      UUID NOT NULL REFERENCES study_sets(id) ON DELETE CASCADE,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Set by POST /socratic/{id}/end. "When" answers "whether" too, so there
+    -- is no separate boolean to fall out of step with it.
+    ended_at    TIMESTAMPTZ
 );
 
 CREATE INDEX idx_socratic_sessions_user_id ON socratic_sessions (user_id);
@@ -320,3 +325,36 @@ CREATE TABLE user_tokens (
 );
 
 CREATE INDEX idx_user_tokens_user_id ON user_tokens (user_id);
+
+-- ---------------------------------------------------------------------------
+-- Tables: chat_sessions, chat_messages
+-- "Hỏi bài" (direct answers) and "Giải bài" (worked step by step) — the two
+-- modes that are the opposite of Socratic, which refuses to answer. One pair
+-- of tables with a `mode` column, because the storage is identical; kept apart
+-- from socratic_sessions because the lifecycle is not (no study-set
+-- requirement, no teaching-method turn cap, no transcript hand-off to KS).
+-- ---------------------------------------------------------------------------
+CREATE TYPE chat_mode AS ENUM ('ask', 'solve');
+
+CREATE TABLE chat_sessions (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mode        chat_mode NOT NULL,
+    set_id      UUID REFERENCES study_sets(id) ON DELETE SET NULL,  -- optional context
+    title       TEXT NOT NULL,        -- opening message, trimmed; what the sidebar lists
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()  -- bumped per message: "recently used"
+);
+
+CREATE INDEX idx_chat_sessions_user_recent ON chat_sessions (user_id, updated_at DESC);
+CREATE INDEX idx_chat_sessions_set_id ON chat_sessions (set_id);
+
+CREATE TABLE chat_messages (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id  UUID NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    role        TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+    content     TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_chat_messages_session ON chat_messages (session_id, created_at);

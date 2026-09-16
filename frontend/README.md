@@ -39,13 +39,14 @@ allowlist cấu hình public (`src/config.ts`).
 | Khu vực | Nguồn | Trạng thái |
 |---|---|---|
 | Chat · Học bài | Mnemosyne `/socratic/*` | Hoạt động |
-| Chat · Hỏi bài, Giải bài | — | Sắp có (nút bị khoá, có nhãn) |
+| Chat · Hỏi bài | Mnemosyne `/chat/*` (`mode: ask`) | Hoạt động |
+| Chat · Giải bài | Mnemosyne `/chat/*` (`mode: solve`) | Hoạt động |
 | Thẻ ghi nhớ | Mnemosyne `GET /due`, `POST /review` | Hoạt động |
 | Quiz | Mnemosyne `/quiz/*` | Hoạt động |
 | Kiến thức | KS `GET /nodes`, `/nodes/{id}` | Hoạt động |
-| Điểm yếu | — | Sắp có: Mnemosyne ghi `weak_card_tasks` nhưng chưa có route đọc |
+| Điểm yếu | Mnemosyne `GET /weak_cards` | Hoạt động |
 | Lịch học | Google Calendar qua withone.ai | Hoạt động (chỉ đọc) |
-| Cài đặt | localStorage | Người học, màu nhấn, thu gọn thanh bên, nền sao, trạng thái kết nối |
+| Cài đặt | localStorage + `GET /me` | Đăng nhập bằng token, màu nhấn, thu gọn thanh bên, nền sao, trạng thái kết nối |
 
 Mỗi khu vực xử lý lỗi riêng: module nào tắt thì chỉ khu vực đó báo
 "không kết nối được", phần còn lại vẫn chạy.
@@ -62,5 +63,7 @@ Mỗi khu vực xử lý lỗi riêng: module nào tắt thì chỉ khu vực đ
   thiết kế; chúng dùng lại bố cục của màn 1c (header, tiêu đề + mô tả, hàng
   số liệu, đường kẻ mờ, danh sách thẻ `.wk`).
 - Mode mặc định là Học bài (bản 1a để "Giải bài"): hai mode kia chưa dùng được.
-- "Gần đây" là danh sách phiên do chính trình duyệt này mở (Mnemosyne không có
-  route liệt kê phiên); nội dung phiên luôn lấy từ `GET /socratic/{id}`.
+- "Gần đây" lấy từ `GET /socratic` và `GET /chat`, không phải từ localStorage,
+  nên đổi trình duyệt vẫn thấy đủ và trạng thái "đã kết thúc" luôn đúng.
+- Mnemosyne cần token: token nằm trong localStorage của trình duyệt (dán ở màn
+  Cài đặt), không đặt trong `.env`.
