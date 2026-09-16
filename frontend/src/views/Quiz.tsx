@@ -98,6 +98,15 @@ function QuizBody() {
     }
   };
 
+  const removeQuestion = async (id: string) => {
+    try {
+      await mnemosyne.deleteQuizQuestion(id);
+      setQuestions((qs) => qs.filter((q) => q.id !== id));
+    } catch (e) {
+      setGenError(e);
+    }
+  };
+
   const doneList = Object.values(attempts).filter((a): a is Extract<Attempt, { state: 'done' }> => a.state === 'done');
   const correct = doneList.filter((a) => a.isCorrect).length;
   const canGenerate = !generating && count >= 1 && count <= QUIZ_MAX_COUNT && (source === 'knowledge_store' || topic.trim().length > 0);
@@ -186,6 +195,14 @@ function QuizBody() {
                 <span className={`tag tag-sm ${q.source === 'knowledge_store' ? 'tag-pur' : 'tag-dim'}`}>
                   {q.source === 'knowledge_store' ? 'Từ Knowledge Store' : 'Từ chủ đề'}
                 </span>
+                <button
+                  className="icon-btn"
+                  style={{ marginLeft: 'auto' }}
+                  title="Xoá câu hỏi này"
+                  onClick={() => removeQuestion(q.id)}
+                >
+                  <i className="ph ph-trash" />
+                </button>
               </div>
               <div className="q-text">{q.question}</div>
               <div className="choices">

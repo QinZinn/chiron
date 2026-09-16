@@ -331,6 +331,24 @@ function SessionChat({ sessionId }: { sessionId: string }) {
               <button onClick={() => navigate({ view: 'chat' })}>
                 <i className="ph ph-plus" />Phiên mới
               </button>
+              <button
+                onClick={async () => {
+                  setMenuOpen(false);
+                  // Deleting removes the transcript from Mnemosyne. Anything
+                  // already shipped to the Knowledge Store stays there — KS
+                  // owns its own records.
+                  if (!window.confirm('Xoá hẳn phiên này khỏi Mnemosyne? Transcript đã gửi sang Knowledge Store vẫn được giữ ở đó.')) return;
+                  try {
+                    await mnemosyne.deleteSocratic(sessionId);
+                    refreshSessions();
+                    navigate({ view: 'chat' });
+                  } catch (e) {
+                    setEndError(friendly(e));
+                  }
+                }}
+              >
+                <i className="ph ph-trash" />Xoá phiên này
+              </button>
             </div>
           )}
         </div>
@@ -565,6 +583,22 @@ function AskSolveSession({ sessionId }: { sessionId: string }) {
         </button>
         <button className="icon-btn" title="Cuộc trò chuyện mới" onClick={() => navigate({ view: 'chat' })}>
           <i className="ph ph-plus" />
+        </button>
+        <button
+          className="icon-btn"
+          title="Xoá cuộc trò chuyện này"
+          onClick={async () => {
+            if (!window.confirm('Xoá hẳn cuộc trò chuyện này?')) return;
+            try {
+              await mnemosyne.deleteChat(sessionId);
+              refreshSessions();
+              navigate({ view: 'chat' });
+            } catch (e) {
+              setLoadError(e);
+            }
+          }}
+        >
+          <i className="ph ph-trash" />
         </button>
       </PageHeader>
 

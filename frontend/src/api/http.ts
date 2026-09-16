@@ -35,7 +35,7 @@ export class ApiError extends Error {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   /** LLM-backed calls (Socratic, quiz generation) legitimately take tens of seconds. */
   timeoutMs?: number;

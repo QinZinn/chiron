@@ -3,6 +3,7 @@
  * editable here: they live in frontend/.env and never reach the browser.
  */
 import { useState } from 'react';
+import { mnemosyne } from '../api/mnemosyne';
 import { config } from '../config';
 import { TOKEN_PREFIX } from '../api/session';
 import { ACCENTS, useApp, type Health } from '../state/app';
@@ -21,7 +22,11 @@ function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
 const HEALTH_TEXT: Record<Health, string> = { ok: 'Đang chạy', down: 'Không kết nối được', checking: 'Đang kiểm tra…' };
 
 export function SettingsView() {
-  const { settings, updateSettings, token, saveToken, user, userError, reloadUser, health, recheck } = useApp();
+  const { settings, updateSettings, token, saveToken, user, userError, reloadUser, health, recheck, studySets, reloadSets } =
+    useApp();
+  const [style, setStyle] = useState<string>();
+  const [styleSaving, setStyleSaving] = useState(false);
+  const [setsError, setSetsError] = useState<unknown>();
   const proxy = health.proxy;
   const [draft, setDraft] = useState('');
   const rejected = userError instanceof ApiError && userError.kind === 'unauthenticated';
@@ -120,6 +125,64 @@ export function SettingsView() {
           )}
         </section>
 
+        {user && (
+          <section className="set-sec">
+            <h4>Hồ sơ học tập</h4>
+            <p>Một dòng mô tả cách bạn học. Mnemosyne lưu kèm người học; hiện chưa dùng vào việc sinh nội dung.</p>
+            <form
+              className="set-row"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setStyleSaving(true);
+                try {
+                  await mnemosyne.patchMe((style ?? user.learning_style ?? '').trim() || null);
+                  reloadUser();
+                  setStyle(undefined);
+                } finally {
+                  setStyleSaving(false);
+                }
+              }}
+            >
+              <label htmlFor="style">Cách học</label>
+              <input
+                id="style"
+                className="input"
+                style={{ width: 'auto', minWidth: 300 }}
+                lang="vi"
+                placeholder="Ví dụ: Lớp 11 · thích ví dụ thực tế"
+                value={style ?? user.learning_style ?? ''}
+                onChange={(e) => setStyle(e.target.value)}
+              />
+              <button className="btn btn-soft" type="submit" disabled={styleSaving || style === undefined}>
+                {styleSaving ? <span className="spin" /> : <i className="ph ph-check" />}Lưu
+              </button>
+            </form>
+          </section>
+        )}
+
+        {user && studySets && studySets.length > 0 && (
+          <section className="set-sec">
+            <h4>Bộ thẻ</h4>
+            <p>
+              Đổi tên hoặc xoá. Xoá một bộ thẻ sẽ xoá luôn thẻ, lịch sử ôn, câu quiz và phiên Học bài thuộc bộ đó —
+              không khôi phục được.
+            </p>
+            {setsError != null && <ErrorNotice error={setsError} compact />}
+            <div className="list" style={{ maxWidth: 680 }}>
+              {studySets.map((s) => (
+                <StudySetRow
+                  key={s.id}
+                  id={s.id}
+                  name={s.name}
+                  topic={s.topic}
+                  onDone={reloadSets}
+                  onError={setSetsError}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="set-sec">
           <h4>Giao diện</h4>
           <p>Ba tuỳ chọn của bản thiết kế: màu nhấn, thu gọn thanh bên, nền bản đồ sao.</p>
@@ -205,5 +268,108 @@ export function SettingsView() {
         </section>
       </div>
     </main>
+  );
+}
+
+/** One editable study set: rename in place, delete with a confirmation. */
+function StudySetRow({
+  id,
+  name,
+  topic,
+  onDone,
+  onError,
+}: {
+  id: string;
+  name: string;
+  topic: string | null;
+  onDone: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [draft, setDraft] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  const rename = async () => {
+    if (draft === undefined || !draft.trim()) return;
+    setBusy(true);
+    try {
+      await mnemosyne.patchStudySet(id, { name: draft.trim() });
+      setDraft(undefined);
+      onDone();
+    } catch (e) {
+      onError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await mnemosyne.deleteStudySet(id);
+      setConfirming(false);
+      onDone();
+    } catch (e) {
+      onError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="wk">
+      <div style={{ minWidth: 0 }}>
+        {draft === undefined ? (
+          <>
+            <div className="wk-title" style={{ fontSize: 15 }}>{name}</div>
+            {topic && <span className="wk-meta">{topic}</span>}
+          </>
+        ) : (
+          <input
+            className="input"
+            lang="vi"
+            value={draft}
+            autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) rename();
+              if (e.key === 'Escape') setDraft(undefined);
+            }}
+          />
+        )}
+        {confirming && (
+          <div className="notice notice-warn" style={{ marginTop: 10 }}>
+            <i className="ph ph-warning" />
+            <div>
+              <div className="notice-title">Xoá “{name}” và mọi thứ trong đó?</div>
+              <div>Thẻ, lịch sử ôn, câu quiz và phiên Học bài của bộ thẻ này sẽ mất hẳn.</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-soft rate-again" onClick={remove} disabled={busy}>
+                  {busy ? <span className="spin" /> : <i className="ph ph-trash" />}Xoá hẳn
+                </button>
+                <button className="btn btn-soft" onClick={() => setConfirming(false)} disabled={busy}>Giữ lại</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="wk-side">
+        {draft === undefined ? (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="icon-btn" title="Đổi tên" onClick={() => setDraft(name)}>
+              <i className="ph ph-pencil-simple" />
+            </button>
+            <button className="icon-btn" title="Xoá bộ thẻ" onClick={() => setConfirming(true)}>
+              <i className="ph ph-trash" />
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn btn-soft" onClick={rename} disabled={busy || !draft.trim()}>Lưu</button>
+            <button className="btn btn-soft" onClick={() => setDraft(undefined)} disabled={busy}>Huỷ</button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

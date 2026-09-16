@@ -193,6 +193,33 @@ export const mnemosyne = {
   stats: (days = 14) =>
     request<Stats>(S, `${base}/stats?days=${days}&tz_offset_minutes=${-new Date().getTimezoneOffset()}`),
 
+  patchMe: (learningStyle: string | null) =>
+    request<User>(S, `${base}/me`, { method: 'PATCH', body: { learning_style: learningStyle } }),
+
+  patchCard: (cardId: string, patch: { question?: string; answer?: string }) =>
+    request<{ id: string; question: string; answer: string }>(S, `${base}/cards/${encodeURIComponent(cardId)}`, {
+      method: 'PATCH',
+      body: patch,
+    }),
+
+  deleteCard: (cardId: string) =>
+    request<{ deleted: boolean }>(S, `${base}/cards/${encodeURIComponent(cardId)}`, { method: 'DELETE' }),
+
+  patchStudySet: (setId: string, patch: { name?: string; topic?: string | null }) =>
+    request<StudySet>(S, `${base}/study_sets/${encodeURIComponent(setId)}`, { method: 'PATCH', body: patch }),
+
+  deleteStudySet: (setId: string) =>
+    request<{ deleted: boolean }>(S, `${base}/study_sets/${encodeURIComponent(setId)}`, { method: 'DELETE' }),
+
+  deleteQuizQuestion: (questionId: string) =>
+    request<{ deleted: boolean }>(S, `${base}/quiz/${encodeURIComponent(questionId)}`, { method: 'DELETE' }),
+
+  deleteSocratic: (sessionId: string) =>
+    request<{ deleted: boolean }>(S, `${base}/socratic/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
+
+  deleteChat: (sessionId: string) =>
+    request<{ deleted: boolean }>(S, `${base}/chat/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
+
   weakCards: (includeClosed = false) =>
     request<WeakResponse>(S, `${base}/weak_cards?include_closed=${includeClosed}`),
 

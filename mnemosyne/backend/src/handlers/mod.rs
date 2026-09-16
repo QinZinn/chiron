@@ -8,6 +8,7 @@ pub mod cards;
 pub mod chat;
 pub mod cards_from_node;
 pub mod due;
+pub mod edit;
 pub mod feynman;
 pub mod generate;
 pub mod quiz;
