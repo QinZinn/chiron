@@ -12,7 +12,6 @@ export default defineConfig(({ mode }) => {
 
   const publicConfig = {
     mnemosyneUrl: trimSlash(env.CHIRON_MNEMOSYNE_URL || 'http://127.0.0.1:8081'),
-    defaultUserId: env.CHIRON_MNEMOSYNE_USER_ID || '',
     autoStudyCalendar: env.CHIRON_GCAL_AUTO_STUDY_CALENDAR || 'Auto-Study',
     ignoredCalendars: (env.CHIRON_GCAL_IGNORED_CALENDARS || '')
       .split(',')

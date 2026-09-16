@@ -8,7 +8,7 @@ import { mnemosyne, type DueCard, type Rating, type ReviewResponse } from '../ap
 import { useApp } from '../state/app';
 import { useAsync } from '../lib/useAsync';
 import { relative } from '../lib/time';
-import { ErrorNotice, Loading, NeedUser, PageHeader } from '../components/ui';
+import { ErrorNotice, Loading, NeedToken, PageHeader } from '../components/ui';
 
 const RATINGS: { id: Rating; label: string; hint: string; cls: string; key: string }[] = [
   { id: 'again', label: 'Quên', hint: 'không nhớ ra', cls: 'rate-again', key: '1' },
@@ -18,20 +18,20 @@ const RATINGS: { id: Rating; label: string; hint: string; cls: string; key: stri
 ];
 
 export function FlashcardsView() {
-  const { userId } = useApp();
+  const { user } = useApp();
   return (
     <main className="main">
       <PageHeader title="Thẻ ghi nhớ" />
       <div className="page">
-        <div className="page-inner">{userId ? <Review userId={userId} /> : <NeedUser />}</div>
+        <div className="page-inner">{user ? <Review /> : <NeedToken />}</div>
       </div>
     </main>
   );
 }
 
-function Review({ userId }: { userId: string }) {
+function Review() {
   const { studySets, refreshDue } = useApp();
-  const dueQ = useAsync(() => mnemosyne.due(userId, 100), [userId]);
+  const dueQ = useAsync(() => mnemosyne.due(100), []);
   const [queue, setQueue] = useState<DueCard[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [rating, setRating] = useState<Rating>();
@@ -54,7 +54,7 @@ function Review({ userId }: { userId: string }) {
     setRating(r);
     setReviewError(undefined);
     try {
-      const res = await mnemosyne.review(current.card_id, userId, r);
+      const res = await mnemosyne.review(current.card_id, r);
       setLast({ rating: r, res });
       setQueue((q) => q.slice(1));
       setRevealed(false);

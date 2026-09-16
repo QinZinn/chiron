@@ -250,6 +250,11 @@ async fn main() -> std::io::Result<()> {
             .allowed_origin("http://localhost:4173")
             .allowed_origin("http://127.0.0.1:4173")
             .allowed_methods(["GET", "POST"])
+            // AUTHORIZATION is what makes these requests preflighted in the
+            // first place: the browser sends OPTIONS before any call carrying
+            // a bearer token, and omitting it here fails every authenticated
+            // request with a CORS error that looks like the server is down.
+            .allowed_header(header::AUTHORIZATION)
             .allowed_header(header::CONTENT_TYPE)
             .max_age(3600);
 

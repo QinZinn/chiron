@@ -50,7 +50,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
 // ─────────────────────────────────────────────────────────────── 1a — new chat
 
 function NewChat() {
-  const { health, userId, studySets, studySetsError, reloadSets, upsertRecent } = useApp();
+  const { health, user, studySets, studySetsError, reloadSets, upsertRecent } = useApp();
   const [setId, setSetId] = useState('');
   const [text, setText] = useState('');
   const [starting, setStarting] = useState(false);
@@ -64,23 +64,23 @@ function NewChat() {
   let blocked: string | undefined;
   if (down) blocked = 'Không kết nối được Mnemosyne — Học bài tạm thời không dùng được.';
   else if (health.mnemosyne === 'checking') blocked = undefined;
-  else if (!userId) blocked = 'Chưa chọn người học — mở Cài đặt để chọn.';
+  else if (!user) blocked = 'Chưa đăng nhập Mnemosyne — dán token trong Cài đặt.';
   else if (studySetsError) blocked = friendly(studySetsError);
   else if (studySets && studySets.length === 0) blocked = 'Người học này chưa có bộ thẻ nào trong Mnemosyne.';
 
   const start = async () => {
-    if (!setId || !userId) return;
+    if (!setId || !user) return;
     setStarting(true);
     setError(undefined);
     try {
-      const res = await mnemosyne.socraticStart(setId, userId);
+      const res = await mnemosyne.socraticStart(setId);
       const setName = studySets?.find((s) => s.id === setId)?.name ?? 'Phiên Học bài';
       const now = new Date().toISOString();
       handoff.set(res.session_id, {
         messages: [{ role: 'assistant', content: res.opening_message, flagged_misconception: null, created_at: now }],
         firstReply: text.trim() || undefined,
       });
-      upsertRecent({ sessionId: res.session_id, userId, setId, setName, startedAt: now, ended: false });
+      upsertRecent({ sessionId: res.session_id, userId: user.id, setId, setName, startedAt: now, ended: false });
       navigate({ view: 'chat', sessionId: res.session_id });
     } catch (e) {
       setError(friendly(e));
