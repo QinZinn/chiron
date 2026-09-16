@@ -1,9 +1,11 @@
 /**
- * Mnemosyne (Rust/Actix, 127.0.0.1:8081). Called directly from the browser —
- * it holds no secret, and its CORS policy allows this frontend's origin.
+ * Mnemosyne (Rust/Actix, 127.0.0.1:8081). Called directly from the browser
+ * under its CORS policy, with the learner's bearer token attached by
+ * `api/http.ts`.
  *
- * No auth: `user_id` is passed in the clear, exactly as the API expects.
- * Shapes mirror Mnemosyne/backend/src/handlers/*.rs.
+ * No function here takes a `user_id`: the server derives the learner from the
+ * token, so the browser cannot ask for someone else's rows even by mistake.
+ * Shapes mirror mnemosyne/backend/src/handlers/*.rs.
  */
 import { config } from '../config';
 import { request } from './http';
@@ -99,26 +101,26 @@ export const SOCRATIC_TURN_CAP_MESSAGES = 40;
 export const QUIZ_MAX_COUNT = 20;
 
 export const mnemosyne = {
-  health: () => request<string>(S, `${base}/health`, { timeoutMs: 4_000 }),
+  // Liveness needs no token: "is it up" must be answerable before "who am I".
+  health: () => request<string>(S, `${base}/health`, { timeoutMs: 4_000, anonymous: true }),
 
-  listUsers: () => request<User[]>(S, `${base}/users`),
+  /// The learner this token belongs to — the frontend's whole idea of "who".
+  me: () => request<User>(S, `${base}/me`),
 
-  listStudySets: (userId: string) =>
-    request<StudySet[]>(S, `${base}/study_sets?user_id=${encodeURIComponent(userId)}`),
+  listStudySets: () => request<StudySet[]>(S, `${base}/study_sets`),
 
-  due: (userId: string, limit = 100) =>
-    request<DueResponse>(S, `${base}/due?user_id=${encodeURIComponent(userId)}&limit=${limit}`),
+  due: (limit = 100) => request<DueResponse>(S, `${base}/due?limit=${limit}`),
 
-  review: (cardId: string, userId: string, rating: Rating) =>
+  review: (cardId: string, rating: Rating) =>
     request<ReviewResponse>(S, `${base}/review`, {
       method: 'POST',
-      body: { card_id: cardId, user_id: userId, rating },
+      body: { card_id: cardId, rating },
     }),
 
-  socraticStart: (studySetId: string, userId: string) =>
+  socraticStart: (studySetId: string) =>
     request<{ session_id: string; opening_message: string }>(S, `${base}/socratic/start`, {
       method: 'POST',
-      body: { study_set_id: studySetId, user_id: userId },
+      body: { study_set_id: studySetId },
       timeoutMs: LLM_TIMEOUT_MS,
     }),
 
@@ -154,10 +156,10 @@ export const mnemosyne = {
       `${base}/quiz/${encodeURIComponent(setId)}`,
     ),
 
-  quizAttempt: (questionId: string, userId: string, selectedIndex: number) =>
+  quizAttempt: (questionId: string, selectedIndex: number) =>
     request<{ is_correct: boolean; correct_index: number }>(
       S,
       `${base}/quiz/${encodeURIComponent(questionId)}/attempt`,
-      { method: 'POST', body: { user_id: userId, selected_index: selectedIndex } },
+      { method: 'POST', body: { selected_index: selectedIndex } },
     ),
 };

@@ -171,24 +171,34 @@ export function ComingSoon({ title, children }: { title: string; children: React
   );
 }
 
-/** Mnemosyne has no auth, so "who is learning" is a local choice made in Cài đặt. */
-export function NeedUser() {
-  const { users, usersError, health } = useApp();
-  if (health.mnemosyne === 'down' || usersError) {
-    return <ErrorNotice error={usersError ?? new ApiError({ kind: 'unreachable', service: 'Mnemosyne', message: '' })} />;
+/**
+ * Shown wherever a learner's own data would go when this browser holds no
+ * usable token. Separate from ErrorNotice on purpose: "chưa đăng nhập" is a
+ * thing the learner can fix in ten seconds, not a failure report.
+ */
+export function NeedToken() {
+  const { token, userError, userLoading, health } = useApp();
+  if (health.mnemosyne === 'down') {
+    return <ErrorNotice error={new ApiError({ kind: 'unreachable', service: 'Mnemosyne', message: '' })} />;
   }
+  // A token in hand but /me still in flight is neither "logged in" nor
+  // "logged out" — saying "chưa đăng nhập" here would blame the learner for a
+  // request that has not finished.
+  if (token && userLoading) return <Loading label="Đang kiểm tra token…" />;
+  const rejected = userError instanceof ApiError && userError.kind === 'unauthenticated';
   return (
-    <div className="notice notice-info">
-      <i className="ph ph-user-circle" />
+    <div className={`notice ${rejected ? 'notice-warn' : 'notice-info'}`}>
+      <i className={`ph ${rejected ? 'ph-key' : 'ph-user-circle'}`} />
       <div>
-        <div className="notice-title">Chưa chọn người học</div>
+        <div className="notice-title">{rejected ? 'Token không được chấp nhận' : 'Chưa đăng nhập Mnemosyne'}</div>
         <div>
-          {users && users.length === 0
-            ? <>Mnemosyne chưa có user nào. Tạo bằng <code>POST /users</code> rồi quay lại.</>
-            : 'Chọn người học trong Cài đặt để xem dữ liệu của họ.'}
+          {rejected
+            ? <>Mnemosyne từ chối token đang lưu — có thể nó đã bị thu hồi. Dán token khác trong Cài đặt.</>
+            : <>Dán token của bạn trong Cài đặt. Chưa có thì cấp bằng <code>cargo run -p backend -- create-user &lt;email&gt;</code> trong <code>mnemosyne/</code>.</>}
         </div>
+        {userError != null && !rejected && <div style={{ marginTop: 6 }}><ErrorNotice error={userError} compact /></div>}
         <button className="btn btn-soft" onClick={() => navigate({ view: 'settings' })}>
-          <i className="ph ph-gear-six" />Mở Cài đặt
+          <i className="ph ph-gear-six" />{token ? 'Mở Cài đặt' : 'Dán token'}
         </button>
       </div>
     </div>

@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { mnemosyne, QUIZ_MAX_COUNT, type QuizQuestion } from '../api/mnemosyne';
 import { useApp } from '../state/app';
 import { useAsync } from '../lib/useAsync';
-import { ErrorNotice, Loading, NeedUser, PageHeader } from '../components/ui';
+import { ErrorNotice, Loading, NeedToken, PageHeader } from '../components/ui';
 
 type Attempt =
   | { state: 'sending'; selected: number }
@@ -18,18 +18,18 @@ type Attempt =
 const KEYS = 'ABCDEF';
 
 export function QuizView() {
-  const { userId } = useApp();
+  const { user } = useApp();
   return (
     <main className="main">
       <PageHeader title="Quiz" />
       <div className="page">
-        <div className="page-inner">{userId ? <QuizBody userId={userId} /> : <NeedUser />}</div>
+        <div className="page-inner">{user ? <QuizBody /> : <NeedToken />}</div>
       </div>
     </main>
   );
 }
 
-function QuizBody({ userId }: { userId: string }) {
+function QuizBody() {
   const { studySets, studySetsError, reloadSets } = useApp();
   const [setId, setSetId] = useState('');
   useEffect(() => {
@@ -91,7 +91,7 @@ function QuizBody({ userId }: { userId: string }) {
     if (cur && cur.state !== 'error') return;
     setAttempts((a) => ({ ...a, [q.id]: { state: 'sending', selected: idx } }));
     try {
-      const r = await mnemosyne.quizAttempt(q.id, userId, idx);
+      const r = await mnemosyne.quizAttempt(q.id, idx);
       setAttempts((a) => ({ ...a, [q.id]: { state: 'done', selected: idx, isCorrect: r.is_correct, correctIndex: r.correct_index } }));
     } catch (e) {
       setAttempts((a) => ({ ...a, [q.id]: { state: 'error', selected: idx, error: e } }));

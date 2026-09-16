@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 use crate::llm_provider::{LLMProvider, LLMMessage};
 use super::{describe_llm_failure, error_response};
+use crate::auth::AuthedUser;
 
 /// Cap on total card content included in the evaluation prompt.
 const MAX_CARD_CONTEXT_CHARS: usize = 6000;
@@ -30,13 +31,7 @@ const MAX_EXPLANATION_CHARS: usize = 4000;
 
 #[derive(Debug, Deserialize)]
 pub struct FeynmanEvaluateRequest {
-    pub user_id: Uuid,
     pub explanation_text: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct HistoryQuery {
-    pub user_id: Uuid,
 }
 
 #[derive(Debug, Serialize)]
@@ -189,16 +184,19 @@ fn build_system_prompt(card_context: &str) -> String {
 pub async fn evaluate(
     pool: web::Data<PgPool>,
     llm: web::Data<Box<dyn LLMProvider>>,
+    user: AuthedUser,
     path: web::Path<Uuid>,
     body: web::Json<FeynmanEvaluateRequest>,
 ) -> HttpResponse {
     let set_id = path.into_inner();
 
-    // 1. Validate set_id exists.
+    // 1. The set must exist and be this learner's — one query for both, so
+    //    another learner's set is indistinguishable from a missing one.
     let set_exists: bool = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM study_sets WHERE id = $1)",
+        "SELECT EXISTS(SELECT 1 FROM study_sets WHERE id = $1 AND user_id = $2)",
     )
     .bind(set_id)
+    .bind(user.user_id)
     .fetch_one(pool.get_ref())
     .await
     {
@@ -272,7 +270,7 @@ pub async fn evaluate(
                 Err(parse_err) => {
                     let _ = log_ai_interaction(
                         pool.get_ref(),
-                        body.user_id,
+                        user.user_id,
                         &prompt_log,
                         &raw,
                         resp.total_tokens,
@@ -303,7 +301,7 @@ pub async fn evaluate(
             {
                 let _ = log_ai_interaction(
                     pool.get_ref(),
-                    body.user_id,
+                    user.user_id,
                     &prompt_log,
                     &raw,
                     resp.total_tokens,
@@ -324,7 +322,7 @@ pub async fn evaluate(
                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                    RETURNING id"#,
             )
-            .bind(body.user_id)
+            .bind(user.user_id)
             .bind(set_id)
             .bind(&body.explanation_text)
             .bind(parsed.clarity_score)
@@ -339,7 +337,7 @@ pub async fn evaluate(
                 Err(e) => {
                     let _ = log_ai_interaction(
                         pool.get_ref(),
-                        body.user_id,
+                        user.user_id,
                         &prompt_log,
                         &raw,
                         resp.total_tokens,
@@ -355,7 +353,7 @@ pub async fn evaluate(
             // 9. Log the AI interaction.
             let _ = log_ai_interaction(
                 pool.get_ref(),
-                body.user_id,
+                user.user_id,
                 &prompt_log,
                 &raw,
                 resp.total_tokens,
@@ -376,7 +374,7 @@ pub async fn evaluate(
             let failure = describe_llm_failure(&api_err);
             let _ = log_ai_interaction(
                 pool.get_ref(),
-                body.user_id,
+                user.user_id,
                 &prompt_log,
                 &failure.placeholder,
                 failure.tokens_used,
@@ -390,8 +388,8 @@ pub async fn evaluate(
 #[get("/study_sets/{set_id}/feynman_evaluate/history")]
 pub async fn history(
     pool: web::Data<PgPool>,
+    user: AuthedUser,
     path: web::Path<Uuid>,
-    query: web::Query<HistoryQuery>,
 ) -> HttpResponse {
     let set_id = path.into_inner();
 
@@ -403,7 +401,7 @@ pub async fn history(
            ORDER BY created_at ASC"#,
     )
     .bind(set_id)
-    .bind(query.user_id)
+    .bind(user.user_id)
     .fetch_all(pool.get_ref())
     .await
     {

@@ -2,8 +2,11 @@
  * Cài đặt — local only (this browser's localStorage). Secrets are not
  * editable here: they live in frontend/.env and never reach the browser.
  */
+import { useState } from 'react';
 import { config } from '../config';
+import { TOKEN_PREFIX } from '../api/session';
 import { ACCENTS, useApp, type Health } from '../state/app';
+import { ApiError } from '../api/http';
 import { ErrorNotice, PageHeader } from '../components/ui';
 
 function Dot({ h }: { h: Health | 'off' }) {
@@ -18,9 +21,10 @@ function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
 const HEALTH_TEXT: Record<Health, string> = { ok: 'Đang chạy', down: 'Không kết nối được', checking: 'Đang kiểm tra…' };
 
 export function SettingsView() {
-  const { settings, updateSettings, users, usersError, userId, health, recheck } = useApp();
+  const { settings, updateSettings, token, saveToken, user, userError, reloadUser, health, recheck } = useApp();
   const proxy = health.proxy;
-  const chosenMissing = Boolean(settings.userId) && users !== undefined && !users.some((u) => u.id === settings.userId);
+  const [draft, setDraft] = useState('');
+  const rejected = userError instanceof ApiError && userError.kind === 'unauthenticated';
 
   return (
     <main className="main">
@@ -36,35 +40,83 @@ export function SettingsView() {
 
         <section className="set-sec">
           <h4>Người học</h4>
-          <p>Mnemosyne chưa có đăng nhập — mọi yêu cầu gửi kèm <code>user_id</code> của người được chọn ở đây.</p>
-          {usersError != null ? (
-            <ErrorNotice error={usersError} compact />
+          <p>
+            Mnemosyne nhận diện bạn bằng token. Cấp token bằng lệnh
+            {' '}<code>cargo run -p backend -- create-user &lt;email&gt;</code> trong <code>mnemosyne/</code>;
+            token chỉ hiện đúng một lần. Nó được lưu trong trình duyệt này, không nằm trong <code>.env</code>.
+          </p>
+
+          {user ? (
+            <>
+              <div className="set-row">
+                <label>Đang đăng nhập</label>
+                <span style={{ fontSize: 14 }}>
+                  {user.email}
+                  {user.learning_style ? <span className="sub"> · {user.learning_style}</span> : null}
+                </span>
+              </div>
+              <div className="set-row">
+                <label>Token</label>
+                <span className="wk-meta">
+                  {/* Only the prefix and last 4 characters: enough to tell two
+                      tokens apart, not enough to reuse one from a screenshot. */}
+                  <code>{TOKEN_PREFIX}…{token.slice(-4)}</code>
+                </span>
+                <button
+                  className="btn btn-soft"
+                  onClick={() => {
+                    saveToken('');
+                    setDraft('');
+                  }}
+                >
+                  <i className="ph ph-sign-out" />Đăng xuất
+                </button>
+              </div>
+            </>
           ) : (
-            <div className="set-row">
-              <label htmlFor="user">Người học hiện tại</label>
-              <select
-                id="user"
-                className="input"
-                style={{ width: 'auto', minWidth: 280 }}
-                value={userId}
-                onChange={(e) => updateSettings({ userId: e.target.value })}
-                disabled={!users}
+            <>
+              {rejected && (
+                <div className="notice notice-warn" style={{ marginBottom: 12 }}>
+                  <i className="ph ph-key" />
+                  <div>Token đang lưu bị Mnemosyne từ chối — có thể đã bị thu hồi. Dán token khác.</div>
+                </div>
+              )}
+              {!rejected && userError != null && <ErrorNotice error={userError} compact />}
+              <form
+                className="set-row"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  saveToken(draft);
+                  setDraft('');
+                }}
               >
-                <option value="">{users ? (users.length ? '— Chọn người học —' : 'Mnemosyne chưa có user nào') : 'Đang tải…'}</option>
-                {users?.map((u) => (
-                  <option key={u.id} value={u.id}>{u.email}{u.learning_style ? ` · ${u.learning_style}` : ''}</option>
-                ))}
-              </select>
-            </div>
+                <label htmlFor="token">Dán token</label>
+                <input
+                  id="token"
+                  className="input"
+                  style={{ width: 'auto', minWidth: 320, fontFamily: 'ui-monospace, Menlo, monospace' }}
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={`${TOKEN_PREFIX}…`}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                />
+                <button className="btn btn-primary btn-main" type="submit" disabled={!draft.trim()}>
+                  <i className="ph ph-sign-in" />Đăng nhập
+                </button>
+              </form>
+              {draft.trim() !== '' && !draft.trim().startsWith(TOKEN_PREFIX) && (
+                <p className="wk-meta" style={{ color: 'var(--yel)' }}>
+                  Token của Mnemosyne bắt đầu bằng <code>{TOKEN_PREFIX}</code> — kiểm tra lại chuỗi vừa dán.
+                </p>
+              )}
+            </>
           )}
-          {chosenMissing && (
-            <div className="notice notice-warn">
-              <i className="ph ph-warning" />
-              <div>Người học đã chọn trước đó không còn trong Mnemosyne (có thể database đã được dựng lại). Hãy chọn lại.</div>
-            </div>
-          )}
-          {!settings.userId && config.defaultUserId && (
-            <p className="wk-meta">Mặc định lấy từ <code>CHIRON_MNEMOSYNE_USER_ID</code>.</p>
+          {token && !user && health.mnemosyne === 'ok' && !rejected && (
+            <button className="btn btn-soft" onClick={reloadUser}>
+              <i className="ph ph-arrow-clockwise" />Thử lại
+            </button>
           )}
         </section>
 

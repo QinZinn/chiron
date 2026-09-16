@@ -12,6 +12,7 @@ use chrono::{DateTime, Utc};
 
 use crate::llm_provider::{LLMProvider, LLMMessage};
 use super::{describe_llm_failure, error_response};
+use crate::auth::AuthedUser;
 
 /// Hard cap on source text length to keep token cost predictable and bounded.
 /// Roughly 1.5-2K tokens of input at average English density — combined with
@@ -72,6 +73,7 @@ struct GenerateCardsResponse {
 pub async fn generate_cards(
     pool: web::Data<PgPool>,
     llm: web::Data<Box<dyn LLMProvider>>,
+    user: AuthedUser,
     path: web::Path<Uuid>,
     body: web::Json<GenerateCardsRequest>,
 ) -> HttpResponse {
@@ -107,12 +109,15 @@ pub async fn generate_cards(
         );
     }
 
-    // 3. Validate set_id exists AND fetch its owning user_id (needed for the
-    //    ai_interactions row, whose user_id is NOT NULL with FK to users).
+    // 3. The set must exist AND belong to this learner. Matching on both
+    //    columns is also the access check: another learner's set answers the
+    //    same as a missing one. The row carries the owner the ai_interactions
+    //    insert needs (user_id is NOT NULL with an FK to users).
     let owner: Option<StudySetOwnerRow> = match sqlx::query_as::<_, StudySetOwnerRow>(
-        "SELECT user_id FROM study_sets WHERE id = $1",
+        "SELECT user_id FROM study_sets WHERE id = $1 AND user_id = $2",
     )
     .bind(set_id)
+    .bind(user.user_id)
     .fetch_optional(pool.get_ref())
     .await
     {

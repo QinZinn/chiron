@@ -51,6 +51,7 @@ use uuid::Uuid;
 use crate::ks_client::{KsClient, KsError, KsNode};
 use crate::llm_provider::{LLMError, LLMMessage, LLMProvider};
 use super::{describe_llm_failure, error_response};
+use crate::auth::AuthedUser;
 
 /// Value of `cards.source` written by this handler.
 const SOURCE_KNOWLEDGE_STORE: &str = "knowledge_store";
@@ -193,13 +194,20 @@ pub async fn from_node(
     pool: web::Data<PgPool>,
     llm: web::Data<Box<dyn LLMProvider>>,
     ks: web::Data<Option<KsClient>>,
+    user: AuthedUser,
     body: web::Json<FromNodeRequest>,
 ) -> HttpResponse {
-    // 1. The study set must exist. Its owner is also the user_id the
-    //    ai_interactions row needs (NOT NULL, FK to users).
+    // 1. The study set must exist and belong to the caller's learner. The
+    //    Knowledge Store's card_sync job authenticates as that learner (its
+    //    KS_MNEMOSYNE_TOKEN), so syncing keeps working — but a token cannot
+    //    push generated cards into somebody else's set. The row also carries
+    //    the user_id the ai_interactions insert needs (NOT NULL, FK).
     let owner: Option<StudySetOwnerRow> =
-        match sqlx::query_as::<_, StudySetOwnerRow>("SELECT user_id FROM study_sets WHERE id = $1")
+        match sqlx::query_as::<_, StudySetOwnerRow>(
+            "SELECT user_id FROM study_sets WHERE id = $1 AND user_id = $2",
+        )
             .bind(body.study_set_id)
+            .bind(user.user_id)
             .fetch_optional(pool.get_ref())
             .await
         {

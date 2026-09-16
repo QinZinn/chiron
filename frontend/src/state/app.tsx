@@ -8,8 +8,8 @@
  * came from it, and every consumer renders that for its own area only.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { config } from '../config';
 import { mnemosyne, type StudySet, type User } from '../api/mnemosyne';
+import { getToken, onTokenChange, setToken } from '../api/session';
 import { ks, proxyStatus, type ProxyStatus } from '../api/ks';
 import { loadRange } from '../api/calendar';
 import { addDays, keyBoundsPadded, todayKey } from '../lib/time';
@@ -19,14 +19,12 @@ import { useAsync } from '../lib/useAsync';
 export const ACCENTS = ['#88C0D0', '#81A1C1', '#B48EAD', '#A3BE8C'] as const;
 
 export interface Settings {
-  /** Chosen Mnemosyne user. Empty → CHIRON_MNEMOSYNE_USER_ID → the only user, if exactly one. */
-  userId: string;
   accent: string;
   sidebarCollapsed: boolean;
   starTexture: boolean;
 }
 
-const DEFAULT_SETTINGS: Settings = { userId: '', accent: ACCENTS[0], sidebarCollapsed: false, starTexture: true };
+const DEFAULT_SETTINGS: Settings = { accent: ACCENTS[0], sidebarCollapsed: false, starTexture: true };
 const SETTINGS_KEY = 'chiron.settings.v1';
 
 /**
@@ -54,10 +52,14 @@ interface AppState {
   health: { mnemosyne: Health; ks: Health; proxy: ProxyStatus | null };
   recheck: () => void;
 
-  users: User[] | undefined;
-  usersError: unknown;
-  userId: string;
+  /** The learner's Mnemosyne token, held in this browser (api/session.ts). */
+  token: string;
+  saveToken: (token: string) => void;
+  /** Who that token belongs to, from GET /me. */
   user: User | undefined;
+  userError: unknown;
+  userLoading: boolean;
+  reloadUser: () => void;
 
   studySets: StudySet[] | undefined;
   studySetsError: unknown;
@@ -128,29 +130,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const mOk = health.mnemosyne === 'ok';
 
-  // ---------------------------------------------------------------- user
-  const usersQ = useAsync(() => mnemosyne.listUsers(), [mOk], mOk);
-  const users = usersQ.data;
+  // ---------------------------------------------------------------- learner
+  // The token identifies the learner; there is no picker any more, because a
+  // browser can only be whoever its token says it is.
+  const [token, setTokenState] = useState(getToken);
+  useEffect(() => onTokenChange(setTokenState), []);
+  const saveToken = useCallback((next: string) => setToken(next), []);
 
-  const userId = useMemo(() => {
-    const wanted = settings.userId || config.defaultUserId;
-    if (!users) return wanted; // not loaded yet (or Mnemosyne down): trust the setting
-    if (wanted) return users.some((u) => u.id === wanted) ? wanted : '';
-    return users.length === 1 ? users[0].id : '';
-  }, [settings.userId, users]);
-  const user = users?.find((u) => u.id === userId);
+  const userQ = useAsync(() => mnemosyne.me(), [mOk, token], mOk && Boolean(token));
+  const user = userQ.data;
+  const authed = mOk && Boolean(token) && Boolean(user);
 
-  // Remember an automatic pick (the only user), so a later Mnemosyne outage
-  // still knows who is learning instead of reading as "no user chosen".
-  useEffect(() => {
-    if (!settings.userId && !config.defaultUserId && users?.length === 1) updateSettings({ userId: users[0].id });
-  }, [settings.userId, users, updateSettings]);
-
-  const setsQ = useAsync(() => mnemosyne.listStudySets(userId), [userId, mOk], mOk && Boolean(userId));
+  const setsQ = useAsync(() => mnemosyne.listStudySets(), [token, mOk], authed);
 
   const [dueTick, setDueTick] = useState(0);
   const refreshDue = useCallback(() => setDueTick((t) => t + 1), []);
-  const dueQ = useAsync(() => mnemosyne.due(userId, 100), [userId, mOk, dueTick], mOk && Boolean(userId));
+  const dueQ = useAsync(() => mnemosyne.due(100), [token, mOk, dueTick], authed);
 
   // ---------------------------------------------------------------- calendar badge
   const [todayEventCount, setTodayEventCount] = useState<number>();
@@ -181,17 +176,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return next;
     });
   }, []);
-  const recent = useMemo(() => recentAll.filter((r) => r.userId === userId), [recentAll, userId]);
+  const recent = useMemo(() => recentAll.filter((r) => r.userId === (user?.id ?? '')), [recentAll, user]);
 
   const value: AppState = {
     settings,
     updateSettings,
     health,
     recheck,
-    users,
-    usersError: usersQ.error,
-    userId,
+    token,
+    saveToken,
     user,
+    userError: userQ.error,
+    userLoading: userQ.loading,
+    reloadUser: userQ.reload,
     studySets: setsQ.data,
     studySetsError: setsQ.error,
     reloadSets: setsQ.reload,

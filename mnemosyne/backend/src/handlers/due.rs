@@ -1,4 +1,4 @@
-//! `GET /due` — read-only review queue for a user.
+//! `GET /due` — read-only review queue for the authenticated learner.
 //!
 //! Returns cards the user should review now: either never-reviewed cards, or
 //! cards whose most recent `learning_events` row has `next_review_at <= now()`.
@@ -14,6 +14,7 @@ use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 use super::error_response;
+use crate::auth::AuthedUser;
 
 /// Cap on `limit` to bound query cost.
 const DEFAULT_LIMIT: i64 = 20;
@@ -47,7 +48,6 @@ const DUE_QUERY: &str = r#"SELECT c.id AS card_id, c.set_id, c.question, c.answe
 
 #[derive(Debug, Deserialize)]
 pub struct DueQuery {
-    pub user_id: Option<Uuid>,
     pub limit: Option<i64>,
 }
 
@@ -108,16 +108,11 @@ fn effective_limit(requested: Option<i64>) -> i64 {
 }
 
 #[get("/due")]
-pub async fn due(pool: web::Data<PgPool>, query: web::Query<DueQuery>) -> HttpResponse {
-    // 1. user_id is required. Well-formed but nonexistent user returns an
-    //    empty array (not an error) — the spec says a user with zero cards
-    //    isn't a bug, so the same SQL naturally returns [].
-    let Some(user_id) = query.user_id else {
-        return error_response(
-            actix_web::http::StatusCode::BAD_REQUEST,
-            "user_id query parameter is required",
-        );
-    };
+pub async fn due(pool: web::Data<PgPool>, user: AuthedUser, query: web::Query<DueQuery>) -> HttpResponse {
+    // 1. Whose queue this is comes from the token, not from the request. A
+    //    learner with zero due cards still gets 200 and an empty array — the
+    //    same SQL naturally returns [] — because that is not an error.
+    let user_id = user.user_id;
 
     // 2. limit: default 20, clamp to [1, 100]. A limit of 0 is silly;
     //    silently raise it to 1 rather than 400 — saves the caller a round

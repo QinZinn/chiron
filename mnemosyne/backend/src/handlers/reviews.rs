@@ -13,15 +13,16 @@ use mnemosyne_core::models::{CardState, Rating};
 use mnemosyne_core::scheduling::{FsrsScheduler, NewCardStates};
 
 use super::{classify_db_error, error_response};
+use crate::auth::{owns_card, AuthedUser};
 use crate::todoist_client::TodoistApi;
 use crate::weak_cards;
 
-/// Incoming review request. `rating` is parsed case-insensitively to
+/// Incoming review request. The learner comes from the bearer token, never
+/// from the body. `rating` is parsed case-insensitively to
 /// [`mnemosyne_core::models::Rating`]; anything else is rejected with 400.
 #[derive(Debug, Deserialize)]
 pub struct ReviewRequest {
     pub card_id: Uuid,
-    pub user_id: Uuid,
     pub rating: String,
 }
 
@@ -120,8 +121,32 @@ pub async fn review(
     pool: web::Data<PgPool>,
     scheduler: web::Data<FsrsScheduler>,
     todoist: web::Data<Option<Box<dyn TodoistApi>>>,
+    user: AuthedUser,
     body: web::Json<ReviewRequest>,
 ) -> HttpResponse {
+    let user_id = user.user_id;
+
+    // 0. The card must belong to one of this learner's study sets. Without
+    //    this, a valid token could file reviews against somebody else's card
+    //    and pollute their FSRS history. A card owned by another learner is
+    //    reported as "not found", the same as one that does not exist: telling
+    //    the two apart would let any token probe which card ids are real.
+    match owns_card(pool.get_ref(), user_id, body.card_id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return error_response(
+                actix_web::http::StatusCode::NOT_FOUND,
+                format!("card {} not found", body.card_id),
+            );
+        }
+        Err(e) => {
+            return error_response(
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("database error checking card ownership: {e}"),
+            );
+        }
+    }
+
     // 1. Parse rating (case-insensitive). Reject bad strings with 400 — do
     //    not silently default.
     let rating = match parse_rating(&body.rating) {
@@ -145,7 +170,7 @@ pub async fn review(
     //    stability/difficulty), treat as a brand-new card.
     let prior: Option<PriorEventRow> = match sqlx::query_as::<_, PriorEventRow>(PRIOR_STATE_QUERY)
     .bind(body.card_id)
-    .bind(body.user_id)
+    .bind(user_id)
     .fetch_optional(pool.get_ref())
     .await
     {
@@ -208,7 +233,7 @@ pub async fn review(
     //    (2.5) — it's legacy/unused post-FSRS (see ADR 0001).
     let inserted: InsertedEventRow = match sqlx::query_as::<_, InsertedEventRow>(INSERT_EVENT_QUERY)
     .bind(body.card_id)
-    .bind(body.user_id)
+    .bind(user_id)
     .bind(is_correct)
     .bind(resulting_state.stability as f64)
     .bind(resulting_state.difficulty as f64)
@@ -229,7 +254,7 @@ pub async fn review(
     //    only once the review is stored, and cannot fail the request — it
     //    returns a status it has already logged, never an error. See
     //    crate::weak_cards.
-    weak_cards::sync_after_review(pool.get_ref(), todoist.get_ref().as_deref(), body.card_id, body.user_id)
+    weak_cards::sync_after_review(pool.get_ref(), todoist.get_ref().as_deref(), body.card_id, user_id)
         .await;
 
     // 7. Respond with the persisted state (read back from the DB so the
@@ -387,6 +412,10 @@ mod tests {
         let card_id = test_db::seed_card(&mut conn, set_id, "e2e weak card").await;
         drop(conn);
 
+        // The handler now derives the learner from a bearer token, so the test
+        // has to hold one like any other client does.
+        let token = crate::auth::mint_token(&pool, user_id, Some("test")).await.unwrap();
+
         let todoist = Arc::new(FakeTodoist::default());
         todoist.fail_with(Some(TodoistError::Unreachable("connection refused".into())));
         let app = test::init_service(
@@ -404,7 +433,8 @@ mod tests {
         for rating in ["again", "good", "again", "good", "good"] {
             let req = test::TestRequest::post()
                 .uri("/review")
-                .set_json(serde_json::json!({ "card_id": card_id, "user_id": user_id, "rating": rating }))
+                .insert_header(("Authorization", format!("Bearer {token}")))
+                .set_json(serde_json::json!({ "card_id": card_id, "rating": rating }))
                 .to_request();
             let resp = test::call_service(&app, req).await;
             assert_eq!(resp.status(), actix_web::http::StatusCode::CREATED, "rating {rating}");
@@ -438,6 +468,98 @@ mod tests {
         assert_eq!(tasks, 0, "no task row may exist for a task Todoist never created");
     }
 
+    /// The whole point of the token layer: without one, nothing is recorded.
+    /// A 401 that still wrote the review would be worse than no auth at all,
+    /// so this checks the database as well as the status code.
+    #[actix_web::test]
+    #[ignore = "requires the local Postgres cluster"]
+    async fn reviews_without_a_token_are_refused_and_store_nothing() {
+        use actix_web::{test, App};
+
+        let pool = test_db::pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let (user_id, set_id) = test_db::seed_learner(&mut conn).await;
+        let card_id = test_db::seed_card(&mut conn, set_id, "unauthenticated").await;
+        drop(conn);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(FsrsScheduler::default()))
+                .app_data(web::Data::new(None::<Box<dyn TodoistApi>>))
+                .service(review),
+        )
+        .await;
+
+        for header in [None, Some("Bearer mnem_not-a-real-token")] {
+            let mut req = test::TestRequest::post()
+                .uri("/review")
+                .set_json(serde_json::json!({ "card_id": card_id, "rating": "good" }));
+            if let Some(h) = header {
+                req = req.insert_header(("Authorization", h));
+            }
+            let resp = test::call_service(&app, req.to_request()).await;
+            assert_eq!(
+                resp.status(),
+                actix_web::http::StatusCode::UNAUTHORIZED,
+                "header {header:?}"
+            );
+        }
+
+        let events: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_events WHERE card_id = $1")
+            .bind(card_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM users WHERE id = $1").bind(user_id).execute(&pool).await.unwrap();
+        assert_eq!(events, 0, "a refused request must not leave a review behind");
+    }
+
+    /// A token is not a skeleton key: it authenticates one learner, and that
+    /// learner's reach stops at their own cards.
+    #[actix_web::test]
+    #[ignore = "requires the local Postgres cluster"]
+    async fn reviews_cannot_touch_another_learners_card() {
+        use actix_web::{test, App};
+
+        let pool = test_db::pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let (mine, _my_set) = test_db::seed_learner(&mut conn).await;
+        let (theirs, their_set) = test_db::seed_learner(&mut conn).await;
+        let their_card = test_db::seed_card(&mut conn, their_set, "not mine").await;
+        drop(conn);
+
+        let token = crate::auth::mint_token(&pool, mine, Some("test")).await.unwrap();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(FsrsScheduler::default()))
+                .app_data(web::Data::new(None::<Box<dyn TodoistApi>>))
+                .service(review),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/review")
+            .insert_header(("Authorization", format!("Bearer {token}")))
+            .set_json(serde_json::json!({ "card_id": their_card, "rating": "good" }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        let status = resp.status();
+
+        let events: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_events WHERE card_id = $1")
+            .bind(their_card)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        for u in [mine, theirs] {
+            sqlx::query("DELETE FROM users WHERE id = $1").bind(u).execute(&pool).await.unwrap();
+        }
+
+        assert_eq!(status, actix_web::http::StatusCode::NOT_FOUND);
+        assert_eq!(events, 0, "one learner must not be able to review another's card");
+    }
+
     #[tokio::test]
     #[ignore = "requires the local Postgres cluster"]
     async fn reviews_a_card_that_does_not_exist_is_rejected_as_a_bad_request() {
@@ -462,10 +584,11 @@ mod tests {
             .await
             .expect_err("a review for a card that does not exist must not be stored");
 
-        // There is no existence check before the insert — the foreign key is
-        // what catches this, and classify_db_error turns it into 400, not 404.
-        // Recorded because the distinction is not obvious from reading the
-        // handler: nothing in it mentions a missing card.
+        // The handler's ownership check now answers 404 before the insert is
+        // ever reached, so this documents the layer underneath it: if that
+        // check were ever removed, the foreign key is the last thing standing
+        // between a review and a card that does not exist, and
+        // classify_db_error renders it as 400, not 404.
         let (status, message) = crate::handlers::classify_db_error(&err);
         assert_eq!(status, actix_web::http::StatusCode::BAD_REQUEST);
         assert!(message.contains("foreign key"), "message: {message}");

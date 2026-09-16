@@ -300,3 +300,23 @@ CREATE TABLE weak_card_task_cards (
 );
 
 CREATE INDEX idx_weak_card_task_cards_card_id ON weak_card_task_cards (card_id);
+
+-- ---------------------------------------------------------------------------
+-- Table: user_tokens
+-- API tokens, one or more per learner. Endpoints derive `user_id` from the
+-- token instead of believing a `user_id` field in the request. Only the
+-- SHA-256 hash is stored — the token itself is shown once, when minted by the
+-- `mint-token` CLI command, and cannot be recovered afterwards. SHA-256 rather
+-- than argon2 because these are 32-byte CSPRNG outputs, not passwords: there
+-- is no dictionary to attack, and a work factor would be paid on every request.
+-- ---------------------------------------------------------------------------
+CREATE TABLE user_tokens (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash    TEXT NOT NULL UNIQUE,  -- hex SHA-256; UNIQUE doubles as the lookup index
+    label         TEXT,                  -- "laptop", "KS card-sync" — which token to revoke
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_used_at  TIMESTAMPTZ            -- bumped by the auth lookup itself
+);
+
+CREATE INDEX idx_user_tokens_user_id ON user_tokens (user_id);

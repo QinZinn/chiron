@@ -2,18 +2,21 @@
  * One fetch wrapper for every backend, so that every failure arrives as an
  * ApiError with a `kind` the UI can switch on:
  *
- *   unreachable     the service never answered (down, wrong port, blocked by CORS)
- *   timeout         it did not answer in time
- *   not_configured  the frontend's own .env is missing something (proxy says so)
- *   http            it answered with an error status; `status` + `message` set
+ *   unreachable      the service never answered (down, wrong port, blocked by CORS)
+ *   timeout          it did not answer in time
+ *   not_configured   the frontend's own .env is missing something (proxy says so)
+ *   unauthenticated  no token, or the token was rejected (Mnemosyne 401)
+ *   http             it answered with an error status; `status` + `message` set
  *
  * Views render `unreachable` as "không kết nối được <module>" for their own
  * area only — one module down never takes the rest of the app with it.
  */
 
+import { getToken } from './session';
+
 export type Service = 'Mnemosyne' | 'Knowledge Store' | 'Google Calendar';
 
-export type ApiErrorKind = 'unreachable' | 'timeout' | 'not_configured' | 'http';
+export type ApiErrorKind = 'unreachable' | 'timeout' | 'not_configured' | 'http' | 'unauthenticated';
 
 export class ApiError extends Error {
   readonly kind: ApiErrorKind;
@@ -36,6 +39,8 @@ export interface RequestOptions {
   body?: unknown;
   /** LLM-backed calls (Socratic, quiz generation) legitimately take tens of seconds. */
   timeoutMs?: number;
+  /** Skip the bearer token — only /health, which Mnemosyne serves to anyone. */
+  anonymous?: boolean;
   signal?: AbortSignal;
 }
 
@@ -59,6 +64,22 @@ function messageFrom(body: unknown, fallback: string): { message: string; code?:
 }
 
 export async function request<T>(service: Service, url: string, opts: RequestOptions = {}): Promise<T> {
+  // Mnemosyne is the only service the browser authenticates to directly; the
+  // others are reached through the proxy, which holds their credentials.
+  const headers: Record<string, string> = {};
+  if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+  if (service === 'Mnemosyne' && !opts.anonymous) {
+    const token = getToken();
+    if (!token) {
+      throw new ApiError({
+        kind: 'unauthenticated',
+        service,
+        message: 'Chưa có token Mnemosyne — dán token vào Cài đặt.',
+      });
+    }
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const timeoutMs = opts.timeoutMs ?? 15_000;
   const timeout = AbortSignal.timeout(timeoutMs);
   const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
@@ -67,7 +88,7 @@ export async function request<T>(service: Service, url: string, opts: RequestOpt
   try {
     res = await fetch(url, {
       method: opts.method ?? 'GET',
-      headers: opts.body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      headers,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
       signal,
     });
@@ -97,6 +118,11 @@ export async function request<T>(service: Service, url: string, opts: RequestOpt
 
   if (!res.ok) {
     const { message, code } = messageFrom(body, `${service} trả về HTTP ${res.status}.`);
+    // 401 from Mnemosyne means the token is wrong or revoked — a different
+    // problem from an outage, and a different thing to tell the learner.
+    if (res.status === 401) {
+      throw new ApiError({ kind: 'unauthenticated', service, message, status: 401 });
+    }
     // The proxy reports its own conditions with codes; map them to kinds.
     if (code === 'not_configured') {
       throw new ApiError({ kind: 'not_configured', service, message, status: res.status, code });

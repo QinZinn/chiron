@@ -12,7 +12,7 @@ interface NavItem {
 }
 
 export function Sidebar({ route }: { route: Route }) {
-  const { dueCount, todayEventCount, recent, user, userId, health } = useApp();
+  const { dueCount, todayEventCount, recent, user, token, health } = useApp();
   const [query, setQuery] = useState('');
 
   const items: NavItem[] = [
@@ -94,7 +94,7 @@ export function Sidebar({ route }: { route: Route }) {
             </a>
           ))}
           {shown.length === 0 && (
-            <div className="sb-recent-empty">{q ? 'Không có phiên nào khớp.' : userId ? 'Chưa có phiên Học bài nào.' : ''}</div>
+            <div className="sb-recent-empty">{q ? 'Không có phiên nào khớp.' : user ? 'Chưa có phiên Học bài nào.' : ''}</div>
           )}
         </div>
         <hr className="rule" style={{ margin: '0 0 10px' }} />
@@ -102,10 +102,10 @@ export function Sidebar({ route }: { route: Route }) {
           <div className="avatar">{initials}</div>
           <div className="sb-user-text">
             <div className="sb-user-name">
-              {user ? user.email : health.mnemosyne === 'down' ? 'Không tải được người học' : userId ? 'Đang tải…' : 'Chưa chọn người học'}
+              {user ? user.email : health.mnemosyne === 'down' ? 'Không tải được người học' : token ? 'Đang tải…' : 'Chưa đăng nhập'}
             </div>
             <div className="sb-user-sub">
-              {user ? user.learning_style || 'Người học · Mnemosyne' : health.mnemosyne === 'down' ? 'Mnemosyne mất kết nối' : 'Chọn trong Cài đặt'}
+              {user ? user.learning_style || 'Người học · Mnemosyne' : health.mnemosyne === 'down' ? 'Mnemosyne mất kết nối' : 'Dán token trong Cài đặt'}
             </div>
           </div>
           <i className="ph ph-gear" style={{ fontSize: 15, color: 'var(--dim)', marginLeft: 'auto', display: 'var(--lbl)' }} />

@@ -19,6 +19,7 @@ use uuid::Uuid;
 use crate::ks_client::{KsClient, SaveTranscriptOutcome, TranscriptTurn};
 use crate::llm_provider::{LLMProvider, LLMMessage};
 use super::{describe_llm_failure, error_response};
+use crate::auth::{owns_study_set, AuthedUser};
 
 /// Cap on total card content (Q+A text) included in the system prompt to
 /// keep token cost bounded. ~6000 chars ≈ 1.5K tokens of context.
@@ -40,7 +41,6 @@ const CONTEXT_WINDOW: usize = 20;
 #[derive(Debug, Deserialize)]
 pub struct StartRequest {
     pub study_set_id: Uuid,
-    pub user_id: Uuid,
 }
 
 #[derive(Debug, Deserialize)]
@@ -255,15 +255,16 @@ async fn fetch_card_context(pool: &PgPool, set_id: Uuid) -> Result<Option<String
 pub async fn start(
     pool: web::Data<PgPool>,
     llm: web::Data<Box<dyn LLMProvider>>,
+    user: AuthedUser,
     body: web::Json<StartRequest>,
 ) -> HttpResponse {
-    // 1. Validate study_set exists.
-    let set_exists: bool = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM study_sets WHERE id = $1)",
-    )
-    .bind(body.study_set_id)
-    .fetch_one(pool.get_ref())
-    .await
+    let user_id = user.user_id;
+
+    // 1. The study set must exist AND belong to this learner. One check does
+    //    both, so a set owned by somebody else is indistinguishable from one
+    //    that does not exist — a token cannot use this endpoint to discover
+    //    which set ids are real, or to start a session on another's material.
+    let set_exists: bool = match owns_study_set(pool.get_ref(), user_id, body.study_set_id).await
     {
         Ok(b) => b,
         Err(e) => {
@@ -303,7 +304,7 @@ pub async fn start(
            VALUES ($1, $2)
            RETURNING id, user_id, set_id"#,
     )
-    .bind(body.user_id)
+    .bind(user_id)
     .bind(body.study_set_id)
     .fetch_one(pool.get_ref())
     .await
@@ -348,7 +349,7 @@ pub async fn start(
                 Err(parse_err) => {
                     let _ = log_ai_interaction(
                         pool.get_ref(),
-                        body.user_id,
+                        user_id,
                         &prompt_log,
                         &raw,
                         resp.total_tokens,
@@ -376,7 +377,7 @@ pub async fn start(
             // 8. Log the AI interaction.
             let _ = log_ai_interaction(
                 pool.get_ref(),
-                body.user_id,
+                user_id,
                 &prompt_log,
                 &raw,
                 resp.total_tokens,
@@ -393,7 +394,7 @@ pub async fn start(
             let failure = describe_llm_failure(&api_err);
             let _ = log_ai_interaction(
                 pool.get_ref(),
-                body.user_id,
+                user_id,
                 &prompt_log,
                 &failure.placeholder,
                 failure.tokens_used,
@@ -408,6 +409,7 @@ pub async fn start(
 pub async fn reply(
     pool: web::Data<PgPool>,
     llm: web::Data<Box<dyn LLMProvider>>,
+    user: AuthedUser,
     path: web::Path<Uuid>,
     body: web::Json<ReplyRequest>,
 ) -> HttpResponse {
@@ -415,9 +417,10 @@ pub async fn reply(
 
     // 1. Validate session exists.
     let session: Option<SessionRow> = match sqlx::query_as::<_, SessionRow>(
-        "SELECT id, user_id, set_id FROM socratic_sessions WHERE id = $1",
+        "SELECT id, user_id, set_id FROM socratic_sessions WHERE id = $1 AND user_id = $2",
     )
     .bind(session_id)
+    .bind(user.user_id)
     .fetch_optional(pool.get_ref())
     .await
     {
@@ -679,14 +682,16 @@ async fn sync_transcript_to_ks(
 pub async fn end(
     pool: web::Data<PgPool>,
     ks: web::Data<Option<KsClient>>,
+    user: AuthedUser,
     path: web::Path<Uuid>,
 ) -> HttpResponse {
     let session_id = path.into_inner();
 
     let exists: bool = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM socratic_sessions WHERE id = $1)",
+        "SELECT EXISTS(SELECT 1 FROM socratic_sessions WHERE id = $1 AND user_id = $2)",
     )
     .bind(session_id)
+    .bind(user.user_id)
     .fetch_one(pool.get_ref())
     .await
     {
@@ -737,15 +742,17 @@ pub async fn end(
 #[get("/socratic/{session_id}")]
 pub async fn get_session(
     pool: web::Data<PgPool>,
+    user: AuthedUser,
     path: web::Path<Uuid>,
 ) -> HttpResponse {
     let session_id = path.into_inner();
 
     // Validate session exists.
     let exists: bool = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM socratic_sessions WHERE id = $1)",
+        "SELECT EXISTS(SELECT 1 FROM socratic_sessions WHERE id = $1 AND user_id = $2)",
     )
     .bind(session_id)
+    .bind(user.user_id)
     .fetch_one(pool.get_ref())
     .await
     {
