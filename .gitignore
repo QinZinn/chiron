@@ -1,0 +1,18 @@
+# Secrets — every module reads its own .env, none of them is committed
+.env
+.env.*
+!.env.example
+
+# Rust
+target/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node / frontend
+node_modules/
+dist/
+*.tsbuildinfo
