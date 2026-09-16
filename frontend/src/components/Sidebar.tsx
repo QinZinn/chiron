@@ -12,7 +12,7 @@ interface NavItem {
 }
 
 export function Sidebar({ route }: { route: Route }) {
-  const { dueCount, todayEventCount, recent, user, token, health } = useApp();
+  const { dueCount, weakCount, todayEventCount, recent, user, token, health } = useApp();
   const [query, setQuery] = useState('');
 
   const items: NavItem[] = [
@@ -32,7 +32,12 @@ export function Sidebar({ route }: { route: Route }) {
     },
     { view: 'quiz', icon: 'ph-check-square-offset', label: 'Quiz' },
     { view: 'knowledge', icon: 'ph-graph', label: 'Kiến thức' },
-    { view: 'weak', icon: 'ph-warning-diamond', label: 'Điểm yếu', soon: true },
+    {
+      view: 'weak',
+      icon: 'ph-warning-diamond',
+      label: 'Điểm yếu',
+      badge: weakCount ? { text: String(weakCount), color: 'var(--red)', title: 'Thẻ đang yếu' } : undefined,
+    },
     { view: 'settings', icon: 'ph-gear-six', label: 'Cài đặt' },
   ];
 

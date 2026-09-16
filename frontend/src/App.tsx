@@ -23,7 +23,7 @@ const AREA_NAME: Record<Route['view'], string> = {
 function View({ route }: { route: Route }) {
   switch (route.view) {
     case 'chat':
-      return <ChatView sessionId={route.sessionId} />;
+      return <ChatView sessionId={route.sessionId} newSetId={route.newSetId} />;
     case 'flashcards':
       return <FlashcardsView />;
     case 'quiz':

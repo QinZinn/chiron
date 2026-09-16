@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 export type Route =
-  | { view: 'chat'; sessionId?: string }
+  | { view: 'chat'; sessionId?: string; newSetId?: string }
   | { view: 'flashcards' }
   | { view: 'quiz' }
   | { view: 'knowledge'; nodeId?: string }
@@ -13,6 +13,9 @@ export function parseHash(hash: string): Route {
   const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
   switch (parts[0]) {
     case 'chat':
+      // #/chat/new/<setId> opens the composer with that study set chosen —
+      // what "Học bài" on a weak point needs in order to mean something.
+      if (parts[1] === 'new') return { view: 'chat', newSetId: parts[2] };
       return { view: 'chat', sessionId: parts[1] };
     case 'flashcards':
     case 'quiz':
@@ -30,7 +33,8 @@ export function parseHash(hash: string): Route {
 export function href(route: Route): string {
   switch (route.view) {
     case 'chat':
-      return route.sessionId ? `#/chat/${encodeURIComponent(route.sessionId)}` : '#/';
+      if (route.sessionId) return `#/chat/${encodeURIComponent(route.sessionId)}`;
+      return route.newSetId ? `#/chat/new/${encodeURIComponent(route.newSetId)}` : '#/';
     case 'knowledge':
       return route.nodeId ? `#/knowledge/${encodeURIComponent(route.nodeId)}` : '#/knowledge';
     default:

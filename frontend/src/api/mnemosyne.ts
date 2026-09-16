@@ -95,6 +95,37 @@ export interface GenerateQuizRequest {
   count: number;
 }
 
+export interface WeakCard {
+  card_id: string;
+  question: string;
+  added_at: string;
+  recent_reviews: number;
+  recent_wrong: number;
+  /** Listing is append-only for the life of a task, so a listed card may have recovered. */
+  still_weak: boolean;
+  last_reviewed_at: string | null;
+}
+
+export interface WeakTask {
+  id: string;
+  study_set_id: string;
+  study_set_name: string;
+  opened_at: string;
+  last_weak_card_at: string;
+  closed_at: string | null;
+  cards: WeakCard[];
+  still_weak_count: number;
+}
+
+export interface WeakResponse {
+  tasks: WeakTask[];
+  card_count: number;
+  still_weak_count: number;
+  /** The rule the numbers come from — reported by the server, not assumed here. */
+  window: number;
+  error_threshold: number;
+}
+
 /** Mirrors TURN_CAP in socratic.rs: 40 stored messages = 20 exchanges. */
 export const SOCRATIC_TURN_CAP_MESSAGES = 40;
 /** Mirrors MAX_QUESTION_COUNT in quiz.rs. */
@@ -110,6 +141,9 @@ export const mnemosyne = {
   listStudySets: () => request<StudySet[]>(S, `${base}/study_sets`),
 
   due: (limit = 100) => request<DueResponse>(S, `${base}/due?limit=${limit}`),
+
+  weakCards: (includeClosed = false) =>
+    request<WeakResponse>(S, `${base}/weak_cards?include_closed=${includeClosed}`),
 
   review: (cardId: string, rating: Rating) =>
     request<ReviewResponse>(S, `${base}/review`, {
