@@ -101,6 +101,26 @@ Mnemosyne       ──GET /nodes, /nodes/{id}→ Knowledge Store (reading a conc
 
 Full request/response shapes are documented inline in each handler under `backend/src/handlers/`.
 
+### Database migrations
+
+Migrations are compiled into the binary, and which ones a database has seen is
+recorded in `schema_migrations` — the same idea as the Knowledge Store's
+`ks migrate`, so both modules answer the question the same way.
+
+```bash
+cargo run -p backend -- migrate               # apply what is missing
+cargo run -p backend -- migrate-status        # [x] / [ ] per migration
+cargo run -p backend -- migrate-mark-applied  # ONLY for a database already
+                                              # migrated by hand before this existed
+```
+
+A brand-new database is created from `backend/sql/schema.sql` (the full current
+schema) and then marked applied; an existing one takes `migrate`.
+
+### Deployment
+
+`deploy/` holds user-level systemd units — see [deploy/README.md](deploy/README.md).
+
 ### Authentication
 
 Every learner endpoint requires `Authorization: Bearer <token>` and derives
