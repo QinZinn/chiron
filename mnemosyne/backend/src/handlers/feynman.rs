@@ -169,6 +169,11 @@ fn build_system_prompt(card_context: &str) -> String {
          - suggestions: 2-4 sentences of specific, actionable suggestions for how the \
          student can improve their explanation.\n\
          \n\
+         Write `feedback` and `suggestions` in Vietnamese, addressing the student \
+         directly. The learner reads Vietnamese; feedback they cannot read is \
+         feedback that does not land, however accurate it is. Keep the scores as \
+         numbers and the JSON keys in English.\n\
+         \n\
          Respond with ONLY valid JSON: \
          {{\"clarity_score\": int, \"completeness_score\": int, \
          \"correctness_score\": int, \"feedback\": string, \"suggestions\": string}}. \

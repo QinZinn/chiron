@@ -31,6 +31,7 @@ export function Sidebar({ route }: { route: Route }) {
         : undefined,
     },
     { view: 'quiz', icon: 'ph-check-square-offset', label: 'Quiz' },
+    { view: 'feynman', icon: 'ph-chalkboard-teacher', label: 'Giảng lại' },
     { view: 'knowledge', icon: 'ph-graph', label: 'Kiến thức' },
     {
       view: 'weak',

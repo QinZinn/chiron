@@ -7,6 +7,7 @@ import { FlashcardsView } from './views/Flashcards';
 import { QuizView } from './views/Quiz';
 import { KnowledgeView } from './views/Knowledge';
 import { WeakView } from './views/Weak';
+import { FeynmanView } from './views/Feynman';
 import { ScheduleView } from './views/Schedule';
 import { SettingsView } from './views/Settings';
 
@@ -16,6 +17,7 @@ const AREA_NAME: Record<Route['view'], string> = {
   quiz: 'Quiz',
   knowledge: 'Kiến thức',
   weak: 'Điểm yếu',
+  feynman: 'Giảng lại',
   schedule: 'Lịch học',
   settings: 'Cài đặt',
 };
@@ -32,6 +34,8 @@ function View({ route }: { route: Route }) {
       return <KnowledgeView nodeId={route.nodeId} />;
     case 'weak':
       return <WeakView />;
+    case 'feynman':
+      return <FeynmanView />;
     case 'schedule':
       return <ScheduleView />;
     case 'settings':
