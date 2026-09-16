@@ -278,6 +278,7 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::reviews::review)
             .service(handlers::generate::generate_cards)
             .service(handlers::due::due)
+            .service(handlers::weak::weak_cards)
             .service(handlers::socratic::start)
             .service(handlers::socratic::reply)
             .service(handlers::socratic::end)

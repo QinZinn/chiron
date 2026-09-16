@@ -43,13 +43,13 @@ function StatusTag() {
   return <span className="tag tag-dim tag-sm">Đang kiểm tra kết nối…</span>;
 }
 
-export function ChatView({ sessionId }: { sessionId?: string }) {
-  return sessionId ? <SessionChat key={sessionId} sessionId={sessionId} /> : <NewChat />;
+export function ChatView({ sessionId, newSetId }: { sessionId?: string; newSetId?: string }) {
+  return sessionId ? <SessionChat key={sessionId} sessionId={sessionId} /> : <NewChat preselect={newSetId} />;
 }
 
 // ─────────────────────────────────────────────────────────────── 1a — new chat
 
-function NewChat() {
+function NewChat({ preselect }: { preselect?: string }) {
   const { health, user, studySets, studySetsError, reloadSets, upsertRecent } = useApp();
   const [setId, setSetId] = useState('');
   const [text, setText] = useState('');
@@ -57,8 +57,14 @@ function NewChat() {
   const [error, setError] = useState<string>();
 
   useEffect(() => {
-    if (!setId && studySets && studySets.length > 0) setSetId(studySets[0].id);
-  }, [studySets, setId]);
+    if (!studySets || studySets.length === 0) return;
+    // A set named in the URL wins, but only if it is really this learner's.
+    if (preselect && studySets.some((s) => s.id === preselect)) {
+      setSetId(preselect);
+      return;
+    }
+    if (!setId) setSetId(studySets[0].id);
+  }, [studySets, setId, preselect]);
 
   const down = health.mnemosyne === 'down';
   let blocked: string | undefined;

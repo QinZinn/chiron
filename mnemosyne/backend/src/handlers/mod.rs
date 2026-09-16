@@ -13,6 +13,7 @@ pub mod quiz;
 pub mod reviews;
 pub mod socratic;
 pub mod study_sets;
+pub mod weak;
 pub mod users;
 
 #[cfg(test)]
