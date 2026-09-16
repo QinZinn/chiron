@@ -249,7 +249,10 @@ async fn main() -> std::io::Result<()> {
             .allowed_origin("http://127.0.0.1:5173")
             .allowed_origin("http://localhost:4173")
             .allowed_origin("http://127.0.0.1:4173")
-            .allowed_methods(["GET", "POST"])
+            // PATCH and DELETE are here because editing and deleting are
+            // browser actions too; leaving them out fails the preflight and
+            // the UI sees an outage rather than a refusal.
+            .allowed_methods(["GET", "POST", "PATCH", "DELETE"])
             // AUTHORIZATION is what makes these requests preflighted in the
             // first place: the browser sends OPTIONS before any call carrying
             // a bearer token, and omitting it here fails every authenticated
@@ -268,6 +271,14 @@ async fn main() -> std::io::Result<()> {
             .service(health)
             .service(health_db)
             .service(handlers::users::me)
+            .service(handlers::edit::patch_me)
+            .service(handlers::edit::patch_study_set)
+            .service(handlers::edit::delete_study_set)
+            .service(handlers::edit::patch_card)
+            .service(handlers::edit::delete_card)
+            .service(handlers::edit::delete_quiz_question)
+            .service(handlers::edit::delete_socratic)
+            .service(handlers::edit::delete_chat)
             .service(handlers::users::create_user)
             .service(handlers::users::list_users)
             .service(handlers::study_sets::create_study_set)

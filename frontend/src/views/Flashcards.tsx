@@ -38,6 +38,11 @@ function Review() {
   const [reviewError, setReviewError] = useState<unknown>();
   const [last, setLast] = useState<{ rating: Rating; res: ReviewResponse }>();
   const [done, setDone] = useState(0);
+  // Editing exists because these cards are often LLM-written: a wrong answer
+  // used to need psql to fix.
+  const [edit, setEdit] = useState<{ question: string; answer: string }>();
+  const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (dueQ.data) {
@@ -67,10 +72,42 @@ function Review() {
     }
   };
 
+  const saveEdit = async () => {
+    if (!current || !edit) return;
+    setSaving(true);
+    setReviewError(undefined);
+    try {
+      const res = await mnemosyne.patchCard(current.card_id, { question: edit.question, answer: edit.answer });
+      setQueue((q) => q.map((c) => (c.card_id === current.card_id ? { ...c, question: res.question, answer: res.answer } : c)));
+      setEdit(undefined);
+    } catch (e) {
+      setReviewError(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeCard = async () => {
+    if (!current) return;
+    setSaving(true);
+    setReviewError(undefined);
+    try {
+      await mnemosyne.deleteCard(current.card_id);
+      setQueue((q) => q.slice(1));
+      setRevealed(false);
+      setConfirmDelete(false);
+      refreshDue();
+    } catch (e) {
+      setReviewError(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Space/Enter reveals, 1–4 rates — the usual spaced-repetition keys.
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
-      if (!current || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (!current || edit || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (!revealed && (e.key === ' ' || e.key === 'Enter')) {
         e.preventDefault();
         setRevealed(true);
@@ -125,12 +162,57 @@ function Review() {
         </div>
       )}
 
-      {current ? (
+      {current && edit ? (
+        <div className="fc">
+          <div className="wk-head">
+            <span className="tag tag-frost tag-sm">Đang sửa thẻ</span>
+            <span className="wk-meta">{setName(current.set_id)}</span>
+          </div>
+          <div className="field">
+            <label>Câu hỏi</label>
+            <textarea className="input" lang="vi" value={edit.question} onChange={(e) => setEdit({ ...edit, question: e.target.value })} />
+          </div>
+          <div className="field">
+            <label>Đáp án</label>
+            <textarea className="input" lang="vi" value={edit.answer} onChange={(e) => setEdit({ ...edit, answer: e.target.value })} />
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-primary btn-main" onClick={saveEdit} disabled={saving || !edit.question.trim() || !edit.answer.trim()}>
+              {saving ? <span className="spin" /> : <i className="ph ph-check" />}Lưu thay đổi
+            </button>
+            <button className="btn btn-soft" onClick={() => setEdit(undefined)} disabled={saving}>Huỷ</button>
+          </div>
+          {reviewError != null && <ErrorNotice error={reviewError} compact />}
+        </div>
+      ) : current ? (
         <div className="fc">
           <div className="wk-head">
             {current.is_new ? <span className="tag tag-frost tag-sm">Thẻ mới</span> : <span className="tag tag-yel tag-sm">Đến hạn {current.next_review_at ? relative(current.next_review_at) : ''}</span>}
             <span className="wk-meta">{setName(current.set_id)}</span>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+              <button className="icon-btn" title="Sửa thẻ này" onClick={() => setEdit({ question: current.question, answer: current.answer })}>
+                <i className="ph ph-pencil-simple" />
+              </button>
+              <button className="icon-btn" title="Xoá thẻ này" onClick={() => setConfirmDelete(true)}>
+                <i className="ph ph-trash" />
+              </button>
+            </div>
           </div>
+          {confirmDelete && (
+            <div className="notice notice-warn">
+              <i className="ph ph-warning" />
+              <div>
+                <div className="notice-title">Xoá thẻ này?</div>
+                <div>Lịch sử ôn của thẻ cũng bị xoá theo và không khôi phục được.</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-soft rate-again" onClick={removeCard} disabled={saving}>
+                    {saving ? <span className="spin" /> : <i className="ph ph-trash" />}Xoá hẳn
+                  </button>
+                  <button className="btn btn-soft" onClick={() => setConfirmDelete(false)} disabled={saving}>Giữ lại</button>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="fc-q">{current.question}</div>
           {revealed ? (
             <>
