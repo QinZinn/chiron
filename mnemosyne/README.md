@@ -89,6 +89,7 @@ Mnemosyne       ──GET /nodes, /nodes/{id}→ Knowledge Store (reading a conc
 | `POST /socratic/start`, `POST /socratic/{id}/reply`, `POST /socratic/{id}/end`, `GET /socratic/{id}` | Multi-turn Socratic dialogue on a study set. `/end` ships the transcript to the Knowledge Store and stamps `ended_at` |
 | `GET /socratic` | The learner's Socratic sessions, most recently active first |
 | `POST /chat/start`, `POST /chat/{id}/reply`, `GET /chat/{id}`, `GET /chat` | "Hỏi bài" (`mode: "ask"` — direct answers) and "Giải bài" (`mode: "solve"` — worked step by step). The opposite of Socratic, which withholds answers on purpose; a study set may be attached as context |
+| `GET /stats` | Reviews, accuracy, study streak, card and session counts — counted at read time, in the caller's timezone (`tz_offset_minutes`) |
 | `GET /weak_cards` | Study sets with cards the learner keeps failing, with the evidence and the rule behind it. The read side of the `@ontap` tasks Horae schedules |
 | `POST /study_sets/{id}/feynman_evaluate`, `GET .../history` | Submit and score a self-explanation |
 | `POST /quiz/generate` | Generate multiple-choice quiz questions for a study set, from free-text (`source: "topic"`) or from Knowledge Store concepts the learner has already studied (`source: "knowledge_store"`) — the two sources are never mixed in one request, and `count` is capped server-side |

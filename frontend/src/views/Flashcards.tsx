@@ -30,7 +30,7 @@ export function FlashcardsView() {
 }
 
 function Review() {
-  const { studySets, refreshDue } = useApp();
+  const { studySets, refreshDue, stats } = useApp();
   const dueQ = useAsync(() => mnemosyne.due(100), []);
   const [queue, setQueue] = useState<DueCard[]>([]);
   const [revealed, setRevealed] = useState(false);
@@ -105,6 +105,13 @@ function Review() {
         <div><div className="stat-k">Đến hạn</div><div className="stat-v" style={{ color: 'var(--yel)' }}>{queue.length}{capped && done === 0 ? '+' : ''}</div></div>
         <div><div className="stat-k">Thẻ mới</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{fresh}</div></div>
         <div><div className="stat-k">Đã ôn lần này</div><div className="stat-v" style={{ color: 'var(--green)' }}>{done}</div></div>
+        <div>
+          <div className="stat-k">Độ chính xác {stats?.range_days ?? 14} ngày</div>
+          <div className="stat-v" style={{ color: 'var(--green)' }}>
+            {stats?.reviews.accuracy != null ? `${Math.round(stats.reviews.accuracy * 100)}%` : '—'}
+          </div>
+        </div>
+        <div><div className="stat-k">Chuỗi ngày học</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{stats?.streak_days ?? '—'}</div></div>
       </div>
       <hr className="rule" style={{ marginBottom: 18 }} />
 

@@ -36,7 +36,7 @@ function recall(cards: WeakCard[]): { correct: number; total: number; pct: numbe
 }
 
 function Weak() {
-  const { dueCount } = useApp();
+  const { dueCount, stats } = useApp();
   const [includeClosed, setIncludeClosed] = useState(false);
   const q = useAsync(() => mnemosyne.weakCards(includeClosed), [includeClosed]);
   const [open, setOpen] = useState<string>();
@@ -68,9 +68,14 @@ function Weak() {
 
       <div className="stats">
         <div><div className="stat-k">Thẻ đang yếu</div><div className="stat-v" style={{ color: 'var(--red)' }}>{data.still_weak_count}</div></div>
-        <div><div className="stat-k">Thẻ đang theo dõi</div><div className="stat-v" style={{ color: 'var(--yel)' }}>{data.card_count}</div></div>
-        <div><div className="stat-k">Bộ thẻ</div><div className="stat-v">{data.tasks.length}</div></div>
-        <div><div className="stat-k">Thẻ đến hạn</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{dueCount ?? '—'}</div></div>
+        <div><div className="stat-k">Thẻ đến hạn</div><div className="stat-v" style={{ color: 'var(--yel)' }}>{stats?.cards.due_now ?? dueCount ?? '—'}</div></div>
+        <div>
+          <div className="stat-k">Độ chính xác {stats?.range_days ?? 14} ngày</div>
+          <div className="stat-v" style={{ color: 'var(--green)' }}>
+            {stats?.reviews.accuracy != null ? `${Math.round(stats.reviews.accuracy * 100)}%` : '—'}
+          </div>
+        </div>
+        <div><div className="stat-k">Chuỗi ngày học</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{stats?.streak_days ?? '—'}</div></div>
       </div>
 
       <div className="toolbar" style={{ marginBottom: 14 }}>

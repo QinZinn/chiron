@@ -46,6 +46,7 @@ allowlist cấu hình public (`src/config.ts`).
 | Kiến thức | KS `GET /nodes`, `/nodes/{id}` | Hoạt động |
 | Điểm yếu | Mnemosyne `GET /weak_cards` | Hoạt động |
 | Lịch học | Google Calendar qua withone.ai | Hoạt động (chỉ đọc) |
+| Số liệu học tập | Mnemosyne `GET /stats` | Hoạt động (hiện ở Thẻ ghi nhớ và Điểm yếu) |
 | Cài đặt | localStorage + `GET /me` | Đăng nhập bằng token, màu nhấn, thu gọn thanh bên, nền sao, trạng thái kết nối |
 
 Mỗi khu vực xử lý lỗi riêng: module nào tắt thì chỉ khu vực đó báo
