@@ -34,11 +34,18 @@ thư mục trước.
 cd knowledge-store && .venv/bin/python -m ks.cli migrate && .venv/bin/python -m ks.cli serve
 
 # Mnemosyne
-cd mnemosyne && cargo run -p backend
+cd mnemosyne && cargo run -p backend -- migrate && cargo run -p backend
 
 # Frontend
 cd frontend && npm install && npm run dev
 ```
+
+Mnemosyne cần một token để dùng: cấp bằng
+`cd mnemosyne && cargo run -p backend -- create-user <email>`, rồi dán token đó
+vào màn Cài đặt của frontend. Token chỉ hiện đúng một lần.
+
+Chạy như dịch vụ: `mnemosyne/deploy/` và `knowledge-store/deploy/` có sẵn unit
+systemd mức user.
 
 ## Quy ước phát triển
 

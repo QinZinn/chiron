@@ -1,0 +1,37 @@
+# Mnemosyne HTTP API (Rust/Actix) — học bài, thẻ ghi nhớ, quiz.
+#
+# USER unit (~/.config/systemd/user/), giống các unit của Knowledge Store: mọi
+# lệnh quản lý phải có `--user`, và cần `loginctl enable-linger` để sống qua
+# logout. Xem knowledgeStore/deploy/ cho cùng quy ước.
+#
+# Type=simple: server block vô hạn, KHÔNG phải cron job.
+#
+# Chạy binary RELEASE, không phải `cargo run`: cargo cần toàn bộ toolchain và
+# thư mục nguồn lúc khởi động, còn ở đây chỉ cần đúng một file. Build trước:
+#   cd ~/Projects/Chiron/mnemosyne && cargo build --release
+#
+# BẪY: build lại xong service vẫn chạy binary CŨ cho tới khi
+# `systemctl --user restart chiron-mnemosyne`.
+
+[Unit]
+Description=Chiron Mnemosyne — API học tập (FSRS, Socratic, quiz)
+# Cùng cụm Postgres với Knowledge Store: một server, hai database riêng.
+After=chiron-ks-postgres.service
+Requires=chiron-ks-postgres.service
+# Migration phải chạy xong trước khi server nhận request.
+After=chiron-mnemosyne-migrate.service
+Wants=chiron-mnemosyne-migrate.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/Chiron/mnemosyne
+EnvironmentFile=%h/Projects/Chiron/mnemosyne/.env
+ExecStart=%h/Projects/Chiron/mnemosyne/target/release/backend
+# Server chết vì lỗi tạm thời (DB vừa khởi động lại) thì tự dựng lên; chết vì
+# cấu hình sai (thiếu DEEPSEEK_API_KEY) thì nó panic ngay và systemd sẽ bỏ cuộc
+# sau StartLimit thay vì quay vòng vô hạn.
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

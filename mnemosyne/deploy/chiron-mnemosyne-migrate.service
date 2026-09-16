@@ -1,0 +1,22 @@
+# Áp dụng migration còn thiếu rồi thoát. Chạy trước chiron-mnemosyne.service.
+#
+# Type=oneshot + RemainAfterExit=yes: systemd coi là "đã xong" thay vì "đã
+# chết", nên unit server phụ thuộc vào nó không bị kéo restart theo.
+#
+# An toàn khi chạy lại: mỗi migration được ghi vào bảng schema_migrations trong
+# cùng transaction với chính nó, nên lần chạy sau bỏ qua những cái đã áp dụng.
+
+[Unit]
+Description=Chiron Mnemosyne — áp dụng migration database
+After=chiron-ks-postgres.service
+Requires=chiron-ks-postgres.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h/Projects/Chiron/mnemosyne
+EnvironmentFile=%h/Projects/Chiron/mnemosyne/.env
+ExecStart=%h/Projects/Chiron/mnemosyne/target/release/backend migrate
+
+[Install]
+WantedBy=default.target

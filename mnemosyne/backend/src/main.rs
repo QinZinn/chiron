@@ -7,9 +7,11 @@ use mnemosyne_core::scheduling::FsrsScheduler;
 
 mod auth;
 mod deepseek;
+mod migrate;
 mod handlers;
 mod ks_client;
 mod llm_provider;
+mod openai_compatible;
 mod todoist_client;
 mod weak_cards;
 
@@ -48,7 +50,9 @@ async fn health_db(pool: web::Data<PgPool>) -> HttpResponse {
 /// These exist because the first token cannot be obtained over an API that
 /// already requires a token. They need only database access, so they work
 /// before the server is up and without `MNEMOSYNE_ADMIN_TOKEN` being set.
-const USAGE: &str = "usage: backend [create-user <email> [style] | mint-token <email> [label] | list-tokens <email> | revoke-token <token-id>]";
+const USAGE: &str = "usage: backend [migrate | migrate-status | migrate-mark-applied | \
+create-user <email> [style] | mint-token <email> [label] | list-tokens <email> | \
+revoke-token <token-id>]";
 
 async fn run_command(pool: &sqlx::PgPool, args: &[String]) -> Result<(), String> {
     let email_to_id = async |email: &str| -> Result<uuid::Uuid, String> {
@@ -61,6 +65,30 @@ async fn run_command(pool: &sqlx::PgPool, args: &[String]) -> Result<(), String>
     };
 
     match args[0].as_str() {
+        "migrate" => {
+            let applied = migrate::run(pool).await?;
+            if applied.is_empty() {
+                println!("database is up to date; nothing to apply");
+            }
+            for name in applied {
+                println!("applied {name}");
+            }
+            Ok(())
+        }
+        "migrate-status" => {
+            for (name, done) in migrate::status(pool).await? {
+                println!("{} {name}", if done { "[x]" } else { "[ ]" });
+            }
+            Ok(())
+        }
+        "migrate-mark-applied" => {
+            // For the database that was migrated by hand before the runner
+            // existed. Never run this on a database that is not already at
+            // the current schema: it would hide that fact for good.
+            let marked = migrate::mark_all_applied(pool).await?;
+            println!("recorded {} migration(s) as already applied", marked.len());
+            Ok(())
+        }
         "create-user" => {
             let email = args.get(1).ok_or("create-user needs an email")?;
             let style = args.get(2).map(String::as_str);
@@ -182,7 +210,20 @@ async fn main() -> std::io::Result<()> {
                 panic!("DEEPSEEK_API_KEY is not set in .env. Add it (see .env.example).");
             })
         ),
-        other => panic!("Unknown LLM_PROVIDER: {other}"),
+        // Any OpenAI-compatible /chat/completions endpoint: OpenAI itself,
+        // Together, a local vLLM or Ollama. The trait had exactly one
+        // implementation before this and no way to select another.
+        openai_compatible::PROVIDER_NAME | "openai" => Box::new(
+            openai_compatible::OpenAiCompatibleClient::from_env().unwrap_or_else(|missing| {
+                panic!(
+                    "LLM_PROVIDER={provider_name} needs {missing} in .env (see .env.example)."
+                );
+            })
+        ),
+        other => panic!(
+            "Unknown LLM_PROVIDER: {other}. Known values: deepseek, {}, openai.",
+            openai_compatible::PROVIDER_NAME
+        ),
     };
     eprintln!("[mnemosyne] LLM provider ready ({provider_name})");
     let llm_provider = web::Data::new(llm_provider);
