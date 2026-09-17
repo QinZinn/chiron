@@ -195,6 +195,17 @@ fn base_url_for_port(port: &str) -> String {
     format!("http://127.0.0.1:{port}")
 }
 
+/// Where the Knowledge Store is. `KS_HTTP_URL` wins when set — in Docker
+/// Compose KS is `http://knowledge-store:8080`, another container, and no port
+/// on 127.0.0.1 reaches it. Without it the old rule holds: loopback on
+/// `KS_HTTP_PORT`, or the default port.
+fn base_url_from(url: Option<&str>, port: Option<&str>) -> String {
+    match url.map(str::trim).filter(|u| !u.is_empty()) {
+        Some(u) => u.trim_end_matches('/').to_string(),
+        None => base_url_for_port(port.filter(|p| !p.trim().is_empty()).unwrap_or(DEFAULT_PORT)),
+    }
+}
+
 /// Build the query string for `GET /nodes`, including the leading `?` when
 /// there is anything to send and nothing at all when there is not.
 fn nodes_query(subject: Option<&str>, limit: Option<u32>) -> String {
@@ -398,12 +409,15 @@ impl KsClient {
         if token.is_empty() {
             return None;
         }
-        let port = std::env::var("KS_HTTP_PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());
+        let base_url = base_url_from(
+            std::env::var("KS_HTTP_URL").ok().as_deref(),
+            std::env::var("KS_HTTP_PORT").ok().as_deref(),
+        );
         let http = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
             .build()
             .expect("reqwest client construction should not fail with sane defaults");
-        Some(Self { http, base_url: base_url_for_port(&port), token })
+        Some(Self { http, base_url, token })
     }
 
     /// `GET /health` — no auth required.
@@ -735,6 +749,23 @@ mod tests {
     fn base_url_is_localhost_only() {
         assert_eq!(base_url_for_port("8080"), "http://127.0.0.1:8080");
         assert_eq!(base_url_for_port("9999"), "http://127.0.0.1:9999");
+    }
+
+    #[test]
+    fn an_explicit_url_wins_over_the_port() {
+        // The Compose case: KS is another container, not a loopback port.
+        assert_eq!(
+            base_url_from(Some("http://knowledge-store:8080/"), Some("9999")),
+            "http://knowledge-store:8080"
+        );
+    }
+
+    #[test]
+    fn without_a_url_the_old_loopback_rule_still_holds() {
+        // Running outside Docker must behave exactly as before this existed.
+        assert_eq!(base_url_from(None, Some("8082")), "http://127.0.0.1:8082");
+        assert_eq!(base_url_from(Some("  "), Some("8082")), "http://127.0.0.1:8082");
+        assert_eq!(base_url_from(None, None), format!("http://127.0.0.1:{DEFAULT_PORT}"));
     }
 
     // -- GET /nodes ----------------------------------------------------------

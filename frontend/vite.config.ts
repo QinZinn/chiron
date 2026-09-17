@@ -37,7 +37,10 @@ export default defineConfig(({ mode }) => {
     // Ports are pinned (strictPort) because Mnemosyne's CORS allowlist names
     // exactly these two origins. A silent fallback to 5174 would look like a
     // Mnemosyne outage in the browser.
-    server: { host: 'localhost', port: 5173, strictPort: true },
-    preview: { host: 'localhost', port: 4173, strictPort: true },
+    // CHIRON_BIND_HOST is for containers, where 'localhost' is the container's
+    // own loopback and the published port would lead nowhere. The browser still
+    // opens http://localhost:4173 on the host, so the CORS origin is unchanged.
+    server: { host: env.CHIRON_BIND_HOST || 'localhost', port: 5173, strictPort: true },
+    preview: { host: env.CHIRON_BIND_HOST || 'localhost', port: 4173, strictPort: true },
   };
 });

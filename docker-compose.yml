@@ -1,0 +1,113 @@
+# Chiron — cả hệ sinh thái trong một lệnh:
+#
+#   cp .env.example .env            # đặt POSTGRES_PASSWORD
+#   docker compose up --build -d
+#   docker compose exec mnemosyne backend create-user <email>
+#   → mở http://localhost:4173, dán token vào Cài đặt
+#
+# Secret của từng module vẫn nằm trong .env của module đó (mnemosyne/.env,
+# knowledge-store/.env, frontend/.env) và chỉ vào container qua env_file lúc
+# chạy — không bao giờ nằm trong image.
+#
+# Mọi biến về MẠNG được đặt lại trong `environment:`, vì nó thắng env_file. Các
+# .env hiện có mô tả cách chạy ngoài Docker (127.0.0.1, cổng 8082 để né
+# SearXNG); trong Compose các dịch vụ gọi nhau bằng tên service.
+
+name: chiron
+
+x-db-url: &db-password ${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env ở thư mục gốc (xem .env.example)}
+
+services:
+  postgres:
+    # Cùng major với cụm Postgres đang dùng ngoài Docker (18.x). Image chính
+    # thức có sẵn pg_trgm (KS dò trùng khái niệm) và pgcrypto (Mnemosyne).
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: *db-password
+    volumes:
+      # Postgres 18+ đặt dữ liệu dưới /var/lib/postgresql/<major>/docker —
+      # mount thư mục cha để nâng major sau này không phải đổi volume.
+      - pgdata:/var/lib/postgresql
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/10-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # Không mở cổng ra host. Cần psql từ máy host để debug thì bỏ comment —
+    # cổng 5433 để không đụng cụm Postgres cũ đang dùng 5432.
+    # ports:
+    #   - "127.0.0.1:5433:5432"
+
+  knowledge-store:
+    build: ./knowledge-store
+    restart: unless-stopped
+    env_file:
+      - path: ./knowledge-store/.env
+        required: false
+    environment:
+      KS_DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/chiron_ks
+      KS_TEST_DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/chiron_ks_test
+      KS_HTTP_HOST: 0.0.0.0
+      KS_HTTP_PORT: "8080"
+      KS_MNEMOSYNE_URL: http://mnemosyne:8081
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Không mở cổng ra host: chỉ proxy của frontend và Mnemosyne gọi KS, đều
+    # qua network nội bộ. Nhờ vậy cũng hết xung đột cổng 8080 với SearXNG.
+
+  mnemosyne:
+    build: ./mnemosyne
+    restart: unless-stopped
+    env_file:
+      - path: ./mnemosyne/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/mnemosyne
+      MNEMOSYNE_BIND: 0.0.0.0:8081
+      KS_HTTP_URL: http://knowledge-store:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # KS không nằm trong depends_on, có chủ đích: Mnemosyne coi KS là phụ
+      # (thiếu KS thì chỉ mất đồng bộ transcript), nên KS chết không được
+      # phép giữ Mnemosyne không khởi động.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8081"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    ports:
+      # Browser gọi Mnemosyne THẲNG (có CORS), nên cổng này phải ra host —
+      # nhưng chỉ trên loopback, khớp phạm vi "dev local" CORS đang giả định.
+      - "127.0.0.1:8081:8081"
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    env_file:
+      - path: ./frontend/.env
+        required: false
+    environment:
+      CHIRON_BIND_HOST: 0.0.0.0
+      # Proxy (trong container) gọi KS qua network nội bộ.
+      CHIRON_KS_URL: http://knowledge-store:8080
+      # Địa chỉ BROWSER dùng để gọi Mnemosyne — tức cổng đã mở ra host ở trên,
+      # không phải tên service (browser không ở trong network của Compose).
+      CHIRON_MNEMOSYNE_URL: http://127.0.0.1:8081
+    ports:
+      - "127.0.0.1:4173:4173"
+    # Không depends_on backend nào: giao diện được thiết kế để chạy khi một
+    # module đang tắt và báo lỗi riêng cho khu vực đó.
+
+volumes:
+  pgdata:
