@@ -1,0 +1,12 @@
+# Pinned: PaddlePaddle/PaddleOCR change model defaults between minors (3.7
+# resolves lang="vi" to PP-OCRv6), and an unpinned rebuild would silently
+# change what text comes out of the same photo.
+paddlepaddle==3.3.1
+paddleocr==3.7.0
+pypdfium2==5.13.0
+flask>=3.0,<4
+pillow>=11
+# VietOCR's own runtime imports. VietOCR itself is installed with --no-deps
+# (see requirements-vietocr.txt).
+einops==0.8.2
+gdown==6.3.0
