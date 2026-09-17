@@ -53,6 +53,12 @@ HTTP_TOKEN_ENV = "KS_HTTP_TOKEN"
 HTTP_PORT_ENV = "KS_HTTP_PORT"
 DEFAULT_HTTP_PORT = 8080
 
+# Host bind. Mặc định chỉ loopback: KS không có TLS và coi mình là dịch vụ nội
+# bộ. Trong Docker phải đặt 0.0.0.0, vì 127.0.0.1 của container chỉ là loopback
+# của chính nó — Mnemosyne và proxy frontend ở container khác không vào được.
+HTTP_HOST_ENV = "KS_HTTP_HOST"
+DEFAULT_HTTP_HOST = "127.0.0.1"
+
 # Trần limit của GET /nodes. Vượt trần → 400, KHÔNG âm thầm cắt.
 MAX_NODE_LIMIT = 500
 DEFAULT_NODE_LIMIT = 50

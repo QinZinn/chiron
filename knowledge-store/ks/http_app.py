@@ -282,4 +282,5 @@ def serve() -> None:
     """
     validate_token_config()
     port = int(os.environ.get(settings.HTTP_PORT_ENV, settings.DEFAULT_HTTP_PORT))
-    create_app().run(host="127.0.0.1", port=port)
+    host = os.environ.get(settings.HTTP_HOST_ENV, "").strip() or settings.DEFAULT_HTTP_HOST
+    create_app().run(host=host, port=port)

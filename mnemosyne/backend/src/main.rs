@@ -347,7 +347,12 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::quiz::attempt)
             .service(handlers::quiz::list_questions)
     })
-    .bind(("127.0.0.1", 8081))?
+    // MNEMOSYNE_BIND exists for containers, where 127.0.0.1 is the container's
+    // own loopback and nothing outside it — not the host, not other services —
+    // can connect. The default stays loopback-only: outside Docker, listening on
+    // every interface would expose an API whose CORS and lack of TLS assume it
+    // is not reachable from the network.
+    .bind(std::env::var("MNEMOSYNE_BIND").unwrap_or_else(|_| "127.0.0.1:8081".to_string()))?
     .run()
     .await
     .inspect_err(|e| eprintln!("[mnemosyne] server stopped: {e}"))

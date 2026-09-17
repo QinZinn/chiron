@@ -13,7 +13,30 @@ Horae (xếp lịch tự học) **không** thuộc repo này nữa — nó đã 
 riêng. Frontend đọc block `[Auto]` Horae ghi trên Google Calendar, không gọi
 Horae trực tiếp.
 
-## Postgres
+## Chạy bằng Docker (khuyến nghị)
+
+```bash
+cp .env.example .env                  # đặt POSTGRES_PASSWORD (openssl rand -hex 24)
+docker compose up --build -d
+docker compose ps                     # đợi cả bốn service healthy
+docker compose exec mnemosyne backend create-user <email>
+```
+
+Mở http://localhost:4173 và dán token vừa in ra vào màn Cài đặt.
+
+- Secret của từng module vẫn ở `.env` của module đó (`mnemosyne/.env`,
+  `knowledge-store/.env`, `frontend/.env`), vào container qua `env_file` lúc
+  chạy, không nằm trong image.
+- Database được dựng tự động lần đầu: Postgres tạo các database, rồi mỗi module
+  tự chạy migration khi khởi động.
+- Chỉ mở ra `127.0.0.1`: Mnemosyne `8081` (browser gọi thẳng) và frontend
+  `4173`. Knowledge Store và Postgres chỉ nằm trong network nội bộ.
+- Dữ liệu nằm trong volume `chiron_pgdata`; `docker compose down` giữ nguyên
+  nó, `docker compose down -v` thì xoá.
+
+Cần psql vào database: `docker compose exec postgres psql -U postgres -d mnemosyne`.
+
+## Postgres (chạy ngoài Docker)
 
 Một instance duy nhất ở cổng `5432`, hai database riêng: `mnemosyne` và
 `chiron_ks`. Dùng chung server để khỏi vận hành hai cụm, **không** dùng chung dữ
