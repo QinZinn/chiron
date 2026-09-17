@@ -1,15 +1,30 @@
-# syntax=docker/dockerfile:1
 # Mnemosyne — multi-stage: build with the full Rust toolchain, ship one binary.
+#
+# Written for the classic builder too, not only BuildKit: `RUN --mount=type=cache`
+# would be neater, but a Docker without buildx rejects it outright, and "runs on
+# any Docker" is the point of this file.
 
 FROM rust:1.98-trixie AS build
 WORKDIR /src
+
+# Dependencies first, against placeholder sources. This layer is cached until a
+# Cargo.toml or Cargo.lock changes, so an ordinary code edit recompiles the two
+# crates of this workspace rather than every dependency (minutes, not seconds).
+COPY Cargo.toml Cargo.lock ./
+COPY backend/Cargo.toml backend/Cargo.toml
+COPY mnemosyne-core/Cargo.toml mnemosyne-core/Cargo.toml
+RUN mkdir -p backend/src mnemosyne-core/src \
+ && echo 'fn main() {}' > backend/src/main.rs \
+ && touch mnemosyne-core/src/lib.rs \
+ && cargo build --release -p backend \
+ && rm -rf backend/src mnemosyne-core/src
+
+# Real sources. touch: cargo compares mtimes, and COPY can hand files an older
+# timestamp than the placeholder build left behind, which would make cargo
+# think nothing changed and ship the empty `fn main() {}`.
 COPY . .
-# Cache mounts keep the crate registry and target/ between builds, so a code
-# change recompiles the backend rather than every dependency. The binary is
-# copied out because target/ is a cache mount and does not survive the step.
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
-    cargo build --release -p backend \
+RUN touch backend/src/main.rs mnemosyne-core/src/lib.rs \
+ && cargo build --release -p backend \
  && cp target/release/backend /backend
 
 FROM debian:trixie-slim

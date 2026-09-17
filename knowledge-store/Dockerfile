@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # Knowledge Store — Python/Flask.
 
 FROM python:3.14-slim

@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # Frontend — Vite + React, served by `vite preview`.
 
 FROM node:24-slim
