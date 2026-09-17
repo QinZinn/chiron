@@ -63,6 +63,21 @@ DEFAULT_HTTP_HOST = "127.0.0.1"
 MAX_NODE_LIMIT = 500
 DEFAULT_NODE_LIMIT = 50
 
+# ---------------------------------------------------------------- OCR (ghi chép scan)
+
+# Service OCR (Chiron/ocr, PaddleOCR). Trống → route /notes trả 503 "chưa cấu
+# hình", phần còn lại của KS vẫn chạy.
+OCR_URL_ENV = "KS_OCR_URL"
+
+# OCR chạy CPU: đo trên máy dev ~vài giây mỗi trang; 30 trang có thể vượt
+# 2 phút. Hết giờ ở đây là mất trắng lần quét, nên đặt rộng tay.
+OCR_TIMEOUT_SECONDS = 600
+
+# Trần dung lượng upload đi qua KS, khớp OCR_MAX_UPLOAD_MB của service OCR.
+MAX_NOTE_UPLOAD_BYTES = 40 * 1024 * 1024
+
+MAX_NOTE_LIMIT = 200
+
 # ---------------------------------------------------------------- extraction
 
 # Số lần thử lại tối đa cho một transcript.

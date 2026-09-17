@@ -5,6 +5,7 @@ export type Route =
   | { view: 'flashcards' }
   | { view: 'quiz' }
   | { view: 'knowledge'; nodeId?: string }
+  | { view: 'notes'; noteId?: string }
   | { view: 'weak' }
   | { view: 'feynman' }
   | { view: 'schedule' }
@@ -32,6 +33,8 @@ export function parseHash(hash: string): Route {
       return { view: parts[0] };
     case 'knowledge':
       return { view: 'knowledge', nodeId: parts[1] };
+    case 'notes':
+      return { view: 'notes', noteId: parts[1] };
     default:
       return { view: 'chat' };
   }
@@ -46,6 +49,8 @@ export function href(route: Route): string {
       return route.newSetId ? `#/chat/new/${encodeURIComponent(route.newSetId)}` : '#/';
     case 'knowledge':
       return route.nodeId ? `#/knowledge/${encodeURIComponent(route.nodeId)}` : '#/knowledge';
+    case 'notes':
+      return route.noteId ? `#/notes/${encodeURIComponent(route.noteId)}` : '#/notes';
     default:
       return `#/${route.view}`;
   }

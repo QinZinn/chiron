@@ -54,6 +54,24 @@ Auth: `Authorization: Bearer <KS_HTTP_TOKEN>`. `/health` không cần auth.
 | `POST /ingest` | `{drafts:[...]}`. All-or-nothing. `psycopg.Error` → 503. Idempotency là **fuzzy match theo similarity**, không phải khoá định danh — retry an toàn chỉ khi giữ nguyên văn `title` |
 | `GET /nodes` | `?subject=&source_module=&limit=` (mặc định 50, **trần 500**, vượt trần → 400 chứ không âm thầm cắt). Không trả edges |
 | `GET /nodes/{id}` | Một node. `400` id không phải UUID, `404` không có. Node đã merge → trả **node đích với 200** (một bước), nên `id` trả về có thể khác id đã hỏi |
+| `POST /notes` | multipart `files` (ảnh/PDF) + `title` tuỳ chọn. Gọi service OCR, lưu note `draft`. **Chưa** rút khái niệm |
+| `GET /notes`, `GET /notes/{id}` | Danh sách / chi tiết (kèm kết quả OCR theo trang và các khái niệm đã rút) |
+| `PATCH /notes/{id}` | `{title, text}` — người học sửa văn bản OCR |
+| `POST /notes/{id}/extract` | Lưu văn bản đã sửa thành transcript `kind:"note"` rồi rút khái niệm → `pending_review` |
+| `GET /extracted` | Hàng chờ duyệt (`?status=pending_review\|accepted\|discarded`), gồm cả khái niệm từ phiên học |
+| `PATCH /extracted/{id}` | Sửa `title/subject/summary` trước khi quyết. `409` nếu đã quyết |
+| `POST /extracted/{id}/accept` \| `/discard` | Accept đi qua `ingest_concepts` (dò trùng); `created:false` = đã gộp vào node có sẵn |
+
+## Ghi chép scan
+
+Ảnh/PDF → service OCR (`Chiron/ocr`, PaddleOCR + VietOCR) → note `draft` → người học sửa
+văn bản → rút khái niệm → duyệt từng khái niệm. Note **không** có đường riêng vào
+`ks.nodes`: văn bản được lưu thành transcript `kind:"note"` và đi qua đúng
+`extract_concepts` + `pending_review` như transcript phiên học, với prompt riêng
+và `source_module = note_scan`. Ảnh gốc không được lưu.
+
+Cần `KS_OCR_URL` (trống → `/notes` trả `503`, phần còn lại của KS vẫn chạy) và bộ
+biến `KS_LLM_*` để rút khái niệm.
 
 ## card_sync
 

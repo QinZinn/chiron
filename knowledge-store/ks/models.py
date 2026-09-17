@@ -10,6 +10,7 @@ from uuid import UUID
 class SourceModule(str, Enum):
     MNEMOSYNE = "mnemosyne"
     LEXIFLASH = "lexiflash"
+    NOTE_SCAN = "note_scan"  # ghi chép scan qua OCR (ks/notes.py)
 
 
 class RelationType(str, Enum):

@@ -54,6 +54,6 @@ def _clean_committed_rows(migrated_url):
         with cleanup.cursor() as cur:
             cur.execute(
                 "TRUNCATE ks.edge_decision_log, ks.edge_suggestion_run, ks.ingest_log,"
-                " ks.edges, ks.extracted_concepts, ks.transcripts, ks.nodes CASCADE"
+                " ks.edges, ks.extracted_concepts, ks.notes, ks.transcripts, ks.nodes CASCADE"
             )
         cleanup.commit()

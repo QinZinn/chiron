@@ -84,7 +84,38 @@ def render_transcript(content: Any) -> str:
     return json.dumps(content, ensure_ascii=False, indent=2)
 
 
+_NOTE_SYSTEM_PROMPT = (
+    "Bạn rút khái niệm học thuật từ ghi chép của một học sinh, đã được số hoá "
+    "bằng OCR rồi học sinh sửa lại. Chỉ những khái niệm ghi chép THỰC SỰ trình bày. "
+    "Chỉ trả JSON, không giải thích ngoài JSON."
+)
+
+
+def is_note(content: Any) -> bool:
+    """Transcript sinh từ ghi chép scan (ks/notes.py) thay vì phiên học Mnemosyne."""
+    return isinstance(content, dict) and content.get("kind") == "note"
+
+
 def build_prompt(content: Any) -> list[Message]:
+    if is_note(content):
+        # Prompt riêng: ghi chép không có lượt hỏi–đáp, và OCR có thể còn sót lỗi
+        # chính tả — LLM phải dựa vào nghĩa chứ không chép nguyên lỗi vào title.
+        body = "\n".join([
+            f"GHI CHÉP: {content.get('title', '')}",
+            str(content.get("text", "")),
+            "",
+            "Trả về JSON array. Mỗi phần tử:",
+            '{"title": "<tên khái niệm>", "subject": "<môn học>", "summary": "<1-2 câu>"}',
+            "",
+            "title là TÊN MỘT KHÁI NIỆM (ví dụ: 'Định luật Newton 2'), không phải tiêu đề trang.",
+            "Văn bản có thể còn lỗi nhận dạng: viết title và summary đúng chính tả,"
+            " nhưng KHÔNG thêm kiến thức mà ghi chép không có.",
+            "summary tóm đúng điều ghi chép nói, kèm công thức nếu có.",
+            "subject là chuỗi tự do, viết theo cách người học hay gọi.",
+            "Không có khái niệm nào rõ ràng thì trả [].",
+        ])
+        return [Message("system", _NOTE_SYSTEM_PROMPT), Message("user", body)]
+
     body = "\n".join([
         "BẢN GHI PHIÊN HỌC:",
         render_transcript(content),
@@ -203,14 +234,17 @@ def extract_concepts(
             (transcript_id,),
         )
         rows = []
+        # Nguồn đi theo loại transcript: khái niệm rút từ ghi chép scan phải còn
+        # nhận ra được là của ghi chép, không lẫn vào 'mnemosyne'.
+        source = SourceModule.NOTE_SCAN if is_note(content) else SourceModule.MNEMOSYNE
         for title, subject, summary in parsed:
             cur.execute(
                 "INSERT INTO ks.extracted_concepts"
                 " (transcript_id, title, subject, summary, source_module)"
-                " VALUES (%s, %s, %s, %s, 'mnemosyne')"
+                " VALUES (%s, %s, %s, %s, %s)"
                 " RETURNING id, transcript_id, title, subject, summary, source_module,"
                 "           status, node_id",
-                (transcript_id, title, subject, summary),
+                (transcript_id, title, subject, summary, source.value),
             )
             rows.append(cur.fetchone())
         cur.execute(

@@ -47,6 +47,7 @@ allowlist cấu hình public (`src/config.ts`).
 | Điểm yếu | Mnemosyne `GET /weak_cards` | Hoạt động |
 | Lịch học | Google Calendar qua withone.ai | Hoạt động (chỉ đọc) |
 | Sửa / xoá | Mnemosyne `PATCH`, `DELETE` | Sửa và xoá thẻ, đổi tên và xoá bộ thẻ, xoá câu quiz, xoá phiên, sửa hồ sơ |
+| Scan ghi chép | KS `/notes`, `/extracted` qua proxy → service OCR | Hoạt động: OCR → sửa văn bản → rút khái niệm → duyệt |
 | Giảng lại (Feynman) | Mnemosyne `/study_sets/{id}/feynman_evaluate` | Hoạt động |
 | Số liệu học tập | Mnemosyne `GET /stats` | Hoạt động (hiện ở Thẻ ghi nhớ và Điểm yếu) |
 | Cài đặt | localStorage + `GET /me` | Đăng nhập bằng token, màu nhấn, thu gọn thanh bên, nền sao, trạng thái kết nối |

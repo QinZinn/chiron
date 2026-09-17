@@ -14,10 +14,14 @@ from uuid import UUID
 import psycopg
 from flask import Flask, jsonify, request
 
-from ks import query as query_mod, settings
+from typing import Callable
+
+from ks import confirm as confirm_mod, notes as notes_mod, query as query_mod, settings
 from ks.db import connect
 from ks.ingest import ingest_concepts
+from ks.llm import LLMError, LLMProvider, provider_from_env
 from ks.models import ConceptDraft, SourceModule
+from ks.ocr_client import OcrClient, OcrError, Upload, client_from_env
 from ks.transcripts import save_transcript
 
 
@@ -70,8 +74,19 @@ def require_token(view):
     return wrapper
 
 
-def create_app() -> Flask:
+def create_app(
+    *,
+    ocr_factory: Callable[[], OcrClient] = client_from_env,
+    provider_factory: Callable[[], LLMProvider] = provider_from_env,
+) -> Flask:
+    """Hai factory để test thay OCR và LLM bằng bản giả; mặc định đọc env.
+
+    Gọi factory mỗi request chứ không một lần lúc khởi động: thiếu cấu hình OCR
+    hay LLM chỉ làm hỏng đúng route cần nó, KS vẫn khởi động và phục vụ phần còn lại.
+    """
     app = Flask(__name__)
+    # Upload ghi chép đi qua đây trước khi tới service OCR.
+    app.config["MAX_CONTENT_LENGTH"] = settings.MAX_NOTE_UPLOAD_BYTES
 
     # ------------------------------------------------------------ health
 
@@ -270,6 +285,220 @@ def create_app() -> Flask:
             "subject": node.subject,
             "summary": node.summary,
         }), 200
+
+    # ------------------------------------------------------------ notes (scan)
+
+    def _uuid_or_400(raw: str, what: str):
+        try:
+            return UUID(raw), None
+        except ValueError:
+            return None, (jsonify({"error": f"invalid_{what}_id", "detail": f"'{raw}' không phải UUID hợp lệ"}), 400)
+
+    @app.errorhandler(413)
+    def _too_large(_exc):
+        mb = settings.MAX_NOTE_UPLOAD_BYTES // (1024 * 1024)
+        return jsonify({"error": "too_large", "detail": f"Tổng dung lượng tối đa {mb} MB"}), 413
+
+    @app.post("/notes")
+    @require_token
+    def post_note():
+        """multipart: files (ảnh/PDF, nhiều tệp) + title (tuỳ chọn). OCR xong trả note 'draft'.
+
+        Chưa rút khái niệm ở bước này: người học phải xem và sửa văn bản OCR trước.
+        """
+        uploads = [
+            Upload(f.filename or "tệp", f.mimetype or "application/octet-stream", f.read())
+            for f in request.files.getlist("files")
+        ]
+        if not uploads:
+            return jsonify({"error": "no_files", "detail": "Chưa có tệp nào"}), 400
+        try:
+            ocr = ocr_factory()
+            with connect() as conn:
+                note = notes_mod.create_from_uploads(conn, uploads, ocr, title=request.form.get("title"))
+                conn.commit()
+        except OcrError as exc:
+            return jsonify({"error": exc.code, "detail": str(exc)}), exc.status
+        except psycopg.Error as exc:
+            return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
+        return jsonify(note.as_dict()), 201
+
+    @app.get("/notes")
+    @require_token
+    def get_notes():
+        try:
+            limit = min(int(request.args.get("limit", "50")), settings.MAX_NOTE_LIMIT)
+        except ValueError:
+            return jsonify({"error": "invalid_limit", "detail": "limit phải là số nguyên"}), 400
+        try:
+            with connect() as conn:
+                items = notes_mod.list_notes(conn, limit=max(1, limit))
+        except psycopg.Error as exc:
+            return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
+        return jsonify({"notes": [n.as_dict(with_pages=False) for n in items]}), 200
+
+    @app.get("/notes/<note_id>")
+    @require_token
+    def get_note(note_id: str):
+        parsed, err = _uuid_or_400(note_id, "note")
+        if err:
+            return err
+        try:
+            with connect() as conn:
+                note = notes_mod.get(conn, parsed)
+                concepts = notes_mod.concepts_for(conn, parsed)
+        except notes_mod.NoteNotFound as exc:
+            return jsonify({"error": "note_not_found", "detail": str(exc)}), 404
+        except psycopg.Error as exc:
+            return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
+        return jsonify({**note.as_dict(), "concepts": concepts}), 200
+
+    @app.patch("/notes/<note_id>")
+    @require_token
+    def patch_note(note_id: str):
+        parsed, err = _uuid_or_400(note_id, "note")
+        if err:
+            return err
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "invalid_body", "detail": "cần một JSON object"}), 400
+        title, text = body.get("title"), body.get("text")
+        if (title is not None and not isinstance(title, str)) or (text is not None and not isinstance(text, str)):
+            return jsonify({"error": "invalid_body", "detail": "title và text phải là chuỗi"}), 400
+        try:
+            with connect() as conn:
+                note = notes_mod.update(conn, parsed, title=title, text=text)
+                conn.commit()
+        except notes_mod.NoteNotFound as exc:
+            return jsonify({"error": "note_not_found", "detail": str(exc)}), 404
+        except psycopg.Error as exc:
+            return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
+        return jsonify(note.as_dict()), 200
+
+    @app.post("/notes/<note_id>/extract")
+    @require_token
+    def post_note_extract(note_id: str):
+        """Rút khái niệm từ văn bản đã sửa. Kết quả CHỜ DUYỆT, chưa vào ks.nodes."""
+        parsed, err = _uuid_or_400(note_id, "note")
+        if err:
+            return err
+        try:
+            provider = provider_factory()
+        except (LLMError, RuntimeError, ValueError, KeyError) as exc:
+            return jsonify({"error": "llm_not_configured", "detail": str(exc)}), 503
+        try:
+            with connect() as conn:
+                result = notes_mod.extract(conn, parsed, provider)
+                conn.commit()
+                concepts = notes_mod.concepts_for(conn, parsed)
+        except notes_mod.NoteNotFound as exc:
+            return jsonify({"error": "note_not_found", "detail": str(exc)}), 404
+        except notes_mod.EmptyNote as exc:
+            return jsonify({"error": "empty_note", "detail": str(exc)}), 400
+        except psycopg.Error as exc:
+            return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
+        if not result.ok:
+            # Lỗi LLM đã được ghi vào transcript (last_error); báo nguyên nhân để
+            # người học biết thử lại có ích hay không.
+            return jsonify({"error": "extraction_failed", "detail": result.error, "concepts": concepts}), 502
+        return jsonify({"extracted": len(result.concepts), "concepts": concepts}), 200
+
+    # ------------------------------------------------------------ duyệt khái niệm
+
+    def _concept_dict(c) -> dict:
+        return {
+            "id": str(c.id),
+            "transcript_id": str(c.transcript_id),
+            "title": c.title,
+            "subject": c.subject,
+            "summary": c.summary,
+            "source_module": c.source_module.value,
+            "status": c.status,
+            "node_id": str(c.node_id) if c.node_id else None,
+        }
+
+    @app.get("/extracted")
+    @require_token
+    def get_extracted():
+        """Hàng chờ duyệt — cả khái niệm từ phiên học lẫn từ ghi chép scan."""
+        status = request.args.get("status", "pending_review")
+        if status not in ("pending_review", "accepted", "discarded"):
+            return jsonify({"error": "invalid_status", "detail": status}), 400
+        try:
+            with connect() as conn:
+                items = confirm_mod.list_extracted(conn, status=status, limit=200)
+        except psycopg.Error as exc:
+            return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
+        return jsonify({"concepts": [_concept_dict(c) for c in items]}), 200
+
+    @app.patch("/extracted/<concept_id>")
+    @require_token
+    def patch_extracted(concept_id: str):
+        parsed, err = _uuid_or_400(concept_id, "concept")
+        if err:
+            return err
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "invalid_body", "detail": "cần một JSON object"}), 400
+        fields = {k: body.get(k) for k in ("title", "subject", "summary")}
+        if any(v is not None and not isinstance(v, str) for v in fields.values()):
+            return jsonify({"error": "invalid_body", "detail": "title, subject, summary phải là chuỗi"}), 400
+        try:
+            with connect() as conn:
+                concept = confirm_mod.edit_pending(conn, parsed, **fields)
+                conn.commit()
+        except confirm_mod.AlreadyDecided as exc:
+            return jsonify({"error": "already_decided", "detail": str(exc)}), 409
+        except ValueError as exc:
+            return jsonify({"error": "invalid_body", "detail": str(exc)}), 400
+        except confirm_mod.ExtractedConceptNotFound as exc:
+            return jsonify({"error": "concept_not_found", "detail": str(exc)}), 404
+        except psycopg.Error as exc:
+            return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
+        return jsonify(_concept_dict(concept)), 200
+
+    @app.post("/extracted/<concept_id>/accept")
+    @require_token
+    def post_accept(concept_id: str):
+        """Ghi vào đồ thị qua ingest_concepts: có dò trùng, có thể khớp node sẵn có."""
+        parsed, err = _uuid_or_400(concept_id, "concept")
+        if err:
+            return err
+        try:
+            with connect() as conn:
+                item = confirm_mod.accept(conn, parsed)
+                conn.commit()
+        except confirm_mod.AlreadyDecided as exc:
+            return jsonify({"error": "already_decided", "detail": str(exc)}), 409
+        except confirm_mod.ExtractedConceptNotFound as exc:
+            return jsonify({"error": "concept_not_found", "detail": str(exc)}), 404
+        except psycopg.Error as exc:
+            return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
+        return jsonify({
+            "node_id": str(item.node_id),
+            # created=False: khớp một khái niệm đã có — người học cần biết là
+            # nó đã được gộp chứ không thêm mới.
+            "created": item.created,
+            "candidates": [{"node_id": str(c.node_id), "title": c.title, "score": c.score} for c in item.candidates],
+        }), 200
+
+    @app.post("/extracted/<concept_id>/discard")
+    @require_token
+    def post_discard(concept_id: str):
+        parsed, err = _uuid_or_400(concept_id, "concept")
+        if err:
+            return err
+        try:
+            with connect() as conn:
+                confirm_mod.discard(conn, parsed)
+                conn.commit()
+        except confirm_mod.AlreadyDecided as exc:
+            return jsonify({"error": "already_decided", "detail": str(exc)}), 409
+        except confirm_mod.ExtractedConceptNotFound as exc:
+            return jsonify({"error": "concept_not_found", "detail": str(exc)}), 404
+        except psycopg.Error as exc:
+            return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
+        return jsonify({"discarded": True}), 200
 
     return app
 
