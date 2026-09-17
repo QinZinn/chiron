@@ -53,9 +53,12 @@ services:
       KS_HTTP_HOST: 0.0.0.0
       KS_HTTP_PORT: "8080"
       KS_MNEMOSYNE_URL: http://mnemosyne:8081
+      KS_OCR_URL: http://ocr:8866
     depends_on:
       postgres:
         condition: service_healthy
+      # OCR không nằm trong depends_on: thiếu OCR chỉ làm hỏng việc scan ghi
+      # chép (route /notes trả lỗi rõ ràng), KS vẫn phục vụ mọi thứ khác.
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
       interval: 10s
@@ -63,6 +66,26 @@ services:
       retries: 10
     # Không mở cổng ra host: chỉ proxy của frontend và Mnemosyne gọi KS, đều
     # qua network nội bộ. Nhờ vậy cũng hết xung đột cổng 8080 với SearXNG.
+
+  ocr:
+    # PaddleOCR (CPU) cho màn "Scan ghi chép". Mô hình được tải lúc BUILD và
+    # nằm sẵn trong image, nên container khởi động không cần mạng.
+    build:
+      context: ./ocr
+      # network: host khi build — trên máy này, tải tệp lớn từ trong mạng bridge
+      # của Docker bị treo vô hạn (đo được: 2.5 s qua host, không bao giờ xong
+      # qua bridge), mà bước build phải tải PaddlePaddle và mô hình.
+      network: host
+    restart: unless-stopped
+    healthcheck:
+      # "ready" chứ không chỉ "port mở": nạp mô hình mất vài chục giây, và
+      # trong lúc đó /ocr trả 503.
+      test: ["CMD", "python", "-c", "import json, urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8866/health', timeout=3))['ready']"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    # Không mở cổng ra host: chỉ Knowledge Store gọi OCR, qua network nội bộ.
 
   mnemosyne:
     build: ./mnemosyne
