@@ -85,3 +85,33 @@ def discard(conn: psycopg.Connection, concept_id: UUID) -> None:
             " WHERE id = %s",
             (concept_id,),
         )
+
+
+def edit_pending(
+    conn: psycopg.Connection,
+    concept_id: UUID,
+    *,
+    title: str | None = None,
+    subject: str | None = None,
+    summary: str | None = None,
+) -> ExtractedConcept:
+    """Sửa khái niệm TRƯỚC khi quyết. Đã accept/discard thì không sửa được nữa.
+
+    Chỗ rẻ nhất để chữa lỗi OCR hay LLM: sửa ở đây rồi accept, thay vì accept
+    một title sai chính tả rồi để dò trùng không bao giờ khớp được nó.
+    """
+    concept = _load(conn, concept_id)
+    if concept.status != "pending_review":
+        raise AlreadyDecided(f"{concept_id} đã ở trạng thái {concept.status}")
+    fields = {"title": title, "subject": subject, "summary": summary}
+    for name, value in fields.items():
+        if value is not None and not value.strip():
+            raise ValueError(f"{name} không được để trống")
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE ks.extracted_concepts SET title = COALESCE(%s, title),"
+            " subject = COALESCE(%s, subject), summary = COALESCE(%s, summary),"
+            " updated_at = now() WHERE id = %s",
+            tuple(v.strip() if v is not None else None for v in fields.values()) + (concept_id,),
+        )
+    return _load(conn, concept_id)
