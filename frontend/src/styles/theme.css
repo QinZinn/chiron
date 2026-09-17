@@ -428,3 +428,27 @@ select.input { min-height: 32px; padding: 4px 8px; font-size: 13px; }
   .kn-detail { position: static; }
   .ev { grid-template-columns: 1fr; gap: 4px; }
 }
+
+/* ───────────────────────────────────────────────────────────── notes (scan) */
+.drop { border: 1px dashed rgba(216, 222, 233, .18); }
+.drop-on { border-color: var(--a55); background: var(--a08); }
+.file-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; background: var(--bg2); }
+.file-row > i { font-size: 16px; color: var(--frost2); }
+.file-name { flex: 1; min-width: 0; font-size: 13px; color: var(--tx2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title-input {
+  width: 100%; background: transparent; border: 0; outline: 0; color: var(--tx);
+  font: 500 27px/1.2 "Inter", system-ui, sans-serif; padding: 0 0 6px; border-bottom: 1px solid transparent;
+}
+.title-input:focus { border-bottom-color: var(--a45); }
+.steps { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 14px; }
+.step { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--mut); }
+.step-n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; box-shadow: inset 0 0 0 1px rgba(216, 222, 233, .2); }
+.step-done { color: var(--tx2); }
+.step-done .step-n { background: rgba(163, 190, 140, .18); color: var(--green); box-shadow: none; }
+.note-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+textarea.note-text { min-height: 380px; font-size: 14.5px; line-height: 1.7; resize: vertical; }
+.ocr-page { display: flex; align-items: center; gap: 8px; }
+.ocr-line { padding: 6px 10px; border-radius: 7px; background: rgba(191, 97, 106, .07); box-shadow: inset 2px 0 0 var(--red); }
+.ocr-line-text { font-size: 13px; color: var(--tx2); line-height: 1.5; overflow-wrap: anywhere; }
+.wk-dim { opacity: .55; }
+@media (max-width: 980px) { .note-grid { grid-template-columns: 1fr; } }

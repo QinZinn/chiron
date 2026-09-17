@@ -6,6 +6,7 @@ import { ChatView } from './views/Chat';
 import { FlashcardsView } from './views/Flashcards';
 import { QuizView } from './views/Quiz';
 import { KnowledgeView } from './views/Knowledge';
+import { NotesView } from './views/Notes';
 import { WeakView } from './views/Weak';
 import { FeynmanView } from './views/Feynman';
 import { ScheduleView } from './views/Schedule';
@@ -16,6 +17,7 @@ const AREA_NAME: Record<Route['view'], string> = {
   flashcards: 'Thẻ ghi nhớ',
   quiz: 'Quiz',
   knowledge: 'Kiến thức',
+  notes: 'Scan ghi chép',
   weak: 'Điểm yếu',
   feynman: 'Giảng lại',
   schedule: 'Lịch học',
@@ -32,6 +34,8 @@ function View({ route }: { route: Route }) {
       return <QuizView />;
     case 'knowledge':
       return <KnowledgeView nodeId={route.nodeId} />;
+    case 'notes':
+      return <NotesView key={route.noteId ?? 'list'} noteId={route.noteId} />;
     case 'weak':
       return <WeakView />;
     case 'feynman':

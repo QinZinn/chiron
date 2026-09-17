@@ -10,12 +10,16 @@
  *   /api/ks/health               → KS GET /health          (no auth upstream)
  *   /api/ks/nodes?…              → KS GET /nodes           (Bearer CHIRON_KS_TOKEN)
  *   /api/ks/nodes/{id}           → KS GET /nodes/{id}      (Bearer CHIRON_KS_TOKEN)
+ *   /api/ks/notes…, /api/ks/extracted…
+ *                                → ghi chép scan và duyệt khái niệm (bảng KS_WRITE_ROUTES)
  *   /api/gcal/calendars          → withone.ai passthrough: Google calendarList
  *   /api/gcal/events?calendarId… → withone.ai passthrough: Google events.list
  *
- * Deliberately an allowlist, and GET-only. KS writes belong to Mnemosyne and
- * calendar writes belong to Horae; the frontend has no route that could do
- * either, rather than a route it merely promises not to use.
+ * Deliberately an allowlist of (method, path) pairs. Google Calendar is GET-only:
+ * calendar writes belong to Horae, and the frontend has no route that could do
+ * one rather than a route it merely promises not to use. The only KS writes
+ * open here are the note-scan flow and its review step — and even those cannot
+ * put a node into KS directly: concepts wait for an explicit accept.
  *
  * Mnemosyne is NOT proxied: it holds no secret, and the browser calls it
  * directly under the CORS policy in Mnemosyne/backend/src/main.rs.
@@ -47,6 +51,45 @@ const GCAL_ACTION = {
 } as const;
 
 const KS_TIMEOUT_MS = 10_000;
+// OCR runs on CPU: a 30-page PDF can take minutes. Must exceed KS's own OCR
+// timeout (ks/settings.py OCR_TIMEOUT_SECONDS = 600), or the proxy gives up
+// on a scan that KS is still going to finish.
+const KS_OCR_TIMEOUT_MS = 620_000;
+// Concept extraction is one LLM call on a reasoning model.
+const KS_EXTRACT_TIMEOUT_MS = 180_000;
+// Matches KS MAX_NOTE_UPLOAD_BYTES; refused here before a byte reaches KS.
+const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
+
+/**
+ * The KS routes beyond plain reads. Each entry is one method on one path shape;
+ * anything else under /api/ks is refused, whatever its method.
+ */
+const KS_WRITE_ROUTES: { method: string; pattern: RegExp; timeoutMs: number }[] = [
+  { method: 'GET', pattern: /^\/notes$/, timeoutMs: KS_TIMEOUT_MS },
+  { method: 'POST', pattern: /^\/notes$/, timeoutMs: KS_OCR_TIMEOUT_MS },
+  { method: 'GET', pattern: /^\/notes\/[^/]+$/, timeoutMs: KS_TIMEOUT_MS },
+  { method: 'PATCH', pattern: /^\/notes\/[^/]+$/, timeoutMs: KS_TIMEOUT_MS },
+  { method: 'POST', pattern: /^\/notes\/[^/]+\/extract$/, timeoutMs: KS_EXTRACT_TIMEOUT_MS },
+  { method: 'GET', pattern: /^\/extracted$/, timeoutMs: KS_TIMEOUT_MS },
+  { method: 'PATCH', pattern: /^\/extracted\/[^/]+$/, timeoutMs: KS_TIMEOUT_MS },
+  { method: 'POST', pattern: /^\/extracted\/[^/]+\/(accept|discard)$/, timeoutMs: KS_TIMEOUT_MS },
+];
+
+class BodyTooLarge extends Error {}
+
+/** Read a request body, refusing past the limit instead of buffering it all first. */
+async function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
+  const declared = Number(req.headers['content-length'] ?? 0);
+  if (declared > limit) throw new BodyTooLarge();
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > limit) throw new BodyTooLarge();
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks);
+}
 const ONE_TIMEOUT_MS = 20_000;
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -56,18 +99,24 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-/** Forward one GET upstream and relay status + body verbatim. */
+/** Forward one request upstream and relay status + body verbatim. */
 async function forward(
   res: ServerResponse,
   upstream: string,
   label: string,
   headers: Record<string, string>,
   timeoutMs: number,
+  init: { method?: string; body?: Buffer; contentType?: string } = {},
 ): Promise<void> {
   try {
     const r = await fetch(upstream, {
-      method: 'GET',
-      headers: { Accept: 'application/json', ...headers },
+      method: init.method ?? 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...(init.contentType ? { 'Content-Type': init.contentType } : {}),
+        ...headers,
+      },
+      body: init.body && init.body.length > 0 ? init.body : undefined,
       signal: AbortSignal.timeout(timeoutMs),
     });
     const body = await r.text();
@@ -109,10 +158,43 @@ function oneHeaders(env: ProxyEnv, actionId: string): Record<string, string> {
 }
 
 function createHandler(env: ProxyEnv): Connect.NextHandleFunction {
-  return (req: IncomingMessage, res: ServerResponse, next: Connect.NextFunction) => {
+  return async (req: IncomingMessage, res: ServerResponse, next: Connect.NextFunction) => {
     const url = new URL(req.url ?? '/', 'http://proxy.local');
     const path = url.pathname;
     if (!path.startsWith('/api/')) return next();
+
+    // ------------------------------------------------------------ KS: note scan + review
+    // Matched before the GET-only guard below because these are the only
+    // non-GET routes the proxy has; everything else stays read-only.
+    if (path.startsWith('/api/ks/notes') || path.startsWith('/api/ks/extracted')) {
+      const sub = path.slice('/api/ks'.length);
+      const route = KS_WRITE_ROUTES.find((r) => r.method === req.method && r.pattern.test(sub));
+      if (!route) {
+        return sendJson(res, 405, { error: 'method_not_allowed', detail: `${req.method} ${path} không nằm trong danh sách proxy` });
+      }
+      if (!env.ksToken) {
+        return sendJson(res, 503, { error: 'not_configured', detail: 'CHIRON_KS_TOKEN đang trống trong frontend/.env' });
+      }
+      let body: Buffer | undefined;
+      if (req.method !== 'GET') {
+        try {
+          body = await readBody(req, MAX_UPLOAD_BYTES);
+        } catch (err) {
+          if (err instanceof BodyTooLarge) {
+            return sendJson(res, 413, { error: 'too_large', detail: `Tổng dung lượng tối đa ${MAX_UPLOAD_BYTES / 1024 / 1024} MB` });
+          }
+          throw err;
+        }
+      }
+      return void forward(
+        res,
+        `${env.ksUrl}${sub}${url.search}`,
+        'Knowledge Store',
+        { Authorization: `Bearer ${env.ksToken}` },
+        route.timeoutMs,
+        { method: req.method, body, contentType: req.headers['content-type'] },
+      );
+    }
 
     if (req.method !== 'GET') {
       return sendJson(res, 405, { error: 'method_not_allowed', detail: 'proxy này chỉ cho phép GET' });
