@@ -1,6 +1,6 @@
 # Chiron frontend
 
-Giao diện thống nhất cho hệ sinh thái Chiron (Mnemosyne, Knowledge Store, Horae).
+Giao diện thống nhất cho hệ sinh thái Chiron (Mnemosyne, Knowledge Store).
 Vite + React + TypeScript. Thiết kế: Claude Design project
 `4709e4d2-d436-43d1-acc6-94d9de853713` (`Chiron.dc.html`) — design system
 Nocturne (`src/styles/nocturne.css`, chép nguyên) + bảng màu Nord
@@ -9,13 +9,13 @@ Nocturne (`src/styles/nocturne.css`, chép nguyên) + bảng màu Nord
 ## Chạy
 
 ```bash
-cp .env.example .env   # điền CHIRON_KS_TOKEN, CHIRON_ONE_* — xem comment trong file
+cp .env.example .env   # điền CHIRON_KS_TOKEN — xem comment trong file
 npm install
 npm run dev            # http://localhost:5173  (cổng cố định — CORS của Mnemosyne cần đúng cổng này)
 npm run build && npm run preview   # bản build, http://localhost:4173
 ```
 
-Phải chạy qua `dev` hoặc `preview`: KS và Lịch học đi qua proxy trong Vite
+Phải chạy qua `dev` hoặc `preview`: Kiến thức và Scan ghi chép đi qua proxy trong Vite
 server (`server/chironProxy.ts`), mở thẳng `dist/index.html` thì không có proxy.
 
 ## Kết nối
@@ -23,13 +23,9 @@ server (`server/chironProxy.ts`), mở thẳng `dist/index.html` thì không có
 | Module | Cách gọi | Ghi chú |
 |---|---|---|
 | Mnemosyne `:8081` | Browser gọi thẳng | Không có secret. CORS chỉ cho `localhost`/`127.0.0.1` cổng 5173 và 4173 |
-| Knowledge Store | Proxy `/api/ks/*` | Proxy gắn `Bearer CHIRON_KS_TOKEN`. Chỉ GET `/health`, `/nodes`, `/nodes/{id}` |
-| Google Calendar | Proxy `/api/gcal/*` → withone.ai | Proxy gắn secret One. Chỉ calendarList + events.list — không có đường ghi |
-| Horae | Không gọi | Không có HTTP API. Lịch học đọc block `[Auto]` Horae ghi lên Calendar |
+| Knowledge Store | Proxy `/api/ks/*` | Proxy gắn `Bearer CHIRON_KS_TOKEN`. GET `/health`, `/nodes`, `/nodes/{id}` và các route của Scan ghi chép (allowlist trong `server/chironProxy.ts`) |
 
-Đường dẫn passthrough của withone.ai là **tương đối so với `baseUrl` của
-action** (`https://www.googleapis.com/calendar/v3`): `/calendars/{id}/events`,
-không phải `/calendar/v3/calendars/...` — đường dẫn đầy đủ trả 404.
+Frontend không gọi dịch vụ bên ngoài nào.
 
 Secret không bao giờ tới browser: `vite.config.ts` chỉ đưa ra browser một
 allowlist cấu hình public (`src/config.ts`).
@@ -45,7 +41,6 @@ allowlist cấu hình public (`src/config.ts`).
 | Quiz | Mnemosyne `/quiz/*` | Hoạt động |
 | Kiến thức | KS `GET /nodes`, `/nodes/{id}` | Hoạt động |
 | Điểm yếu | Mnemosyne `GET /weak_cards` | Hoạt động |
-| Lịch học | Google Calendar qua withone.ai | Hoạt động (chỉ đọc) |
 | Sửa / xoá | Mnemosyne `PATCH`, `DELETE` | Sửa và xoá thẻ, đổi tên và xoá bộ thẻ, xoá câu quiz, xoá phiên, sửa hồ sơ |
 | Scan ghi chép | KS `/notes`, `/extracted` qua proxy → service OCR | Hoạt động: OCR → sửa văn bản → rút khái niệm → duyệt |
 | Giảng lại (Feynman) | Mnemosyne `/study_sets/{id}/feynman_evaluate` | Hoạt động |
@@ -59,11 +54,11 @@ Mỗi khu vực xử lý lỗi riêng: module nào tắt thì chỉ khu vực đ
 
 - Nút chọn model "Chiron 2 · Cân bằng" → chip tĩnh "Socratic · Mnemosyne":
   Mnemosyne không có lựa chọn model, dropdown sẽ là nút bấm không làm gì.
-- Tag "Horae đã đồng bộ" → trạng thái kết nối Mnemosyne thật: frontend không
-  biết Horae đã đồng bộ hay chưa.
+- Tag trạng thái đồng bộ lịch trong bản thiết kế → trạng thái kết nối Mnemosyne
+  thật.
 - Bỏ nút đính kèm / ảnh / micro: chưa backend nào nhận.
 - Màn Điểm yếu (1c) chỉ giữ khung + thông báo sắp có, không có số liệu mẫu.
-- Các màn Thẻ ghi nhớ, Quiz, Kiến thức, Lịch học, Cài đặt không có trong bản
+- Các màn Thẻ ghi nhớ, Quiz, Kiến thức, Cài đặt không có trong bản
   thiết kế; chúng dùng lại bố cục của màn 1c (header, tiêu đề + mô tả, hàng
   số liệu, đường kẻ mờ, danh sách thẻ `.wk`).
 - Mode mặc định là Học bài (bản 1a để "Giải bài"): hai mode kia chưa dùng được.

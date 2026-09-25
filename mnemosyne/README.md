@@ -93,7 +93,7 @@ Mnemosyne       ──GET /nodes, /nodes/{id}→ Knowledge Store (reading a conc
 | `PATCH /me` | Edit the learner's own profile |
 | `PATCH`/`DELETE` `/study_sets/{id}`, `/cards/{id}`; `DELETE /quiz/{id}`, `/socratic/{id}`, `/chat/{id}` | Edit and delete. Real deletes, cascading — a study set takes its cards, their review history and its quiz questions with it |
 | `GET /stats` | Reviews, accuracy, study streak, card and session counts — counted at read time, in the caller's timezone (`tz_offset_minutes`) |
-| `GET /weak_cards` | Study sets with cards the learner keeps failing, with the evidence and the rule behind it. The read side of the `@ontap` tasks Horae schedules |
+| `GET /weak_cards` | Study sets with cards the learner keeps failing, with the evidence and the rule behind it. The read side of the weak-card todo items |
 | `POST /study_sets/{id}/feynman_evaluate`, `GET .../history` | Submit and score a self-explanation |
 | `POST /quiz/generate` | Generate multiple-choice quiz questions for a study set, from free-text (`source: "topic"`) or from Knowledge Store concepts the learner has already studied (`source: "knowledge_store"`) — the two sources are never mixed in one request, and `count` is capped server-side |
 | `POST /quiz/{question_id}/attempt` | Submit an answer to one quiz question. Graded by index comparison — no LLM in the grading path. An out-of-range `selected_index` is rejected as a `400` rather than silently scored wrong, since that would corrupt the learner's score history. The correct answer is only disclosed in the response after grading |

@@ -9,7 +9,6 @@ import { KnowledgeView } from './views/Knowledge';
 import { NotesView } from './views/Notes';
 import { WeakView } from './views/Weak';
 import { FeynmanView } from './views/Feynman';
-import { ScheduleView } from './views/Schedule';
 import { SettingsView } from './views/Settings';
 
 const AREA_NAME: Record<Route['view'], string> = {
@@ -20,7 +19,6 @@ const AREA_NAME: Record<Route['view'], string> = {
   notes: 'Scan ghi chép',
   weak: 'Điểm yếu',
   feynman: 'Giảng lại',
-  schedule: 'Lịch học',
   settings: 'Cài đặt',
 };
 
@@ -40,8 +38,6 @@ function View({ route }: { route: Route }) {
       return <WeakView />;
     case 'feynman':
       return <FeynmanView />;
-    case 'schedule':
-      return <ScheduleView />;
     case 'settings':
       return <SettingsView />;
   }

@@ -3,7 +3,7 @@
  *
  * Every number here comes from the server, including the rule behind them
  * (window and threshold): the same judgement that decides whether a card joins
- * the `@ontap` task Horae schedules. Nothing is estimated in the browser, so
+ * its set's weak-card todo item. Nothing is estimated in the browser, so
  * this screen cannot drift from what the rest of the system believes.
  */
 import { useState } from 'react';
@@ -58,7 +58,7 @@ function Weak() {
           </h2>
           <p>
             Một thẻ bị coi là yếu khi ít nhất {Math.round(data.error_threshold * 100)}% trong {data.window} lượt ôn
-            gần nhất là “Quên”. Cùng luật với phần Mnemosyne dùng để tạo task <code>@ontap</code> cho Horae xếp lịch.
+            gần nhất là “Quên”. Cùng luật Mnemosyne dùng để thêm việc “Ôn lại các thẻ đang yếu” vào danh sách việc cần ôn.
           </p>
         </div>
         <button className="btn btn-secondary btn-soft" onClick={q.reload}>

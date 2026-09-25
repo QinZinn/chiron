@@ -268,43 +268,48 @@ CREATE INDEX idx_quiz_attempts_user_id ON quiz_attempts (user_id);
 CREATE INDEX idx_quiz_attempts_user_created ON quiz_attempts (user_id, created_at);
 
 -- ---------------------------------------------------------------------------
--- Table: weak_card_tasks
--- The Todoist @ontap task filed for a study set whose cards keep being failed
--- (see backend/src/weak_cards.rs). At most one OPEN row per set — the partial
--- unique index is the only guard against a duplicate task, since Todoist has
--- no server-side idempotency key. A task closes after 5 days with no weak
--- review in its set; closed rows are kept as history. Added by migration
--- 0006_add_weak_card_tasks.sql.
+-- Table: todo_items
+-- The learner's review todo list. A study set whose cards keep being failed
+-- gets one 'weak_card' item (see backend/src/weak_cards.rs); the learner can
+-- also add 'manual' items. Nothing schedules them — the learner ticks them off.
+-- At most one OPEN weak-card item per set: the partial unique index is what
+-- stops two weak reviews landing at once from opening two. Added by migration
+-- 0010_replace_weak_card_tasks_with_todos.sql, which replaced
+-- weak_card_tasks.
 -- ---------------------------------------------------------------------------
-CREATE TABLE weak_card_tasks (
+CREATE TABLE todo_items (
     id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    study_set_id       UUID NOT NULL REFERENCES study_sets(id) ON DELETE CASCADE,
-    todoist_task_id    TEXT NOT NULL,       -- id Todoist returned at creation; needed to update/close it
-    opened_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_weak_card_at  TIMESTAMPTZ NOT NULL DEFAULT now(),  -- bumped by every weak review in the set; the auto-close reads it
-    closed_at          TIMESTAMPTZ,          -- NULL = open
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+    user_id            UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    study_set_id       UUID REFERENCES study_sets(id) ON DELETE CASCADE,
+    title              TEXT NOT NULL CHECK (btrim(title) <> ''),
+    source             TEXT NOT NULL CHECK (source IN ('weak_card', 'manual')),
+    done               BOOLEAN NOT NULL DEFAULT false,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    done_at            TIMESTAMPTZ,
+    last_weak_card_at  TIMESTAMPTZ,          -- weak-card items: bumped by every weak review in the set
+    CHECK (done = (done_at IS NOT NULL)),
+    CHECK (source <> 'weak_card' OR (study_set_id IS NOT NULL AND last_weak_card_at IS NOT NULL))
 );
 
-CREATE UNIQUE INDEX weak_card_tasks_open_per_set
-    ON weak_card_tasks (study_set_id)
-    WHERE closed_at IS NULL;
-CREATE INDEX idx_weak_card_tasks_study_set_id ON weak_card_tasks (study_set_id);
+CREATE UNIQUE INDEX todo_items_open_weak_per_set
+    ON todo_items (study_set_id)
+    WHERE done = false AND source = 'weak_card';
+CREATE INDEX idx_todo_items_user_done ON todo_items (user_id, done, created_at DESC);
 
 -- ---------------------------------------------------------------------------
--- Table: weak_card_task_cards
--- Which cards a weak-card task lists. Append-only for the life of the task: a
--- card that recovers stays listed until the task closes. Added by migration
--- 0006_add_weak_card_tasks.sql.
+-- Table: todo_item_cards
+-- Which cards a weak-card todo item lists — the evidence the Điểm yếu screen
+-- shows. Append-only while the item is open: a card that recovers stays
+-- listed until the learner ticks the item off. Added by migration 0010.
 -- ---------------------------------------------------------------------------
-CREATE TABLE weak_card_task_cards (
-    task_row_id  UUID NOT NULL REFERENCES weak_card_tasks(id) ON DELETE CASCADE,
-    card_id      UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
-    added_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (task_row_id, card_id)
+CREATE TABLE todo_item_cards (
+    todo_id   UUID NOT NULL REFERENCES todo_items(id) ON DELETE CASCADE,
+    card_id   UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    added_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (todo_id, card_id)
 );
 
-CREATE INDEX idx_weak_card_task_cards_card_id ON weak_card_task_cards (card_id);
+CREATE INDEX idx_todo_item_cards_card_id ON todo_item_cards (card_id);
 
 -- ---------------------------------------------------------------------------
 -- Table: user_tokens

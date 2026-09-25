@@ -10,16 +10,16 @@ gộp chúng lại một chỗ để phát triển chung.
 | [`frontend/`](frontend/) | Giao diện web thống nhất | Vite + React + TypeScript | `localhost:5173` |
 | [`ocr/`](ocr/) | Nhận dạng chữ cho "Scan ghi chép" | Python + PaddleOCR + VietOCR (CPU) | nội bộ `ocr:8866` |
 
-Horae (xếp lịch tự học) **không** thuộc repo này nữa — nó đã tách ra thành dự án
-riêng. Frontend đọc block `[Auto]` Horae ghi trên Google Calendar, không gọi
-Horae trực tiếp.
+Chiron không kết nối dịch vụ bên ngoài nào ngoài nhà cung cấp LLM. Việc cần ôn
+(thẻ yếu, việc tự thêm) nằm trong todo list nội bộ của Mnemosyne; Chiron không tự
+xếp lịch.
 
 ## Chạy bằng Docker (khuyến nghị)
 
 ```bash
 cp .env.example .env                  # đặt POSTGRES_PASSWORD (openssl rand -hex 24)
 docker compose up --build -d
-docker compose ps                     # đợi cả bốn service healthy
+docker compose ps                     # đợi cả năm service healthy
 docker compose exec mnemosyne backend create-user <email>
 ```
 
@@ -76,6 +76,18 @@ systemd mức user.
 ## Quy ước phát triển
 
 Tính năng làm trên branch riêng, `main` chỉ nhận phần đã kiểm tra xong.
+
+## Đã ngừng dùng
+
+Ghi lại để tra cứu; không còn đoạn code hay biến môi trường nào dùng tới.
+
+- **Horae** (xếp lịch tự học) tách khỏi repo ngày 2026-09-20, và từ 2026-09-25
+  Chiron không còn gắn với nó dưới bất kỳ hình thức nào.
+- **Todoist** — thẻ yếu từng tạo task `@ontap` để Horae xếp lịch. Gỡ ngày
+  2026-09-25 (migration `0010` của Mnemosyne thay bằng `todo_items`). Nhật ký
+  thiết kế cũ: `mnemosyne/docs/da-ngung-dung/`.
+- **Google Calendar qua withone.ai** — màn "Lịch học" từng đọc calendar của
+  Horae. Gỡ cả màn ngày 2026-09-25.
 
 ## Giấy phép
 

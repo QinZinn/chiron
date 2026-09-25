@@ -1,14 +1,14 @@
 //! `GET /weak_cards` — the read side of the weak-card feature.
 //!
-//! [`crate::weak_cards`] already writes this data on every review: a card the
-//! learner keeps failing joins their study set's open `@ontap` task, which
-//! Horae schedules from Todoist. Until now nothing could read it back, so the
-//! only way to see one's weak cards was Todoist.
+//! [`crate::weak_cards`] writes this data on every review: a card the learner
+//! keeps failing joins their study set's open weak-card todo item. This
+//! endpoint reads those items back with the cards they list, as "tasks" (the
+//! JSON shape predates the todo list and is kept so clients need not change).
 //!
 //! The judgement here is deliberately the *same* one the writer makes —
 //! [`crate::weak_cards::assess`] over the last [`WEAK_CARD_WINDOW`] reviews —
 //! rather than a second, prettier definition of "weak". Two different rules
-//! would let this endpoint disagree with the task that Horae is scheduling,
+//! would let this endpoint disagree with the item on the learner's todo list,
 //! and the learner would have no way to tell which one was lying.
 
 use actix_web::{get, web, HttpResponse};
@@ -23,8 +23,8 @@ use crate::weak_cards::{assess, Weakness, WEAK_CARD_ERROR_THRESHOLD, WEAK_CARD_W
 
 #[derive(Debug, Deserialize)]
 pub struct WeakQuery {
-    /// Closed tasks are history: a set the learner recovered from. Off by
-    /// default so the dashboard shows what still needs work.
+    /// Items the learner ticked off are history. Off by default so the
+    /// dashboard shows what still needs work.
     #[serde(default)]
     pub include_closed: bool,
 }
@@ -87,22 +87,22 @@ struct CardRow {
     added_at: DateTime<Utc>,
 }
 
-/// Tasks for this learner's sets. `todoist_task_id` is deliberately not
-/// selected: it is an id in someone else's system, useless to a client here
-/// and needless to expose.
+/// Weak-card todo items for this learner's sets. "opened" is when the item
+/// was created and "closed" is when the learner ticked it off.
 const TASKS_QUERY: &str = r#"SELECT t.id, t.study_set_id, s.name AS study_set_name,
-          t.opened_at, t.last_weak_card_at, t.closed_at
-   FROM weak_card_tasks t
+          t.created_at AS opened_at, t.last_weak_card_at, t.done_at AS closed_at
+   FROM todo_items t
    JOIN study_sets s ON s.id = t.study_set_id
    WHERE s.user_id = $1
-     AND ($2 OR t.closed_at IS NULL)
-   ORDER BY t.closed_at NULLS FIRST, t.last_weak_card_at DESC"#;
+     AND t.source = 'weak_card'
+     AND ($2 OR NOT t.done)
+   ORDER BY t.done, t.last_weak_card_at DESC"#;
 
-const CARDS_QUERY: &str = r#"SELECT wc.task_row_id, wc.card_id, c.question, wc.added_at
-   FROM weak_card_task_cards wc
-   JOIN cards c ON c.id = wc.card_id
-   WHERE wc.task_row_id = ANY($1)
-   ORDER BY wc.added_at"#;
+const CARDS_QUERY: &str = r#"SELECT tc.todo_id AS task_row_id, tc.card_id, c.question, tc.added_at
+   FROM todo_item_cards tc
+   JOIN cards c ON c.id = tc.card_id
+   WHERE tc.todo_id = ANY($1)
+   ORDER BY tc.added_at"#;
 
 /// The last N answers per listed card, newest first — the same shape
 /// `weak_cards::assess` judges. One query for every card in the response
@@ -140,7 +140,7 @@ pub async fn weak_cards(
         Err(e) => {
             return error_response(
                 actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("database error listing weak-card tasks: {e}"),
+                format!("database error listing weak-card todo items: {e}"),
             );
         }
     };
@@ -273,12 +273,13 @@ mod tests {
         let (mine, my_set) = test_db::seed_learner(&mut tx).await;
         let (theirs, their_set) = test_db::seed_learner(&mut tx).await;
 
-        for (set, todoist_id) in [(my_set, "mine-1"), (their_set, "theirs-1")] {
+        for (owner, set) in [(mine, my_set), (theirs, their_set)] {
             sqlx::query(
-                "INSERT INTO weak_card_tasks (study_set_id, todoist_task_id) VALUES ($1, $2)",
+                "INSERT INTO todo_items (user_id, study_set_id, title, source, last_weak_card_at) \
+                 VALUES ($1, $2, 'weak', 'weak_card', now())",
             )
+            .bind(owner)
             .bind(set)
-            .bind(todoist_id)
             .execute(&mut *tx)
             .await
             .unwrap();
@@ -293,7 +294,6 @@ mod tests {
 
         assert_eq!(rows.len(), 1, "one learner must not see the other's tasks");
         assert_eq!(rows[0].study_set_id, my_set);
-        let _ = theirs;
     }
 
     #[tokio::test]
@@ -304,9 +304,10 @@ mod tests {
         let (user_id, set_id) = test_db::seed_learner(&mut tx).await;
 
         sqlx::query(
-            "INSERT INTO weak_card_tasks (study_set_id, todoist_task_id, closed_at) \
-             VALUES ($1, 'closed', now())",
+            "INSERT INTO todo_items (user_id, study_set_id, title, source, last_weak_card_at, done, done_at) \
+             VALUES ($1, $2, 'weak', 'weak_card', now(), true, now())",
         )
+        .bind(user_id)
         .bind(set_id)
         .execute(&mut *tx)
         .await
@@ -325,7 +326,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(open.is_empty(), "a closed task is history, not a current weak point");
+        assert!(open.is_empty(), "a ticked-off item is history, not a current weak point");
         assert_eq!(all.len(), 1);
     }
 

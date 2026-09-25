@@ -95,15 +95,10 @@ function hintFor(err: ApiError): ReactNode {
         return <>Kiểm tra Mnemosyne đang chạy ở <code>{config.mnemosyneUrl}</code>. Nếu nó đang chạy mà vẫn lỗi, có thể CORS chặn origin hiện tại — frontend phải mở ở cổng 5173 hoặc 4173.</>;
       case 'Knowledge Store':
         return <>Kiểm tra KS đang chạy (<code>ks serve</code>) và <code>CHIRON_KS_URL</code> trỏ đúng cổng <code>KS_HTTP_PORT</code>.</>;
-      case 'Google Calendar':
-        return <>Không liên lạc được withone.ai. Kiểm tra mạng và <code>CHIRON_ONE_API_BASE</code>.</>;
     }
   }
   if (err.kind === 'http' && err.status === 403 && err.service === 'Knowledge Store') {
     return <><code>CHIRON_KS_TOKEN</code> không khớp <code>KS_HTTP_TOKEN</code> của KS.</>;
-  }
-  if (err.kind === 'http' && (err.status === 401 || err.status === 403) && err.service === 'Google Calendar') {
-    return <>withone.ai từ chối: kiểm tra <code>CHIRON_ONE_SECRET</code> và <code>CHIRON_ONE_GCAL_CONNECTION_KEY</code>.</>;
   }
   return null;
 }

@@ -14,7 +14,7 @@
 
 import { getToken } from './session';
 
-export type Service = 'Mnemosyne' | 'Knowledge Store' | 'Google Calendar';
+export type Service = 'Mnemosyne' | 'Knowledge Store';
 
 export type ApiErrorKind = 'unreachable' | 'timeout' | 'not_configured' | 'http' | 'unauthenticated';
 
@@ -48,15 +48,11 @@ export interface RequestOptions {
 function messageFrom(body: unknown, fallback: string): { message: string; code?: string } {
   if (body && typeof body === 'object') {
     const b = body as Record<string, unknown>;
-    // Mnemosyne: {"error": "<message>"}; KS and the proxy: {"error": code, "detail": msg};
-    // Google (through withone.ai): {"error": {"message": …}}.
+    // Mnemosyne: {"error": "<message>"}; KS and the proxy: {"error": code, "detail": msg}.
     if (typeof b.detail === 'string') {
       return { message: b.detail, code: typeof b.error === 'string' ? b.error : undefined };
     }
     if (typeof b.error === 'string') return { message: b.error };
-    if (b.error && typeof b.error === 'object' && typeof (b.error as Record<string, unknown>).message === 'string') {
-      return { message: (b.error as Record<string, string>).message };
-    }
     if (typeof b.message === 'string') return { message: b.message };
   }
   if (typeof body === 'string' && body.trim()) return { message: body.trim().slice(0, 300) };

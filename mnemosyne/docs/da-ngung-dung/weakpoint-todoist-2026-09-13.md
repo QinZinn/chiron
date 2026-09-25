@@ -1,3 +1,8 @@
+> **ĐÃ NGỪNG DÙNG (2026-09-25).** Tính năng này đã bị gỡ: Chiron không còn gọi
+> Todoist và không còn gắn với Horae. Thẻ yếu giờ tạo mục trong todo list nội bộ
+> (`todo_items`, migration 0010). File này chỉ giữ lại làm lịch sử quyết định;
+> xem `../../NOTES.md` cho thiết kế hiện hành.
+
 # NOTES — Weakpoint Dashboard: thẻ yếu → task `@ontap` trên Todoist, 2026-09-13
 
 Nguồn: spec `claude/spec-weakpoint-dashboard-2026-09-13.md` (được dán vào session, không nằm trong repo). Code: `backend/src/weak_cards.rs`, `backend/src/todoist_client.rs`, bước 6 của `backend/src/handlers/reviews.rs`, migration `backend/sql/migrations/0006_add_weak_card_tasks.sql`.

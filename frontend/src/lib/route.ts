@@ -8,7 +8,6 @@ export type Route =
   | { view: 'notes'; noteId?: string }
   | { view: 'weak' }
   | { view: 'feynman' }
-  | { view: 'schedule' }
   | { view: 'settings' };
 
 export function parseHash(hash: string): Route {
@@ -28,7 +27,6 @@ export function parseHash(hash: string): Route {
     case 'quiz':
     case 'feynman':
     case 'weak':
-    case 'schedule':
     case 'settings':
       return { view: parts[0] };
     case 'knowledge':

@@ -72,7 +72,6 @@ const EXTRACT_TIMEOUT_MS = 190_000;
 
 export interface ProxyStatus {
   ks: { url: string; tokenConfigured: boolean };
-  gcal: { configured: boolean; missing: string[] };
 }
 
 export const ks = {

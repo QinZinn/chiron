@@ -23,7 +23,7 @@ use crate::auth::AuthedUser;
 
 const DEFAULT_RANGE_DAYS: i64 = 14;
 const MAX_RANGE_DAYS: i64 = 365;
-/// Asia/Ho_Chi_Minh, the timezone Horae plans in.
+/// Asia/Ho_Chi_Minh, the learners' timezone.
 const DEFAULT_TZ_OFFSET_MINUTES: i32 = 7 * 60;
 
 #[derive(Debug, Deserialize)]

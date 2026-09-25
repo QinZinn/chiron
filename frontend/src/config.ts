@@ -4,8 +4,6 @@
  */
 export interface PublicConfig {
   mnemosyneUrl: string;
-  autoStudyCalendar: string;
-  ignoredCalendars: string[];
   timezone: string;
 }
 
