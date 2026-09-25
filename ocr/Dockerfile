@@ -35,5 +35,10 @@ ENV OCR_HOST=0.0.0.0 \
 # docker-compose.yml does, and the runtime never has to download anything.
 RUN python -c "from chiron_ocr import engine; engine.load(); assert engine.status()['ready'], engine.status()"
 
+# Links the image published to ghcr.io/qinzinn/chiron-ocr to this repository.
+LABEL org.opencontainers.image.source="https://github.com/QinZinn/chiron" \
+      org.opencontainers.image.description="Chiron OCR: PaddleOCR text detection + VietOCR recognition (CPU)" \
+      org.opencontainers.image.licenses="MIT"
+
 EXPOSE 8866
 CMD ["python", "-m", "chiron_ocr.app"]
