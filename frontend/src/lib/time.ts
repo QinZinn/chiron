@@ -20,6 +20,12 @@ export function dateTime(d: Date | string): string {
 }
 
 /** "vừa xong", "5 phút trước", "3 ngày trước", "sau 2 ngày". */
+/** "Xong 5 phút trước", or "Vừa xong" — never the doubled "Xong vừa xong". */
+export function doneAgo(d: Date | string): string {
+  const r = relative(d);
+  return r === 'vừa xong' ? 'Vừa xong' : `Xong ${r}`;
+}
+
 export function relative(d: Date | string): string {
   const t = typeof d === 'string' ? new Date(d).getTime() : d.getTime();
   const diff = t - Date.now();

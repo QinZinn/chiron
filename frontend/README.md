@@ -41,6 +41,7 @@ allowlist cấu hình public (`src/config.ts`).
 | Quiz | Mnemosyne `/quiz/*` | Hoạt động |
 | Kiến thức | KS `GET /nodes`, `/nodes/{id}` | Hoạt động |
 | Điểm yếu | Mnemosyne `GET /weak_cards` | Hoạt động |
+| Việc cần ôn | Mnemosyne `/todos` + Pomodoro (thuần frontend) | Hoạt động: việc tự sinh từ thẻ yếu, thêm tay, tick xong; Pomodoro chỉ là đồng hồ, không lưu lịch sử |
 | Sửa / xoá | Mnemosyne `PATCH`, `DELETE` | Sửa và xoá thẻ, đổi tên và xoá bộ thẻ, xoá câu quiz, xoá phiên, sửa hồ sơ |
 | Scan ghi chép | KS `/notes`, `/extracted` qua proxy → service OCR | Hoạt động: OCR → sửa văn bản → rút khái niệm → duyệt |
 | Giảng lại (Feynman) | Mnemosyne `/study_sets/{id}/feynman_evaluate` | Hoạt động |

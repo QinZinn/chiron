@@ -69,6 +69,10 @@ interface AppState {
   /** Cards still failing the window test — the sidebar badge on Điểm yếu. */
   weakCount: number | undefined;
   refreshDue: () => void;
+  /** Open items on the review todo list — the sidebar badge on Việc cần ôn. */
+  todoOpenCount: number | undefined;
+  /** Call after adding or ticking off a todo item. */
+  refreshTodos: () => void;
 
   recent: RecentSession[];
   recentError: unknown;
@@ -149,6 +153,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const dueQ = useAsync(() => mnemosyne.due(100), [token, mOk, dueTick], authed);
   const weakQ = useAsync(() => mnemosyne.weakCards(), [token, mOk, dueTick], authed);
   const statsQ = useAsync(() => mnemosyne.stats(14), [token, mOk, dueTick], authed);
+  // A review can open a weak-card item, so the badge follows dueTick too.
+  const [todoTick, setTodoTick] = useState(0);
+  const refreshTodos = useCallback(() => setTodoTick((t) => t + 1), []);
+  const todoQ = useAsync(() => mnemosyne.todos(false), [token, mOk, dueTick, todoTick], authed);
 
   // ---------------------------------------------------------------- recent sessions
   const [sessionTick, setSessionTick] = useState(0);
@@ -197,6 +205,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dueCount: dueQ.error ? undefined : dueQ.data?.count,
     weakCount: weakQ.error ? undefined : weakQ.data?.still_weak_count,
     refreshDue,
+    todoOpenCount: todoQ.error ? undefined : todoQ.data?.open_count,
+    refreshTodos,
     recent,
     recentError: socraticQ.error ?? chatQ.error,
     refreshSessions,

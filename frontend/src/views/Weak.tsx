@@ -11,7 +11,7 @@ import { mnemosyne, type WeakCard, type WeakTask } from '../api/mnemosyne';
 import { useApp } from '../state/app';
 import { useAsync } from '../lib/useAsync';
 import { href } from '../lib/route';
-import { relative } from '../lib/time';
+import { doneAgo, relative } from '../lib/time';
 import { ErrorNotice, Loading, NeedToken, PageHeader } from '../components/ui';
 
 export function WeakView() {
@@ -81,7 +81,7 @@ function Weak() {
       <div className="toolbar" style={{ marginBottom: 14 }}>
         <label className="radio" style={{ fontSize: 12.5, color: 'var(--mut)' }}>
           <input type="checkbox" checked={includeClosed} onChange={(e) => setIncludeClosed(e.target.checked)} style={{ position: 'static', width: 'auto', height: 'auto', opacity: 1, pointerEvents: 'auto' }} />
-          Hiện cả những đợt đã đóng
+          Hiện cả những đợt đã xong
         </label>
       </div>
       <hr className="rule" style={{ marginBottom: 18 }} />
@@ -119,7 +119,7 @@ function TaskCard({ task, expanded, onToggle }: { task: WeakTask; expanded: bool
         <div className="wk-head">
           <span className="wk-title">{task.study_set_name}</span>
           {closed ? (
-            <span className="tag tag-dim tag-sm">Đã đóng {relative(task.closed_at!)}</span>
+            <span className="tag tag-dim tag-sm">{doneAgo(task.closed_at!)}</span>
           ) : task.still_weak_count > 0 ? (
             <span className="tag tag-red tag-sm">{task.still_weak_count} thẻ đang yếu</span>
           ) : (
@@ -129,7 +129,7 @@ function TaskCard({ task, expanded, onToggle }: { task: WeakTask; expanded: bool
         </div>
         <p className="wk-desc">
           Mở {relative(task.opened_at)} · thẻ yếu gần nhất {relative(task.last_weak_card_at)}.
-          {task.still_weak_count === 0 && !closed && ' Các thẻ đã hồi phục nhưng vẫn được liệt kê cho tới khi đợt này đóng.'}
+          {task.still_weak_count === 0 && !closed && ' Các thẻ đã hồi phục nhưng vẫn được liệt kê cho tới khi bạn đánh dấu xong việc ôn của set này ở Việc cần ôn.'}
         </p>
         {r && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 9 }}>

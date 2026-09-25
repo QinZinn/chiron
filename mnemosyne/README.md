@@ -35,6 +35,7 @@ Mnemosyne is a backend module of the Chiron ecosystem. It is feature-complete fo
 - [x] Sửa và xoá — mọi thứ trước đây chỉ có thể thêm, kể cả thẻ do LLM sinh sai
 - [x] Hỏi bài / Giải bài — direct answers and step-by-step solutions (`/chat/*`), kept apart from Socratic in both prompt and storage
 - [x] Weak-card dashboard — `GET /weak_cards` reads back what `POST /review` has been writing
+- [x] Review todo list — `/todos`: weak-card items plus items the learner adds; never scheduled
 - [x] Quiz — AI-generated multiple-choice questions (`POST /quiz/generate`) from either free-text or Knowledge Store concepts, graded server-side with no LLM in the grading path (`POST /quiz/{question_id}/attempt`)
 - [x] Authentication — per-learner bearer tokens; every endpoint derives `user_id` from the token instead of reading it out of the request
 
@@ -94,6 +95,9 @@ Mnemosyne       ──GET /nodes, /nodes/{id}→ Knowledge Store (reading a conc
 | `PATCH`/`DELETE` `/study_sets/{id}`, `/cards/{id}`; `DELETE /quiz/{id}`, `/socratic/{id}`, `/chat/{id}` | Edit and delete. Real deletes, cascading — a study set takes its cards, their review history and its quiz questions with it |
 | `GET /stats` | Reviews, accuracy, study streak, card and session counts — counted at read time, in the caller's timezone (`tz_offset_minutes`) |
 | `GET /weak_cards` | Study sets with cards the learner keeps failing, with the evidence and the rule behind it. The read side of the weak-card todo items |
+| `GET /todos` | The learner's review todo list (`?done=true\|false`). Weak-card items are opened by `POST /review`, one open item per study set |
+| `POST /todos` | Add an item by hand: `{title, study_set_id?}` |
+| `POST /todos/{id}/complete` | Tick an item off (idempotent) |
 | `POST /study_sets/{id}/feynman_evaluate`, `GET .../history` | Submit and score a self-explanation |
 | `POST /quiz/generate` | Generate multiple-choice quiz questions for a study set, from free-text (`source: "topic"`) or from Knowledge Store concepts the learner has already studied (`source: "knowledge_store"`) — the two sources are never mixed in one request, and `count` is capped server-side |
 | `POST /quiz/{question_id}/attempt` | Submit an answer to one quiz question. Graded by index comparison — no LLM in the grading path. An out-of-range `selected_index` is rejected as a `400` rather than silently scored wrong, since that would corrupt the learner's score history. The correct answer is only disclosed in the response after grading |
