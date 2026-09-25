@@ -32,8 +32,8 @@ Mở http://localhost:4173 và dán token vừa in ra vào màn Cài đặt.
   tự chạy migration khi khởi động.
 - Chỉ mở ra `127.0.0.1`: Mnemosyne `8081` (browser gọi thẳng) và frontend
   `4173`. Knowledge Store, OCR và Postgres chỉ nằm trong network nội bộ.
-- Image `ocr` nặng (PaddlePaddle + mô hình tải sẵn lúc build) và build với
-  `network: host` — xem `ocr/README.md`.
+- Image `ocr` (~4,2 GB, PaddlePaddle + PyTorch + mô hình) được **pull** từ
+  `ghcr.io/qinzinn/chiron-ocr`, không build tại chỗ — xem `ocr/README.md`.
 - Dữ liệu nằm trong volume `chiron_pgdata`; `docker compose down` giữ nguyên
   nó, `docker compose down -v` thì xoá.
 

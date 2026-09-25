@@ -64,8 +64,25 @@ Không cần nạp mô hình — sắp dòng, xử lý tệp và cắt/xoay ản
 docker compose run --rm ocr python -m pytest -q
 ```
 
-## Build
+## Image dựng sẵn
 
-`docker-compose.yml` build với `network: host`: trên máy dev, tải tệp lớn từ bên
-trong mạng bridge của Docker bị treo vô hạn, mà bước build phải tải PaddlePaddle,
-PyTorch và mô hình.
+Image public trên GHCR: `ghcr.io/qinzinn/chiron-ocr:0.1.0` (khoảng 4,2 GB, chỉ có
+code và mô hình công khai, không có secret). `docker compose up` **pull** image
+này, không build — máy demo không cần build PaddlePaddle/PyTorch, cũng không cần
+cấu hình mạng như máy dev.
+
+## Build từ source và đẩy tag mới
+
+Khi đổi code trong `ocr/`:
+
+```bash
+cd ocr
+docker build --network host -t ghcr.io/qinzinn/chiron-ocr:<tag> .
+gh auth token | docker login ghcr.io -u QinZinn --password-stdin   # cần scope write:packages
+docker push ghcr.io/qinzinn/chiron-ocr:<tag>
+```
+
+rồi đổi tag ở `image:` của service `ocr` trong `docker-compose.yml`.
+
+`--network host`: trên máy dev, tải tệp lớn từ bên trong mạng bridge của Docker
+bị treo vô hạn, mà bước build phải tải PaddlePaddle, PyTorch và mô hình.
