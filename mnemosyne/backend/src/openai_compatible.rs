@@ -145,35 +145,41 @@ impl LLMProvider for OpenAiCompatibleClient {
             return Err(LLMError::Http { status: status.as_u16(), body: text });
         }
 
-        let parsed: ChatResponse =
-            serde_json::from_str(&text).map_err(|e| LLMError::Parse(e.to_string()))?;
-        let choice = parsed
-            .choices
-            .into_iter()
-            .next()
-            .ok_or_else(|| LLMError::Parse("response contained no choices".into()))?;
-        let total_tokens = parsed.usage.and_then(|u| u.total_tokens).unwrap_or(0);
-
-        // Truncation is reported the same way the DeepSeek client reports it,
-        // because the handlers' shared failure classification depends on the
-        // distinction: a truncated call was billed and may be worth retrying
-        // smaller, a dead one was not.
-        let finish_reason = choice.finish_reason.clone().unwrap_or_default();
-        if finish_reason == "length" {
-            return Err(LLMError::Truncated {
-                finish_reason: "length".into(),
-                total_tokens,
-            });
-        }
-
-        let content = choice
-            .message
-            .content
-            .filter(|c| !c.trim().is_empty())
-            .ok_or_else(|| LLMError::Parse("response message had no content".into()))?;
-
-        Ok(LLMResponse { content, total_tokens, finish_reason })
+        parse_completion(&text)
     }
+}
+
+/// Turn a 2xx response body into an [`LLMResponse`], **rejecting a truncated
+/// completion**.
+///
+/// Kept separate from the network call so the rule can be tested without a
+/// server. `finish_reason == "length"` is checked *before* `content` is read:
+/// a call that spent its token budget can come back with an empty or
+/// mid-sentence message, and handing that on makes a downstream JSON parser
+/// report a formatting problem — sending whoever reads the error to the wrong
+/// place. The DeepSeek client makes the same check in `to_llm_response`.
+fn parse_completion(text: &str) -> Result<LLMResponse, LLMError> {
+    let parsed: ChatResponse =
+        serde_json::from_str(text).map_err(|e| LLMError::Parse(e.to_string()))?;
+    let choice = parsed
+        .choices
+        .into_iter()
+        .next()
+        .ok_or_else(|| LLMError::Parse("response contained no choices".into()))?;
+    let total_tokens = parsed.usage.and_then(|u| u.total_tokens).unwrap_or(0);
+
+    let finish_reason = choice.finish_reason.clone().unwrap_or_default();
+    if finish_reason == "length" {
+        return Err(LLMError::Truncated { finish_reason: "length".into(), total_tokens });
+    }
+
+    let content = choice
+        .message
+        .content
+        .filter(|c| !c.trim().is_empty())
+        .ok_or_else(|| LLMError::Parse("response message had no content".into()))?;
+
+    Ok(LLMResponse { content, total_tokens, finish_reason })
 }
 
 #[cfg(test)]
@@ -228,6 +234,69 @@ mod tests {
                 assert!(printed.contains("redacted"), "{printed}");
             },
         );
+    }
+
+    fn body(content: &str, finish_reason: &str) -> String {
+        serde_json::json!({
+            "choices": [{
+                "message": { "role": "assistant", "content": content },
+                "finish_reason": finish_reason,
+            }],
+            "usage": { "total_tokens": 4096 },
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn a_normal_completion_passes_through() {
+        let r = parse_completion(&body("Xin chào", "stop")).unwrap();
+        assert_eq!(r.content, "Xin chào");
+        assert_eq!(r.finish_reason, "stop");
+        assert_eq!(r.total_tokens, 4096);
+    }
+
+    #[test]
+    fn length_with_empty_content_is_truncated_not_a_parse_error() {
+        // The reported failure: reasoning tokens eat the budget, the message
+        // comes back empty, and the caller blames the JSON parser.
+        match parse_completion(&body("", "length")) {
+            Err(LLMError::Truncated { finish_reason, total_tokens }) => {
+                assert_eq!(finish_reason, "length");
+                assert_eq!(total_tokens, 4096);
+            }
+            other => panic!("expected Truncated, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn length_with_partial_content_is_still_truncated() {
+        // Cut mid-sentence: non-empty, so only finish_reason can tell.
+        assert!(matches!(
+            parse_completion(&body("{\"title\": \"Quang h", "length")),
+            Err(LLMError::Truncated { .. })
+        ));
+    }
+
+    #[test]
+    fn empty_content_without_length_is_a_parse_error() {
+        assert!(matches!(parse_completion(&body("  ", "stop")), Err(LLMError::Parse(_))));
+    }
+
+    #[test]
+    fn missing_finish_reason_is_accepted_when_content_is_present() {
+        // Some compatible servers omit the field; that must not be an error.
+        let text = serde_json::json!({
+            "choices": [{ "message": { "content": "ok" } }],
+        })
+        .to_string();
+        let r = parse_completion(&text).unwrap();
+        assert_eq!((r.content.as_str(), r.finish_reason.as_str(), r.total_tokens), ("ok", "", 0));
+    }
+
+    #[test]
+    fn no_choices_and_malformed_bodies_are_parse_errors() {
+        assert!(matches!(parse_completion(r#"{"choices": []}"#), Err(LLMError::Parse(_))));
+        assert!(matches!(parse_completion("not json"), Err(LLMError::Parse(_))));
     }
 
     /// Set/restore env vars around a closure. Tests in one binary share the
