@@ -126,6 +126,26 @@ export interface WeakResponse {
   error_threshold: number;
 }
 
+/** One entry in the review todo list (Mnemosyne `/todos`). */
+export interface Todo {
+  id: string;
+  title: string;
+  /** `weak_card`: opened by Mnemosyne for a struggling study set. `manual`: added by the learner. */
+  source: 'weak_card' | 'manual';
+  study_set_id: string | null;
+  study_set_name: string | null;
+  done: boolean;
+  created_at: string;
+  done_at: string | null;
+  last_weak_card_at: string | null;
+  card_count: number;
+}
+
+export interface TodoList {
+  todos: Todo[];
+  open_count: number;
+}
+
 export interface DayCount {
   day: string;
   total: number;
@@ -252,6 +272,18 @@ export const mnemosyne = {
 
   deleteChat: (sessionId: string) =>
     request<{ deleted: boolean }>(S, `${base}/chat/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
+
+  todos: (done?: boolean) =>
+    request<TodoList>(S, `${base}/todos${done === undefined ? '' : `?done=${done}`}`),
+
+  createTodo: (title: string, studySetId?: string) =>
+    request<Todo>(S, `${base}/todos`, {
+      method: 'POST',
+      body: { title, study_set_id: studySetId ?? null },
+    }),
+
+  completeTodo: (id: string) =>
+    request<Todo>(S, `${base}/todos/${encodeURIComponent(id)}/complete`, { method: 'POST' }),
 
   weakCards: (includeClosed = false) =>
     request<WeakResponse>(S, `${base}/weak_cards?include_closed=${includeClosed}`),

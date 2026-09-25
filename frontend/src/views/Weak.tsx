@@ -3,7 +3,7 @@
  *
  * Every number here comes from the server, including the rule behind them
  * (window and threshold): the same judgement that decides whether a card joins
- * the `@ontap` task Horae schedules. Nothing is estimated in the browser, so
+ * its set's weak-card todo item. Nothing is estimated in the browser, so
  * this screen cannot drift from what the rest of the system believes.
  */
 import { useState } from 'react';
@@ -11,7 +11,7 @@ import { mnemosyne, type WeakCard, type WeakTask } from '../api/mnemosyne';
 import { useApp } from '../state/app';
 import { useAsync } from '../lib/useAsync';
 import { href } from '../lib/route';
-import { relative } from '../lib/time';
+import { doneAgo, relative } from '../lib/time';
 import { ErrorNotice, Loading, NeedToken, PageHeader } from '../components/ui';
 
 export function WeakView() {
@@ -58,7 +58,7 @@ function Weak() {
           </h2>
           <p>
             Một thẻ bị coi là yếu khi ít nhất {Math.round(data.error_threshold * 100)}% trong {data.window} lượt ôn
-            gần nhất là “Quên”. Cùng luật với phần Mnemosyne dùng để tạo task <code>@ontap</code> cho Horae xếp lịch.
+            gần nhất là “Quên”. Cùng luật Mnemosyne dùng để thêm việc “Ôn lại các thẻ đang yếu” vào danh sách việc cần ôn.
           </p>
         </div>
         <button className="btn btn-secondary btn-soft" onClick={q.reload}>
@@ -81,7 +81,7 @@ function Weak() {
       <div className="toolbar" style={{ marginBottom: 14 }}>
         <label className="radio" style={{ fontSize: 12.5, color: 'var(--mut)' }}>
           <input type="checkbox" checked={includeClosed} onChange={(e) => setIncludeClosed(e.target.checked)} style={{ position: 'static', width: 'auto', height: 'auto', opacity: 1, pointerEvents: 'auto' }} />
-          Hiện cả những đợt đã đóng
+          Hiện cả những đợt đã xong
         </label>
       </div>
       <hr className="rule" style={{ marginBottom: 18 }} />
@@ -119,7 +119,7 @@ function TaskCard({ task, expanded, onToggle }: { task: WeakTask; expanded: bool
         <div className="wk-head">
           <span className="wk-title">{task.study_set_name}</span>
           {closed ? (
-            <span className="tag tag-dim tag-sm">Đã đóng {relative(task.closed_at!)}</span>
+            <span className="tag tag-dim tag-sm">{doneAgo(task.closed_at!)}</span>
           ) : task.still_weak_count > 0 ? (
             <span className="tag tag-red tag-sm">{task.still_weak_count} thẻ đang yếu</span>
           ) : (
@@ -129,7 +129,7 @@ function TaskCard({ task, expanded, onToggle }: { task: WeakTask; expanded: bool
         </div>
         <p className="wk-desc">
           Mở {relative(task.opened_at)} · thẻ yếu gần nhất {relative(task.last_weak_card_at)}.
-          {task.still_weak_count === 0 && !closed && ' Các thẻ đã hồi phục nhưng vẫn được liệt kê cho tới khi đợt này đóng.'}
+          {task.still_weak_count === 0 && !closed && ' Các thẻ đã hồi phục nhưng vẫn được liệt kê cho tới khi bạn đánh dấu xong việc ôn của set này ở Việc cần ôn.'}
         </p>
         {r && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 9 }}>

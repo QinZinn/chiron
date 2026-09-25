@@ -12,11 +12,6 @@ export default defineConfig(({ mode }) => {
 
   const publicConfig = {
     mnemosyneUrl: trimSlash(env.CHIRON_MNEMOSYNE_URL || 'http://127.0.0.1:8081'),
-    autoStudyCalendar: env.CHIRON_GCAL_AUTO_STUDY_CALENDAR || 'Auto-Study',
-    ignoredCalendars: (env.CHIRON_GCAL_IGNORED_CALENDARS || '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean),
     timezone: env.CHIRON_TIMEZONE || 'Asia/Ho_Chi_Minh',
   };
 
@@ -26,9 +21,6 @@ export default defineConfig(({ mode }) => {
       chironProxy({
         ksUrl: trimSlash(env.CHIRON_KS_URL || 'http://127.0.0.1:8080'),
         ksToken: env.CHIRON_KS_TOKEN || '',
-        oneApiBase: env.CHIRON_ONE_API_BASE || 'https://api.withone.ai',
-        oneSecret: env.CHIRON_ONE_SECRET || '',
-        gcalConnectionKey: env.CHIRON_ONE_GCAL_CONNECTION_KEY || '',
       }),
     ],
     define: {

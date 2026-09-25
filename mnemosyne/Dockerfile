@@ -28,7 +28,7 @@ RUN touch backend/src/main.rs mnemosyne-core/src/lib.rs \
  && cp target/release/backend /backend
 
 FROM debian:trixie-slim
-# ca-certificates: reqwest (rustls) talks TLS to DeepSeek and Todoist.
+# ca-certificates: reqwest (rustls) talks TLS to the LLM provider.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/*

@@ -16,6 +16,7 @@ pub mod reviews;
 pub mod socratic;
 pub mod stats;
 pub mod study_sets;
+pub mod todos;
 pub mod weak;
 pub mod users;
 

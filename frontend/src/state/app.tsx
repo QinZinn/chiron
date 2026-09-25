@@ -11,8 +11,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { mnemosyne, type StudySet, type User } from '../api/mnemosyne';
 import { getToken, onTokenChange, setToken } from '../api/session';
 import { ks, proxyStatus, type ProxyStatus } from '../api/ks';
-import { loadRange } from '../api/calendar';
-import { addDays, keyBoundsPadded, todayKey } from '../lib/time';
 import { load, save } from '../lib/storage';
 import { useAsync } from '../lib/useAsync';
 
@@ -71,9 +69,10 @@ interface AppState {
   /** Cards still failing the window test — the sidebar badge on Điểm yếu. */
   weakCount: number | undefined;
   refreshDue: () => void;
-
-  todayEventCount: number | undefined;
-  setTodayEventCount: (n: number | undefined) => void;
+  /** Open items on the review todo list — the sidebar badge on Việc cần ôn. */
+  todoOpenCount: number | undefined;
+  /** Call after adding or ticking off a todo item. */
+  refreshTodos: () => void;
 
   recent: RecentSession[];
   recentError: unknown;
@@ -154,26 +153,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const dueQ = useAsync(() => mnemosyne.due(100), [token, mOk, dueTick], authed);
   const weakQ = useAsync(() => mnemosyne.weakCards(), [token, mOk, dueTick], authed);
   const statsQ = useAsync(() => mnemosyne.stats(14), [token, mOk, dueTick], authed);
-
-  // ---------------------------------------------------------------- calendar badge
-  const [todayEventCount, setTodayEventCount] = useState<number>();
-  const gcalConfigured = health.proxy?.gcal.configured ?? false;
-  useEffect(() => {
-    if (!gcalConfigured) {
-      setTodayEventCount(undefined);
-      return;
-    }
-    let live = true;
-    const today = todayKey();
-    const { timeMin, timeMax } = keyBoundsPadded(today, addDays(today, 1));
-    loadRange(timeMin, timeMax).then(
-      (r) => live && setTodayEventCount(r.events.filter((e) => e.dayKey === today).length),
-      () => live && setTodayEventCount(undefined), // the Lịch học view reports the error itself
-    );
-    return () => {
-      live = false;
-    };
-  }, [gcalConfigured]);
+  // A review can open a weak-card item, so the badge follows dueTick too.
+  const [todoTick, setTodoTick] = useState(0);
+  const refreshTodos = useCallback(() => setTodoTick((t) => t + 1), []);
+  const todoQ = useAsync(() => mnemosyne.todos(false), [token, mOk, dueTick, todoTick], authed);
 
   // ---------------------------------------------------------------- recent sessions
   const [sessionTick, setSessionTick] = useState(0);
@@ -222,8 +205,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dueCount: dueQ.error ? undefined : dueQ.data?.count,
     weakCount: weakQ.error ? undefined : weakQ.data?.still_weak_count,
     refreshDue,
-    todayEventCount,
-    setTodayEventCount,
+    todoOpenCount: todoQ.error ? undefined : todoQ.data?.open_count,
+    refreshTodos,
     recent,
     recentError: socraticQ.error ?? chatQ.error,
     refreshSessions,

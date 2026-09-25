@@ -235,34 +235,16 @@ export function SettingsView() {
                 </td>
                 <td>Qua proxy <code>/api/ks</code> → <code>{proxy?.ks.url ?? '?'}</code></td>
               </tr>
-              <tr>
-                <td>Google Calendar<div className="sub">Lịch học · chỉ đọc</div></td>
-                <td>
-                  {proxy ? (
-                    proxy.gcal.configured
-                      ? <><Dot h="ok" />Đã cấu hình</>
-                      : <><Dot h="off" />Chưa cấu hình<div className="sub" style={{ color: 'var(--yel)' }}>Thiếu {proxy.gcal.missing.join(', ')}</div></>
-                  ) : <><Dot h="checking" />Đang kiểm tra…</>}
-                </td>
-                <td>Qua proxy <code>/api/gcal</code> → withone.ai</td>
-              </tr>
-              <tr>
-                <td>Horae<div className="sub">Xếp lịch tự học</div></td>
-                <td><Dot h="off" />Không có HTTP API</td>
-                <td>Không gọi trực tiếp. Lịch học đọc block <code>[Auto]</code> Horae ghi trên Google Calendar.</td>
-              </tr>
             </tbody>
           </table>
         </section>
 
         <section className="set-sec">
-          <h4>Lịch</h4>
+          <h4>Thời gian</h4>
           <p>Từ <code>frontend/.env</code>.</p>
           <table className="table conn">
             <tbody>
               <tr><td>Múi giờ</td><td><code>{config.timezone}</code></td></tr>
-              <tr><td>Calendar tự học</td><td><code>{config.autoStudyCalendar}</code></td></tr>
-              <tr><td>Calendar bỏ qua</td><td>{config.ignoredCalendars.length ? config.ignoredCalendars.map((c) => <code key={c} style={{ marginRight: 6 }}>{c}</code>) : <span className="sub">không có</span>}</td></tr>
             </tbody>
           </table>
         </section>

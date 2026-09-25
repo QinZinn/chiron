@@ -12,15 +12,15 @@ interface NavItem {
 }
 
 export function Sidebar({ route }: { route: Route }) {
-  const { dueCount, weakCount, todayEventCount, recent, user, token, health } = useApp();
+  const { dueCount, weakCount, todoOpenCount, recent, user, token, health } = useApp();
   const [query, setQuery] = useState('');
 
   const items: NavItem[] = [
     {
-      view: 'schedule',
-      icon: 'ph-calendar-dots',
-      label: 'Lịch học',
-      badge: todayEventCount ? { text: String(todayEventCount), color: 'var(--frost2)', title: 'Sự kiện hôm nay' } : undefined,
+      view: 'todos',
+      icon: 'ph-list-checks',
+      label: 'Việc cần ôn',
+      badge: todoOpenCount ? { text: String(todoOpenCount), color: 'var(--frost2)', title: 'Việc chưa xong' } : undefined,
     },
     {
       view: 'flashcards',

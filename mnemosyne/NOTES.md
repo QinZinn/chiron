@@ -1,99 +1,66 @@
-# NOTES — Weakpoint Dashboard: thẻ yếu → task `@ontap` trên Todoist, 2026-09-13
+# NOTES — Todo list nội bộ thay cho Todoist, 2026-09-25
 
-Nguồn: spec `claude/spec-weakpoint-dashboard-2026-09-13.md` (được dán vào session, không nằm trong repo). Code: `backend/src/weak_cards.rs`, `backend/src/todoist_client.rs`, bước 6 của `backend/src/handlers/reviews.rs`, migration `backend/sql/migrations/0006_add_weak_card_tasks.sql`.
+Code: `backend/src/weak_cards.rs`, `backend/src/handlers/todos.rs`, bước 6 của
+`backend/src/handlers/reviews.rs`, migration
+`backend/sql/migrations/0010_replace_weak_card_tasks_with_todos.sql`.
+Thiết kế cũ (task `@ontap` trên Todoist cho Horae xếp lịch):
+`docs/da-ngung-dung/weakpoint-todoist-2026-09-13.md`.
 
-## Quyết định Zinnn chốt trước khi code
+## Giữ nguyên
 
-- **§4.1 — một task mở cho mỗi study_set** ("chu kỳ mở"), không phải một task mỗi ngày lịch.
-- **Mọi user** đều kích hoạt: thẻ yếu của learner nào cũng tạo task trên tài khoản Todoist của `TODOIST_TOKEN`.
-- **Sửa luôn Horae** (adapter Todoist của Horae đang hỏng, xem mục dưới).
-- Không có `TODOIST_TOKEN` trên máy dev này. Phía Todoist được kiểm tra qua Todoist connector của Claude (chỉ đọc).
+Luật "thẻ yếu": ít nhất 40 % trong 5 lượt ôn gần nhất là "again", và thẻ có
+dưới 5 lượt thì chưa bị xét (`WEAK_CARD_WINDOW`, `WEAK_CARD_ERROR_THRESHOLD`,
+`assess`). Câu truy vấn 5 lượt gần nhất cũng giữ nguyên. Chỉ **đích ghi** đổi:
+bảng `todo_items` thay cho lời gọi Todoist.
 
-## Chỗ lệch khỏi spec, và vì sao
+## Chỗ lệch khỏi brief, và vì sao
 
-1. **Dùng các endpoint kiểu REST của API v1, không dùng lệnh `/sync`.** Spec §6.2 ghi `item_add`/`item_update`/`item_close` qua `/api/v1/sync` (form-urlencoded, `temp_id_mapping`), với độ tin cậy "trung bình". Tôi đọc OpenAPI chính thức (`https://developer.todoist.com/openapi.json`, tải trực tiếp chứ không qua bản tóm tắt). API v1 có `POST /api/v1/tasks`, `POST /api/v1/tasks/{id}` và `POST /api/v1/tasks/{id}/close`: body JSON thuần, trả thẳng `id` dạng chuỗi. Cách này đơn giản hơn và không phải tách mapping. Kết quả curl không token ngày 13/09:
-   ```
-   https://api.todoist.com/rest/v2/tasks -> 410
-   https://api.todoist.com/sync/v9/sync  -> 410   ("This endpoint is deprecated.")
-   https://api.todoist.com/api/v1/tasks  -> 401   (route tồn tại, chỉ thiếu token)
-   ```
-2. **Label tên là `@ontap` (có `@`), không phải `ontap`.** Spec §4.4 nói gửi `labels: ["ontap"]`. Đọc tài khoản thật qua connector: label duy nhất liên quan là `{"id":"2184722393","name":"@ontap"}`, và task thật "Ôn IELTS [90m/ngày]" mang `"labels":["@ontap"]`. Gửi `"ontap"` sẽ lặng lẽ tạo thêm một label thứ hai. Horae nhận cả hai cách viết vì `_normalize_labels` bóc `@`, nên đây chỉ là chuyện không làm bẩn tài khoản. Hằng số: `todoist_client::ONTAP_LABEL`.
-3. **Todoist lỗi thì rollback phần DB.** Spec §4.3 muốn giữ dòng `weak_card_task_cards` và chấp nhận description lệch "tới lần cập nhật kế tiếp". Nhưng theo chính spec, một thẻ đã liệt kê thì không gọi Todoist nữa. Vậy nếu không có thẻ mới nào vào set, "lần cập nhật kế tiếp" không bao giờ tới và thẻ đó không bao giờ lên Todoist. Rollback thì lần review yếu sau tự thử lại. Test: `weak_cards_a_failed_update_does_not_list_the_card` (đã tạm gài lại lỗi cũ và thấy test FAIL).
-4. **Mọi review yếu đều gia hạn chu kỳ, kể cả của thẻ đã liệt kê.** Spec tự mâu thuẫn ở điểm này: §4.2/§4.3 chỉ bump `last_weak_card_at` khi có thẻ yếu *mới*, còn §5.2 nói thẻ "tiếp tục sai (bump `last_weak_card_at`, task không bị đóng)". Tôi theo §5.2: một thẻ vẫn đang bị sai là đúng thứ task này sinh ra để nhắc. Làm theo §4.3 thì task sẽ bị đóng sau 5 ngày trong khi learner vẫn sai thẻ đó mỗi ngày.
-5. **Xét thẻ vừa review trước, sweep sau** (spec §4.3 để sweep ở bước 1). Nếu sweep chạy trước, task đã quá hạn nhưng thẻ vẫn đang yếu sẽ bị đóng rồi mở lại ngay thành một task Todoist mới. Test: `weak_cards_a_card_still_failing_keeps_its_task_open` (đảo thứ tự thì test FAIL, đã thử).
-6. **Advisory lock theo set** (`pg_advisory_xact_lock`) bao toàn bộ thao tác trên task của một set, gồm cả lời gọi Todoist. Spec không xử lý race cho luồng mới này: hai review yếu cùng lúc trong một set sẽ cùng thấy "chưa có task" và cùng tạo task trên Todoist. Unique index chặn dòng thứ hai trong DB, nhưng task Todoist thứ hai vẫn thành task mồ côi, còn thẻ kia thì không được liệt kê. Test: `weak_cards_concurrent_weak_cards_in_one_set_share_one_task` (hai connection thật, fake Todoist trễ 300ms). Bỏ lock thì test FAIL vì có 2 lần create. Race đã biết ở bước 2/5 của `reviews.rs` KHÔNG bị đụng (§9).
-7. **Task bị hoàn thành hoặc xoá bằng tay trên Todoist** (spec không đề cập): response của update có `checked`/`is_deleted`, hoặc update trả 404. Khi đó đóng dòng cũ và mở chu kỳ mới chỉ gồm thẻ vừa yếu. Nếu không làm vậy, thẻ yếu mới sẽ bị đổ vào một task đã tick xong mà Horae không bao giờ đọc. Test: `weak_cards_a_task_completed_in_todoist_is_replaced`.
-8. **Task mồ côi**: nếu Todoist đã tạo task mà DB không ghi được, code gọi close ngay. Nếu close cũng lỗi thì log `ORPHAN Todoist task <id> … Close it by hand`.
-9. **Câu validate §5.2 được thay.** `avg(interval)` của các review sai đo khoảng FSRS *đặt lịch* sau một lần sai (gần như luôn là 1 ngày, vì sai thì reset), chứ không đo learner *thực sự* quay lại set sau bao lâu. Mà N (số ngày tự đóng) phụ thuộc đúng vào con số thứ hai. Câu thay thế đo khoảng cách giữa các ngày có review trong cùng một set (xem mục dưới).
-10. Timeout client Todoist là 5s (KS dùng 10s), vì lời gọi nằm ngay trong `POST /review`.
+1. **Thêm bảng `todo_item_cards`.** Brief chỉ đưa `todo_items`. Nhưng màn
+   Điểm yếu (`GET /weak_cards`) được dựng từ danh sách *thẻ nào* làm set bị yếu,
+   mà danh sách đó trước đây nằm ở `weak_card_task_cards`. Xoá bảng đó mà không
+   có bảng thay thì màn Điểm yếu mất nguồn dữ liệu. Migration 0010 chép cả hai
+   bảng cũ sang rồi mới `DROP`.
+2. **Thêm cột `last_weak_card_at`.** Mỗi lần review yếu trong set đều cập nhật
+   cột này, để danh sách xếp set đang yếu gần nhất lên trước và màn Điểm yếu
+   ghi được "thẻ yếu gần nhất … trước". Có CHECK bắt buộc cột này cho mục
+   `weak_card`.
+3. **Phần 1 và phần 2 dùng chung migration.** Brief muốn gỡ Todoist (phần 1)
+   xong và kiểm tra rồi mới làm todo (phần 2). Việc thẻ yếu *ghi vào đâu* thì
+   không tách được: nếu migration phần 1 `DROP` bảng cũ trước khi có bảng mới,
+   phát hiện thẻ yếu sẽ không còn chỗ ghi. Vì vậy phần 1 đã tạo luôn bảng todo và
+   được kiểm tra trước (review thật → mục todo, không có lời gọi Todoist). Các
+   endpoint `/todos` và giao diện làm sau đó.
+4. **`GET /todos` không có tham số `user_id`.** Brief ghi `GET /todos?user_id=`.
+   Mọi route của người học đều lấy `user_id` từ bearer token; nhận nó qua query
+   sẽ cho phép một token đọc todo của người khác. Test
+   `todos_are_scoped_to_the_token` khoá lại điều này.
+5. **Không cần advisory lock.** Bản Todoist phải khoá theo set vì lời gọi mạng
+   nằm giữa lúc "chưa có task" và lúc ghi DB. Giờ chỉ còn một câu
+   `INSERT … ON CONFLICT (study_set_id) WHERE done = false AND source = 'weak_card'`
+   trên chính partial unique index `todo_items_open_weak_per_set`, nên Postgres
+   tự tuần tự hoá hai review đến cùng lúc. Test
+   `weak_cards_concurrent_weak_cards_in_one_set_share_one_item` (hai connection
+   thật, cùng lúc) cho ra 1 mục, 2 thẻ.
+6. **Bỏ tự đóng sau 5 ngày.** Đúng theo brief: người học tự tick. Mục đã tick
+   xong thì không mở lại; lần review yếu tiếp theo trong set mở một mục mới
+   (`weak_cards_a_ticked_off_item_is_replaced_by_the_next_weak_review`).
+7. **Tiêu đề mục thẻ yếu không chứa tên set** ("Ôn lại các thẻ đang yếu"). Tên
+   set được join lúc đọc, nên đổi tên set thì mục đổi theo.
 
-## Validate ngưỡng (§2.3, §5.2) — CHƯA có số liệu thật
+## Test
 
-Máy dev này không có DB thật của Mnemosyne. Postgres 18 mới được cài, chưa init. Để chạy test, tôi dựng một cluster tạm trong scratchpad (port 5433, trust auth), nạp `schema.sql` và áp `0006`. Cả hai câu truy vấn chạy được, nhưng DB chỉ có đúng một thẻ do chính tôi tạo để verify:
+- Bỏ 9 test DB chỉ kiểm hành vi Todoist: fake client, update, sweep đóng task
+  im lặng, task mồ côi, task bị hoàn thành trên Todoist, lỗi Todoist rollback.
+  Bỏ luôn test e2e `reviews_a_todoist_outage_does_not_break_the_review`, vì
+  không còn lời gọi nào để hỏng.
+- Thêm 5 test DB trong `weak_cards`, 3 trong `handlers::todos`, và 1 test e2e
+  `reviews_a_weak_card_files_one_todo_item`. Test e2e này chạy 6 lượt review
+  qua handler thật và kiểm: đúng 1 mục, đúng thẻ, response khớp DB.
+- Kết quả 2026-09-25 trên Postgres của Compose: `cargo test --workspace` được
+  137 + 10 passed; `-- --ignored --skip live_` được 27 passed.
 
-```
-== §2.3 (câu của spec, giữ nguyên)
- error_rate | n_cards
-------------+---------
-        0.4 |       1
-== §5.2 thay thế
- gap_days | count
-----------+-------
-(0 rows)
-```
+## Ngưỡng — vẫn chưa có số liệu thật
 
-Theo đúng quy tắc của spec ("quá ít dữ liệu → giữ nguyên mặc định"), tôi **giữ X=5, ngưỡng 40%, N=5 ngày**. Ba hằng số `WEAK_CARD_WINDOW`, `WEAK_CARD_ERROR_THRESHOLD`, `WEAK_TASK_AUTO_CLOSE_DAYS` nằm ở đầu `weak_cards.rs`. Cần chạy hai câu sau trên DB thật (cổng 5432):
-
-```sql
--- §2.3: phân bố tỷ lệ sai trên cửa sổ 5 review gần nhất
-WITH windows AS (
-  SELECT card_id, user_id, is_correct,
-         ROW_NUMBER() OVER (PARTITION BY card_id, user_id ORDER BY created_at DESC) AS rn
-  FROM learning_events),
-last5 AS (
-  SELECT card_id, user_id, COUNT(*) AS n, COUNT(*) FILTER (WHERE NOT is_correct) AS wrong
-  FROM windows WHERE rn <= 5 GROUP BY card_id, user_id HAVING COUNT(*) = 5)
-SELECT (wrong::float / n) AS error_rate, COUNT(*) AS n_cards FROM last5 GROUP BY 1 ORDER BY 1;
-
--- §5.2 (thay thế): learner quay lại một set sau bao nhiêu ngày.
--- Nếu nhiều khoảng > 5 ngày mà learner vẫn đang học set đó, N=5 đang đóng task quá sớm.
-WITH days AS (
-  SELECT DISTINCT c.set_id, le.user_id, (le.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS d
-  FROM learning_events le JOIN cards c ON c.id = le.card_id),
-gaps AS (
-  SELECT d - lag(d) OVER (PARTITION BY set_id, user_id ORDER BY d) AS gap_days FROM days)
-SELECT gap_days, count(*) FROM gaps WHERE gap_days IS NOT NULL GROUP BY 1 ORDER BY 1;
-```
-
-## Kiểm thử — kết quả thật
-
-- `cargo test -p backend` (offline): **121 passed, 0 failed, 22 ignored**, không có warning.
-- `cargo test -p backend -- --ignored weak_cards_ reviews_ due_` trên cluster tạm: **17 passed**, gồm 7 test DB có sẵn và 10 test mới (9 trong `weak_cards`, 1 test đầu-cuối cho handler `reviews_a_todoist_outage_does_not_break_the_review`). Sau khi chạy xong, DB còn 0 user: hai test phải commit dữ liệu đều tự xoá learner của mình, và mọi dòng liên quan xoá theo cascade.
-- Đã kiểm chứng test không vô nghĩa bằng cách tạm gài 3 lỗi, mỗi lỗi làm FAIL đúng test tương ứng. Sau đó khôi phục (`diff` sạch):
-  - giữ dòng listing khi Todoist update lỗi → `weak_cards_a_failed_update_does_not_list_the_card` FAIL
-  - chạy sweep trước khi xét thẻ → `weak_cards_a_card_still_failing_keeps_its_task_open` FAIL
-  - bỏ advisory lock → `weak_cards_concurrent_weak_cards_in_one_set_share_one_task` FAIL
-- **Đưa đúng hình dạng task vào parser thật của Horae** (`parse_tasks` với `PRESET_STUDENT_VN`):
-  ```
-  TaskClassification(task_id='m1', title='Ôn thẻ yếu — Từ vựng Unit 5', kind='ongoing', estimate_minutes=40, source='title')
-  TaskClassification(task_id='m2', title='Ôn thẻ yếu — test set', kind='ongoing', estimate_minutes=20, source='title')
-  ```
-  Ca đối chứng (ghi "@ontap" vào title, không set `labels`) bị Horae bỏ hẳn, với cảnh báo "không có due date → không tạo Assignment". Đúng lỗi mà spec §4.4 cảnh báo, và thực tế còn tệ hơn spec đoán: task không rơi vào nhánh assignment mà mất luôn.
-- **Server thật + Todoist thật, token cố tình sai** (`TODOIST_TOKEN=deliberately-invalid-token`). Tạo user, set "Từ vựng Unit 5" và thẻ "ubiquitous là gì?" qua API, rồi review lần lượt `again good again good good`:
-  ```
-  HTTP 201 in 0.012857s <- again
-  HTTP 201 in 0.004350s <- good
-  HTTP 201 in 0.002448s <- again
-  HTTP 201 in 0.002211s <- good
-  HTTP 201 in 0.729906s <- good
-  [weak-cards] card eee9970b-…: nothing recorded, the review itself is stored: PERMANENT — Todoist rejected the token; check TODOIST_TOKEN in .env. This will fail on every review until it is fixed: Todoist HTTP 401: {"error":"Unauthorized","error_code":477,…,"http_code":401}
-  ```
-  Kết quả: 5 dòng `learning_events`, 0 dòng `weak_card_tasks`. Review thứ 5 (lần đầu thẻ thành yếu) thực sự gọi `POST /api/v1/tasks` và nhận 401 thật, được log đúng nhánh PERMANENT. Response vẫn 201.
-
-## Việc còn lại — cần token thật / DB thật, chưa làm được ở đây
-
-1. Áp `backend/sql/migrations/0006_add_weak_card_tasks.sql` lên DB thật (không tự chạy, đúng quy ước).
-2. Thêm `TODOIST_TOKEN=` vào `.env` của Mnemosyne (cùng token với Horae).
-3. `cargo test -p backend -- --ignored --nocapture live_todoist_round_trip`: tạo, sửa rồi đóng một task thật. Đây là lần xác nhận wire format bằng request có token (hiện mới khớp OpenAPI và qua được đường 401 thật). Test để lại một task đã hoàn thành trong lịch sử Todoist.
-4. Chạy hai câu SQL ở trên trên dữ liệu thật; chỉnh hằng số nếu cần, ghi lý do vào đây.
-5. §8 bước 1–4 với token thật. Trước đó Horae cũng phải chạy được live với adapter mới (xem `Horae/NOTES.md`): adapter đã sửa nhưng chưa từng gọi Todoist thật bằng token.
+Hai câu truy vấn kiểm ngưỡng ở `docs/da-ngung-dung/weakpoint-todoist-2026-09-13.md`
+(mục "Validate ngưỡng") vẫn dùng được cho câu hỏi 40 %/5 lượt. DB hiện chưa có
+dữ liệu học thật nên chưa chạy.

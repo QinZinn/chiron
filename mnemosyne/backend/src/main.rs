@@ -12,7 +12,6 @@ mod handlers;
 mod ks_client;
 mod llm_provider;
 mod openai_compatible;
-mod todoist_client;
 mod weak_cards;
 
 #[get("/health")]
@@ -256,26 +255,6 @@ async fn main() -> std::io::Result<()> {
     }
     let ks_client = web::Data::new(ks_client);
 
-    // Todoist client for weak-card review tasks. Not fail-fast, for the same
-    // reason as KS: a review must be recorded whether or not a Todoist task
-    // can be filed about it.
-    let todoist: Option<Box<dyn todoist_client::TodoistApi>> =
-        match todoist_client::TodoistClient::from_env() {
-            Some(client) => {
-                eprintln!("[mnemosyne] Todoist client ready (weak-card review tasks enabled)");
-                Some(Box::new(client))
-            }
-            None => {
-                eprintln!(
-                    "[mnemosyne] WARNING: TODOIST_TOKEN is not set — weak-card review tasks are \
-                     DISABLED. Reviews are unaffected. Set TODOIST_TOKEN in .env to enable them \
-                     (see .env.example)."
-                );
-                None
-            }
-        };
-    let todoist = web::Data::new(todoist);
-
     HttpServer::new(move || {
         // CORS for the Chiron web frontend (Chiron/frontend, Vite).
         //
@@ -308,7 +287,6 @@ async fn main() -> std::io::Result<()> {
             .app_data(scheduler.clone())
             .app_data(llm_provider.clone())
             .app_data(ks_client.clone())
-            .app_data(todoist.clone())
             .service(health)
             .service(health_db)
             .service(handlers::users::me)
@@ -332,6 +310,9 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::due::due)
             .service(handlers::stats::stats)
             .service(handlers::weak::weak_cards)
+            .service(handlers::todos::list_todos)
+            .service(handlers::todos::create_todo)
+            .service(handlers::todos::complete_todo)
             .service(handlers::chat::start)
             .service(handlers::chat::reply)
             .service(handlers::chat::list_sessions)
