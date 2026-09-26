@@ -1,34 +1,34 @@
-# Chiron — cả hệ sinh thái trong một lệnh:
+# Chiron — the whole ecosystem in one command:
 #
-#   cp .env.example .env            # đặt POSTGRES_PASSWORD
+#   cp .env.example .env            # set POSTGRES_PASSWORD
 #   docker compose up --build -d
 #   docker compose exec mnemosyne backend create-user <email>
-#   → mở http://localhost:4173, dán token vào Cài đặt
+#   → open http://localhost:4173 and paste the token into Settings
 #
-# Secret của từng module vẫn nằm trong .env của module đó (mnemosyne/.env,
-# knowledge-store/.env, frontend/.env) và chỉ vào container qua env_file lúc
-# chạy — không bao giờ nằm trong image.
+# Each module's secrets stay in that module's .env (mnemosyne/.env,
+# knowledge-store/.env, frontend/.env) and only reach the containers through env_file
+# at run time — they are never baked into an image.
 #
-# Mọi biến về MẠNG được đặt lại trong `environment:`, vì nó thắng env_file. Các
-# .env hiện có mô tả cách chạy ngoài Docker (127.0.0.1, cổng 8082 để né
-# SearXNG); trong Compose các dịch vụ gọi nhau bằng tên service.
+# Every NETWORK variable is set again under `environment:`, because it wins over env_file.
+# The existing .env files describe running outside Docker (127.0.0.1, port 8082 to avoid
+# SearXNG); under Compose the services call each other by service name.
 
 name: chiron
 
-x-db-url: &db-password ${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env ở thư mục gốc (xem .env.example)}
+x-db-url: &db-password ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env (see .env.example)}
 
 services:
   postgres:
-    # Cùng major với cụm Postgres đang dùng ngoài Docker (18.x). Image chính
-    # thức có sẵn pg_trgm (KS dò trùng khái niệm) và pgcrypto (Mnemosyne).
+    # Same major version as the Postgres cluster used outside Docker (18.x). The official
+    # image ships pg_trgm (KS concept de-duplication) and pgcrypto (Mnemosyne).
     image: postgres:18
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: *db-password
     volumes:
-      # Postgres 18+ đặt dữ liệu dưới /var/lib/postgresql/<major>/docker —
-      # mount thư mục cha để nâng major sau này không phải đổi volume.
+      # Postgres 18+ keeps its data under /var/lib/postgresql/<major>/docker —
+      # mount the parent directory so a future major upgrade needs no volume change.
       - pgdata:/var/lib/postgresql
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/10-databases.sql:ro
     healthcheck:
@@ -36,8 +36,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-    # Không mở cổng ra host. Cần psql từ máy host để debug thì bỏ comment —
-    # cổng 5433 để không đụng cụm Postgres cũ đang dùng 5432.
+    # No port published to the host. To psql from the host for debugging, uncomment —
+    # port 5433 so it does not clash with the old Postgres cluster on 5432.
     # ports:
     #   - "127.0.0.1:5433:5432"
 
@@ -57,42 +57,42 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      # OCR không nằm trong depends_on: thiếu OCR chỉ làm hỏng việc scan ghi
-      # chép (route /notes trả lỗi rõ ràng), KS vẫn phục vụ mọi thứ khác.
+      # OCR is not in depends_on: without OCR only note scanning breaks
+      # (the /notes routes return a clear error); KS still serves everything else.
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 10
-    # Không mở cổng ra host: chỉ proxy của frontend và Mnemosyne gọi KS, đều
-    # qua network nội bộ. Nhờ vậy cũng hết xung đột cổng 8080 với SearXNG.
+    # No port published to the host: only the frontend proxy and Mnemosyne call KS,
+    # both over the internal network. That also ends the port 8080 clash with SearXNG.
 
   ocr:
     # PaddleOCR (CPU, English) for the Note scan screen. Models are baked into
     # the image, so the container starts with no network access.
     #
-    # Image dựng sẵn trên GHCR (public). Có cả `image:` lẫn `build:` thì Compose
-    # thử PULL trước và chỉ build khi registry không có tag này — nên máy khác
-    # không phải build PaddlePaddle (~2,5 GB), và không cần cấu hình mạng
-    # riêng của máy dev. Đổi code trong ocr/ thì build lại và đẩy tag mới (xem
-    # ocr/README.md), rồi tăng tag ở đây.
+    # A prebuilt image on GHCR (public). With both `image:` and `build:`, Compose
+    # tries to PULL first and only builds when the registry lacks this tag — so other
+    # machines need not build PaddlePaddle (~2.5 GB), nor the dev machine's
+    # network setup. After changing code in ocr/, rebuild and push a new tag (see
+    # ocr/README.md), then bump the tag here.
     image: ghcr.io/qinzinn/chiron-ocr:0.2.0
     build:
       context: ./ocr
-      # Chỉ dùng khi build từ source. network: host vì trên máy dev, tải tệp lớn
-      # từ trong mạng bridge của Docker bị treo vô hạn (đo được: 2.5 s qua host,
-      # không bao giờ xong qua bridge).
+      # Only used when building from source. network: host because on the dev machine,
+      # downloading large files from inside Docker's bridge network hangs forever (measured:
+      # 2.5 s via host, never finishes via bridge).
       network: host
     restart: unless-stopped
     healthcheck:
-      # "ready" chứ không chỉ "port mở": nạp mô hình mất vài chục giây, và
-      # trong lúc đó /ocr trả 503.
+      # "ready", not merely "port open": loading the models takes tens of seconds,
+      # and /ocr returns 503 meanwhile.
       test: ["CMD", "python", "-c", "import json, urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8866/health', timeout=3))['ready']"]
       interval: 10s
       timeout: 5s
       retries: 30
       start_period: 60s
-    # Không mở cổng ra host: chỉ Knowledge Store gọi OCR, qua network nội bộ.
+    # No port published to the host: only the Knowledge Store calls OCR, over the internal network.
 
   mnemosyne:
     build: ./mnemosyne
@@ -107,9 +107,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      # KS không nằm trong depends_on, có chủ đích: Mnemosyne coi KS là phụ
-      # (thiếu KS thì chỉ mất đồng bộ transcript), nên KS chết không được
-      # phép giữ Mnemosyne không khởi động.
+      # KS is not in depends_on, deliberately: Mnemosyne treats KS as optional
+      # (without KS only transcript syncing is lost), so a dead KS must not
+      # keep Mnemosyne from starting.
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8081"]
       interval: 10s
@@ -117,8 +117,8 @@ services:
       retries: 30
       start_period: 20s
     ports:
-      # Browser gọi Mnemosyne THẲNG (có CORS), nên cổng này phải ra host —
-      # nhưng chỉ trên loopback, khớp phạm vi "dev local" CORS đang giả định.
+      # The browser calls Mnemosyne DIRECTLY (with CORS), so this port must reach the host —
+      # but only on loopback, matching the "local dev" scope CORS assumes.
       - "127.0.0.1:8081:8081"
 
   frontend:
@@ -129,15 +129,15 @@ services:
         required: false
     environment:
       CHIRON_BIND_HOST: 0.0.0.0
-      # Proxy (trong container) gọi KS qua network nội bộ.
+      # The proxy (inside the container) calls KS over the internal network.
       CHIRON_KS_URL: http://knowledge-store:8080
-      # Địa chỉ BROWSER dùng để gọi Mnemosyne — tức cổng đã mở ra host ở trên,
-      # không phải tên service (browser không ở trong network của Compose).
+      # The address the BROWSER uses to call Mnemosyne — i.e. the port published above,
+      # not the service name (the browser is not on the Compose network).
       CHIRON_MNEMOSYNE_URL: http://127.0.0.1:8081
     ports:
       - "127.0.0.1:4173:4173"
-    # Không depends_on backend nào: giao diện được thiết kế để chạy khi một
-    # module đang tắt và báo lỗi riêng cho khu vực đó.
+    # No depends_on on any backend: the interface is designed to run while a
+    # module is down and to report the error for that area only.
 
 volumes:
   pgdata:

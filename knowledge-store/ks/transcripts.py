@@ -1,8 +1,8 @@
-"""Lưu transcript raw và job extraction (chạy riêng, retry được).
+"""Storing raw transcripts and the extraction job (runs separately, retryable).
 
-save_transcript KHÔNG BAO GIỜ raise — đối lập có chủ đích với ingest_concepts.
-Phiên học không được hỏng chỉ vì KS chết; Mnemosyne là system of record và giữ
-transcript của chính nó.
+save_transcript NEVER raises — deliberately the opposite of ingest_concepts.
+A study session must not break just because KS is down; Mnemosyne is the system
+of record and keeps its own transcript.
 """
 
 from __future__ import annotations
@@ -19,14 +19,14 @@ from ks.llm import LLMError, LLMParseError, LLMProvider, Message
 from ks.models import ExtractedConcept, ExtractionResult, SaveResult, SourceModule
 
 _SYSTEM_PROMPT = (
-    "Bạn rút khái niệm học thuật từ bản ghi một phiên học. "
-    "Chỉ những khái niệm học sinh THỰC SỰ đã học trong phiên. "
-    "Chỉ trả JSON, không giải thích ngoài JSON."
+    "You extract academic concepts from the record of a study session. "
+    "Only concepts the student ACTUALLY studied in the session. "
+    "Write in English. Return only JSON, no explanation outside the JSON."
 )
 
 
 class TranscriptNotFound(Exception):
-    """transcript_id hoặc session_ref không tồn tại."""
+    """No transcript_id or session_ref with this value."""
 
 
 # ---------------------------------------------------------------- save
@@ -38,14 +38,15 @@ def save_transcript(
     *,
     url: str | None = None,
 ) -> SaveResult:
-    """Ghi transcript raw. **KHÔNG BAO GIỜ raise.**
+    """Store a raw transcript. **NEVER raises.**
 
-    Tự mở connection và nuốt mọi lỗi, kể cả mất kết nối DB → SaveResult(ok=False).
-    Idempotent thật theo session_ref: ON CONFLICT DO NOTHING rồi đọc lại id cũ,
-    nên retry cùng session_ref an toàn tuyệt đối và KHÔNG đè content đã lưu.
+    Opens its own connection and swallows every error, including a lost DB
+    connection → SaveResult(ok=False). Truly idempotent on session_ref: ON CONFLICT
+    DO NOTHING, then read back the existing id, so retrying the same session_ref is
+    completely safe and does NOT overwrite stored content.
     """
     try:
-        # import cục bộ: settings.database_url() có thể raise, phải nằm trong try
+        # local import: settings.database_url() may raise, so it must be inside the try
         from ks.db import connect
 
         with connect(url) as conn:
@@ -56,7 +57,7 @@ def save_transcript(
                     (session_ref, json.dumps(content, ensure_ascii=False)),
                 )
                 row = cur.fetchone()
-                if row is None:  # đã có từ trước — trả lại id cũ, không đè
+                if row is None:  # already stored — return the existing id, do not overwrite
                     cur.execute(
                         "SELECT id FROM ks.transcripts WHERE session_ref = %s", (session_ref,)
                     )
@@ -64,7 +65,7 @@ def save_transcript(
                 transcript_id = row[0]
             conn.commit()
         return SaveResult(ok=True, transcript_id=transcript_id, error=None)
-    except BaseException as exc:  # noqa: BLE001 — có chủ đích, xem docstring
+    except BaseException as exc:  # noqa: BLE001 — deliberate, see the docstring
         return SaveResult(ok=False, transcript_id=None, error=f"{type(exc).__name__}: {exc}")
 
 
@@ -72,10 +73,10 @@ def save_transcript(
 
 
 def render_transcript(content: Any) -> str:
-    """Dựng text cho prompt.
+    """Build the text for the prompt.
 
-    Nhận diện dạng [{"role":..., "content":...}] — dạng Mnemosyne gửi. Dạng khác
-    thì dump JSON thô, vẫn dùng được chứ không vứt dữ liệu đi.
+    Recognises the [{"role":..., "content":...}] shape — what Mnemosyne sends. Any
+    other shape is dumped as raw JSON: still usable, no data thrown away.
     """
     if isinstance(content, list) and all(
         isinstance(m, dict) and "role" in m and "content" in m for m in content
@@ -85,47 +86,47 @@ def render_transcript(content: Any) -> str:
 
 
 _NOTE_SYSTEM_PROMPT = (
-    "Bạn rút khái niệm học thuật từ ghi chép của một học sinh, đã được số hoá "
-    "bằng OCR rồi học sinh sửa lại. Chỉ những khái niệm ghi chép THỰC SỰ trình bày. "
-    "Chỉ trả JSON, không giải thích ngoài JSON."
+    "You extract academic concepts from a student's notes, digitised with OCR "
+    "and then corrected by the student. Only concepts the notes ACTUALLY present. "
+    "Write in English. Return only JSON, no explanation outside the JSON."
 )
 
 
 def is_note(content: Any) -> bool:
-    """Transcript sinh từ ghi chép scan (ks/notes.py) thay vì phiên học Mnemosyne."""
+    """A transcript made from scanned notes (ks/notes.py) rather than a Mnemosyne study session."""
     return isinstance(content, dict) and content.get("kind") == "note"
 
 
 def build_prompt(content: Any) -> list[Message]:
     if is_note(content):
-        # Prompt riêng: ghi chép không có lượt hỏi–đáp, và OCR có thể còn sót lỗi
-        # chính tả — LLM phải dựa vào nghĩa chứ không chép nguyên lỗi vào title.
+        # A separate prompt: notes have no question/answer turns, and OCR may have
+        # left spelling errors — the LLM must go by meaning, not copy errors into titles.
         body = "\n".join([
-            f"GHI CHÉP: {content.get('title', '')}",
+            f"NOTES: {content.get('title', '')}",
             str(content.get("text", "")),
             "",
-            "Trả về JSON array. Mỗi phần tử:",
-            '{"title": "<tên khái niệm>", "subject": "<môn học>", "summary": "<1-2 câu>"}',
+            "Return a JSON array. Each element:",
+            '{"title": "<concept name>", "subject": "<subject>", "summary": "<1-2 sentences>"}',
             "",
-            "title là TÊN MỘT KHÁI NIỆM (ví dụ: 'Định luật Newton 2'), không phải tiêu đề trang.",
-            "Văn bản có thể còn lỗi nhận dạng: viết title và summary đúng chính tả,"
-            " nhưng KHÔNG thêm kiến thức mà ghi chép không có.",
-            "summary tóm đúng điều ghi chép nói, kèm công thức nếu có.",
-            "subject là chuỗi tự do, viết theo cách người học hay gọi.",
-            "Không có khái niệm nào rõ ràng thì trả [].",
+            "title is the NAME OF ONE CONCEPT (e.g. \"Newton's second law\"), not a page heading.",
+            "The text may still contain recognition errors: spell title and summary correctly,"
+            " but do NOT add knowledge the notes do not contain.",
+            "summary states exactly what the notes say, with formulas if any.",
+            "subject is free text, written the way the learner would name it.",
+            "If there is no clear concept, return [].",
         ])
         return [Message("system", _NOTE_SYSTEM_PROMPT), Message("user", body)]
 
     body = "\n".join([
-        "BẢN GHI PHIÊN HỌC:",
+        "STUDY SESSION TRANSCRIPT:",
         render_transcript(content),
         "",
-        "Trả về JSON array. Mỗi phần tử:",
-        '{"title": "<tên khái niệm>", "subject": "<môn học>", "summary": "<1-2 câu>"}',
+        "Return a JSON array. Each element:",
+        '{"title": "<concept name>", "subject": "<subject>", "summary": "<1-2 sentences>"}',
         "",
-        "title là TÊN MỘT KHÁI NIỆM (ví dụ: 'Định luật Newton 2'), không phải tên phiên học.",
-        "subject là chuỗi tự do, viết theo cách người học hay gọi.",
-        "Không có khái niệm nào rõ ràng thì trả [].",
+        "title is the NAME OF ONE CONCEPT (e.g. \"Newton's second law\"), not the session name.",
+        "subject is free text, written the way the learner would name it.",
+        "If there is no clear concept, return [].",
     ])
     return [Message("system", _SYSTEM_PROMPT), Message("user", body)]
 
@@ -136,16 +137,16 @@ def _strip_json_fence(text: str) -> str:
 
 
 def parse_extraction(text: str) -> tuple[tuple[str, str, str], ...]:
-    """Parse phản hồi → (title, subject, summary). Sai cấu trúc → LLMParseError.
+    """Parse the response → (title, subject, summary). Wrong structure → LLMParseError.
 
-    Phần tử thiếu field bị bỏ qua lặng lẽ — một dòng hỏng không huỷ cả lô.
+    Elements missing a field are silently skipped — one bad row does not void the batch.
     """
     try:
         parsed = json.loads(_strip_json_fence(text))
     except (json.JSONDecodeError, ValueError) as exc:
-        raise LLMParseError(f"Phản hồi không phải JSON: {text[:200]}") from exc
+        raise LLMParseError(f"Response is not JSON: {text[:200]}") from exc
     if not isinstance(parsed, list):
-        raise LLMParseError(f"Phản hồi không phải JSON array: {text[:200]}")
+        raise LLMParseError(f"Response is not a JSON array: {text[:200]}")
 
     out: list[tuple[str, str, str]] = []
     for entry in parsed:
@@ -169,7 +170,7 @@ def pending_transcripts(
     limit: int = 50,
     max_attempts: int = settings.MAX_EXTRACTION_ATTEMPTS,
 ) -> tuple[UUID, ...]:
-    """Transcript chờ extract, còn lượt thử."""
+    """Transcripts waiting for extraction that still have attempts left."""
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id FROM ks.transcripts"
@@ -188,7 +189,7 @@ def _load_transcript(conn: psycopg.Connection, transcript_id: UUID):
         )
         row = cur.fetchone()
     if row is None:
-        raise TranscriptNotFound(f"Không có transcript {transcript_id}")
+        raise TranscriptNotFound(f"No transcript {transcript_id}")
     return row
 
 
@@ -199,14 +200,14 @@ def extract_concepts(
     *,
     max_attempts: int = settings.MAX_EXTRACTION_ATTEMPTS,
 ) -> ExtractionResult:
-    """Rút khái niệm từ transcript → ks.extracted_concepts (chờ xác nhận).
+    """Extract concepts from a transcript → ks.extracted_concepts (awaiting confirmation).
 
-    RETRY ĐƯỢC: mỗi lần chạy tăng `attempts`. Cạn lượt → status='failed'.
-    Dọn kết quả cũ còn 'pending_review', GIỮ NGUYÊN thứ đã accepted/discarded —
-    không hỏi lại câu người dùng đã trả lời.
+    RETRYABLE: every run increments `attempts`. Out of attempts → status='failed'.
+    Clears old results still in 'pending_review', KEEPS whatever was accepted/discarded —
+    a question the user already answered is not asked again.
 
-    KHÔNG raise khi LLM lỗi: ghi last_error rồi trả về, để lần log này sống sót.
-    Lỗi DB vẫn văng ra.
+    Does NOT raise on LLM errors: records last_error and returns, so this log survives.
+    DB errors still propagate.
     """
     content, attempts = _load_transcript(conn, transcript_id)
     attempts += 1
@@ -227,15 +228,15 @@ def extract_concepts(
         return ExtractionResult(transcript_id, (), False, attempts, str(exc))
 
     with conn.cursor() as cur:
-        # Dọn kết quả cũ CHƯA được xử lý. accepted/discarded giữ nguyên.
+        # Clear old results NOT yet handled. accepted/discarded stay as they are.
         cur.execute(
             "DELETE FROM ks.extracted_concepts"
             " WHERE transcript_id = %s AND status = 'pending_review'",
             (transcript_id,),
         )
         rows = []
-        # Nguồn đi theo loại transcript: khái niệm rút từ ghi chép scan phải còn
-        # nhận ra được là của ghi chép, không lẫn vào 'mnemosyne'.
+        # The source follows the transcript kind: concepts extracted from scanned
+        # notes must stay recognisable as notes, not blend into 'mnemosyne'.
         source = SourceModule.NOTE_SCAN if is_note(content) else SourceModule.MNEMOSYNE
         for title, subject, summary in parsed:
             cur.execute(

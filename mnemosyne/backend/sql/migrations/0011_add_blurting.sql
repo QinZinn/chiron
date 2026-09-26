@@ -17,7 +17,7 @@ CREATE TABLE blurting_attempts (
     user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     set_id            UUID NOT NULL REFERENCES study_sets(id) ON DELETE CASCADE,
     recall_text       TEXT NOT NULL,          -- what the learner wrote, unaided
-    feedback          TEXT NOT NULL,          -- short overall comment, Vietnamese
+    feedback          TEXT NOT NULL,          -- short overall comment for the learner
     -- Cards the AI was shown. The prompt caps card context, so a large set is
     -- judged on its first cards only; recorded so the result never implies more.
     cards_considered  INTEGER NOT NULL CHECK (cards_considered >= 0),

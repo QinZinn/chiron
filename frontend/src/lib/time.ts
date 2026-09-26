@@ -6,9 +6,9 @@ import { config } from '../config';
 
 const tz = config.timezone;
 
-const timeFmt = new Intl.DateTimeFormat('vi-VN', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
-const dateTimeFmt = new Intl.DateTimeFormat('vi-VN', {
-  timeZone: tz, hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', hour12: false,
+const timeFmt = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
+const dateTimeFmt = new Intl.DateTimeFormat('en-GB', {
+  timeZone: tz, hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short', hour12: false,
 });
 
 export function clock(d: Date): string {
@@ -19,24 +19,28 @@ export function dateTime(d: Date | string): string {
   return dateTimeFmt.format(typeof d === 'string' ? new Date(d) : d);
 }
 
-/** "vừa xong", "5 phút trước", "3 ngày trước", "sau 2 ngày". */
-/** "Xong 5 phút trước", or "Vừa xong" — never the doubled "Xong vừa xong". */
+/** "Done 5 min ago", or "Done just now". */
 export function doneAgo(d: Date | string): string {
-  const r = relative(d);
-  return r === 'vừa xong' ? 'Vừa xong' : `Xong ${r}`;
+  return `Done ${relative(d)}`;
 }
 
+/** "just now", "5 min ago", "3 days ago", "in 2 days". */
 export function relative(d: Date | string): string {
   const t = typeof d === 'string' ? new Date(d).getTime() : d.getTime();
   const diff = t - Date.now();
   const abs = Math.abs(diff);
   const min = 60_000, hour = 60 * min, day = 24 * hour;
   let s: string;
-  if (abs < min) return 'vừa xong';
-  if (abs < hour) s = `${Math.round(abs / min)} phút`;
-  else if (abs < day) s = `${Math.round(abs / hour)} giờ`;
-  else s = `${Math.round(abs / day)} ngày`;
-  return diff < 0 ? `${s} trước` : `sau ${s}`;
+  if (abs < min) return 'just now';
+  if (abs < hour) s = `${Math.round(abs / min)} min`;
+  else if (abs < day) {
+    const n = Math.round(abs / hour);
+    s = `${n} hour${n === 1 ? '' : 's'}`;
+  } else {
+    const n = Math.round(abs / day);
+    s = `${n} day${n === 1 ? '' : 's'}`;
+  }
+  return diff < 0 ? `${s} ago` : `in ${s}`;
 }
 
 export function minutesBetween(a: string | Date, b: string | Date): number {

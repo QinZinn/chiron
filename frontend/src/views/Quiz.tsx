@@ -55,12 +55,12 @@ function QuizBody() {
   const [genInfo, setGenInfo] = useState<string>();
 
   if (studySetsError) return <ErrorNotice error={studySetsError} onRetry={reloadSets} />;
-  if (!studySets) return <Loading label="Đang tải bộ thẻ…" />;
+  if (!studySets) return <Loading label="Loading study sets…" />;
   if (studySets.length === 0) {
     return (
       <div className="notice notice-info">
         <i className="ph ph-info" />
-        <div>Người học này chưa có bộ thẻ nào trong Mnemosyne — quiz được gắn vào một bộ thẻ.</div>
+        <div>This learner has no study set in Mnemosyne yet — a quiz belongs to a study set.</div>
       </div>
     );
   }
@@ -78,7 +78,7 @@ function QuizBody() {
         count,
       });
       setQuestions((q) => [...res.questions, ...q.filter((x) => !res.questions.some((n) => n.id === x.id))]);
-      setGenInfo(`Đã tạo ${res.questions.length} câu hỏi · ${res.tokens_used.toLocaleString('vi-VN')} token`);
+      setGenInfo(`Created ${res.questions.length} question${res.questions.length === 1 ? '' : 's'} · ${res.tokens_used.toLocaleString('en-US')} tokens`);
     } catch (e) {
       setGenError(e);
     } finally {
@@ -115,8 +115,8 @@ function QuizBody() {
     <>
       <div className="page-head">
         <div>
-          <h2>Quiz trắc nghiệm</h2>
-          <p>Câu hỏi thuộc một bộ thẻ trong Mnemosyne. Chấm điểm không cần LLM — đáp án chỉ lộ ra sau khi bạn chọn.</p>
+          <h2>Multiple-choice quiz</h2>
+          <p>Questions belong to a Mnemosyne study set. Grading needs no LLM — the answer is revealed only after you pick one.</p>
         </div>
       </div>
       <div className="toolbar" style={{ marginTop: 14 }}>
@@ -126,64 +126,64 @@ function QuizBody() {
           ))}
         </select>
         <button className="btn btn-secondary btn-soft" onClick={listQ.reload}>
-          <i className="ph ph-arrow-clockwise" />Tải lại
+          <i className="ph ph-arrow-clockwise" />Reload
         </button>
       </div>
       <div className="stats">
-        <div><div className="stat-k">Số câu</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{questions.length}</div></div>
-        <div><div className="stat-k">Đã trả lời</div><div className="stat-v">{doneList.length}</div></div>
-        <div><div className="stat-k">Đúng</div><div className="stat-v" style={{ color: 'var(--green)' }}>{doneList.length ? `${correct}/${doneList.length}` : '—'}</div></div>
+        <div><div className="stat-k">Questions</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{questions.length}</div></div>
+        <div><div className="stat-k">Answered</div><div className="stat-v">{doneList.length}</div></div>
+        <div><div className="stat-k">Correct</div><div className="stat-v" style={{ color: 'var(--green)' }}>{doneList.length ? `${correct}/${doneList.length}` : '—'}</div></div>
       </div>
       <hr className="rule" style={{ marginBottom: 18 }} />
 
       <div className="gen">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 14, color: 'var(--tx2)' }}>Tạo câu hỏi mới</span>
+          <span style={{ fontSize: 14, color: 'var(--tx2)' }}>Generate new questions</span>
           <div className="seg" role="radiogroup">
             <label className="seg-opt">
               <input type="radio" checked={source === 'topic'} onChange={() => setSource('topic')} />
-              <i className="ph ph-text-aa" />Từ chủ đề
+              <i className="ph ph-text-aa" />From a topic
             </label>
             <label className="seg-opt">
               <input type="radio" checked={source === 'knowledge_store'} onChange={() => setSource('knowledge_store')} />
-              <i className="ph ph-graph" />Từ Knowledge Store
+              <i className="ph ph-graph" />From the Knowledge Store
             </label>
           </div>
         </div>
         {source === 'topic' ? (
           <div className="field">
-            <label>Chủ đề hoặc đoạn kiến thức</label>
-            <textarea className="input" lang="vi" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Ví dụ: Định luật cảm ứng điện từ Faraday và định luật Lenz" maxLength={8000} />
+            <label>Topic or a passage of material</label>
+            <textarea className="input" lang="en" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. Faraday's law of electromagnetic induction and Lenz's law" maxLength={8000} />
           </div>
         ) : (
           <p className="wk-desc">
-            Mnemosyne lấy các khái niệm bạn đã học từ Knowledge Store để ra đề (cần <code>KS_HTTP_TOKEN</code> trong <code>Mnemosyne/.env</code>).
+            Mnemosyne writes questions from the concepts you have learned in the Knowledge Store (needs <code>KS_HTTP_TOKEN</code> in <code>mnemosyne/.env</code>).
           </p>
         )}
         <div className="gen-row">
           {source === 'knowledge_store' && (
             <div className="field">
-              <label>Lọc theo môn (tuỳ chọn)</label>
-              <input className="input input-sm" lang="vi" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Ví dụ: Vật lý" />
+              <label>Filter by subject (optional)</label>
+              <input className="input input-sm" lang="en" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Physics" />
             </div>
           )}
           <div className="field" style={{ flex: 'none', minWidth: 0, width: 120 }}>
-            <label>Số câu (1–{QUIZ_MAX_COUNT})</label>
+            <label>Number of questions (1–{QUIZ_MAX_COUNT})</label>
             <input className="input input-sm" type="number" min={1} max={QUIZ_MAX_COUNT} value={count} onChange={(e) => setCount(Number(e.target.value))} />
           </div>
           <button className="btn btn-primary btn-main" onClick={generate} disabled={!canGenerate}>
-            {generating ? <><span className="spin" />Đang tạo… (có thể mất tới 1 phút)</> : <><i className="ph ph-sparkle" />Tạo câu hỏi</>}
+            {generating ? <><span className="spin" />Generating… (can take up to a minute)</> : <><i className="ph ph-sparkle" />Generate questions</>}
           </button>
         </div>
         {genInfo && <div className="wk-meta" style={{ color: 'var(--green)' }}>{genInfo}</div>}
         {genError != null && <ErrorNotice error={genError} compact />}
       </div>
 
-      <div className="section-label">Câu hỏi trong bộ thẻ</div>
-      {listQ.loading && !listQ.data && <Loading label="Đang tải câu hỏi…" />}
+      <div className="section-label">Questions in this set</div>
+      {listQ.loading && !listQ.data && <Loading label="Loading questions…" />}
       {listQ.error != null && <ErrorNotice error={listQ.error} onRetry={listQ.reload} />}
       {!listQ.loading && !listQ.error && questions.length === 0 && (
-        <div className="wk-desc">Bộ thẻ này chưa có câu hỏi quiz nào. Tạo vài câu ở trên để bắt đầu.</div>
+        <div className="wk-desc">This set has no quiz questions yet. Generate a few above to start.</div>
       )}
       <div className="list">
         {questions.map((q, n) => {
@@ -191,14 +191,14 @@ function QuizBody() {
           return (
             <div className="q-card" key={q.id}>
               <div className="wk-head">
-                <span className="wk-meta">Câu {n + 1}</span>
+                <span className="wk-meta">Question {n + 1}</span>
                 <span className={`tag tag-sm ${q.source === 'knowledge_store' ? 'tag-pur' : 'tag-dim'}`}>
-                  {q.source === 'knowledge_store' ? 'Từ Knowledge Store' : 'Từ chủ đề'}
+                  {q.source === 'knowledge_store' ? 'From the Knowledge Store' : 'From a topic'}
                 </span>
                 <button
                   className="icon-btn"
                   style={{ marginLeft: 'auto' }}
-                  title="Xoá câu hỏi này"
+                  title="Delete this question"
                   onClick={() => removeQuestion(q.id)}
                 >
                   <i className="ph ph-trash" />
@@ -223,7 +223,7 @@ function QuizBody() {
               </div>
               {a?.state === 'done' && (
                 <div className="q-result" style={{ color: a.isCorrect ? 'var(--green)' : 'var(--red)' }}>
-                  {a.isCorrect ? 'Chính xác.' : `Chưa đúng — đáp án là ${KEYS[a.correctIndex]}.`}
+                  {a.isCorrect ? 'Correct.' : `Not quite — the answer is ${KEYS[a.correctIndex]}.`}
                 </div>
               )}
               {a?.state === 'error' && <div style={{ marginTop: 10 }}><ErrorNotice error={a.error} compact /></div>}

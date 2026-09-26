@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS: Settings = { accent: ACCENTS[0], sidebarCollapsed: false
 const SETTINGS_KEY = 'chiron.settings.v1';
 
 /**
- * One row of the sidebar's "Gần đây", from the server rather than from this
+ * One row of the sidebar's "Recent", from the server rather than from this
  * browser's memory: `GET /socratic` and `GET /chat`. The old localStorage
  * index only knew about sessions started in this browser, and could not know
  * that one of them had since been ended somewhere else.
@@ -66,10 +66,10 @@ interface AppState {
   stats: import('../api/mnemosyne').Stats | undefined;
   statsError: unknown;
   dueCount: number | undefined;
-  /** Cards still failing the window test — the sidebar badge on Điểm yếu. */
+  /** Cards still failing the window test — the sidebar badge on Weak spots. */
   weakCount: number | undefined;
   refreshDue: () => void;
-  /** Open items on the review todo list — the sidebar badge on Việc cần ôn. */
+  /** Open items on the review todo list — the sidebar badge on To-do. */
   todoOpenCount: number | undefined;
   /** Call after adding or ticking off a todo item. */
   refreshTodos: () => void;
@@ -169,7 +169,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       kind: 'socratic',
       id: x.id,
       title: x.set_name,
-      subtitle: 'Học bài',
+      subtitle: 'Study',
       updatedAt: x.last_message_at ?? x.created_at,
       ended: x.ended,
       setId: x.set_id,
@@ -178,7 +178,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       kind: 'chat',
       id: x.id,
       title: x.title,
-      subtitle: x.mode === 'ask' ? 'Hỏi bài' : 'Giải bài',
+      subtitle: x.mode === 'ask' ? 'Ask' : 'Solve',
       updatedAt: x.updated_at,
       ended: false,
       setId: x.set_id ?? undefined,

@@ -1,5 +1,5 @@
 [Unit]
-Description=Chạy extract mỗi 30 phút
+Description=Run extract every 30 minutes
 
 [Timer]
 OnCalendar=*:0/30

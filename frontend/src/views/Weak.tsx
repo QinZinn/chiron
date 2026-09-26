@@ -1,5 +1,5 @@
 /**
- * Điểm yếu — Mnemosyne `GET /weak_cards`.
+ * Weak spots — Mnemosyne `GET /weak_cards`.
  *
  * Every number here comes from the server, including the rule behind them
  * (window and threshold): the same judgement that decides whether a card joins
@@ -18,7 +18,7 @@ export function WeakView() {
   const { user } = useApp();
   return (
     <main className="main">
-      <PageHeader title="Điểm yếu" />
+      <PageHeader title="Weak spots" />
       <div className="page">
         <div className="page-inner">{user ? <Weak /> : <NeedToken />}</div>
       </div>
@@ -41,7 +41,7 @@ function Weak() {
   const q = useAsync(() => mnemosyne.weakCards(includeClosed), [includeClosed]);
   const [open, setOpen] = useState<string>();
 
-  if (q.loading && !q.data) return <Loading label="Đang tải điểm yếu…" />;
+  if (q.loading && !q.data) return <Loading label="Loading weak spots…" />;
   if (q.error) return <ErrorNotice error={q.error} onRetry={q.reload} />;
   const data = q.data!;
 
@@ -51,37 +51,37 @@ function Weak() {
         <div>
           <h2>
             {data.still_weak_count > 0
-              ? `${data.still_weak_count} thẻ đang yếu`
+              ? `${data.still_weak_count} card${data.still_weak_count === 1 ? '' : 's'} still weak`
               : data.card_count > 0
-                ? 'Không còn thẻ nào đang yếu'
-                : 'Chưa có điểm yếu nào'}
+                ? 'No card is weak any more'
+                : 'No weak spots yet'}
           </h2>
           <p>
-            Một thẻ bị coi là yếu khi ít nhất {Math.round(data.error_threshold * 100)}% trong {data.window} lượt ôn
-            gần nhất là “Quên”. Cùng luật Mnemosyne dùng để thêm việc “Ôn lại các thẻ đang yếu” vào danh sách việc cần ôn.
+            A card counts as weak when at least {Math.round(data.error_threshold * 100)}% of its last {data.window} reviews
+            were “Again”. It is the same rule Mnemosyne uses to add a “Review weak cards” item to your to-do list.
           </p>
         </div>
         <button className="btn btn-secondary btn-soft" onClick={q.reload}>
-          <i className="ph ph-arrow-clockwise" />Tải lại
+          <i className="ph ph-arrow-clockwise" />Reload
         </button>
       </div>
 
       <div className="stats">
-        <div><div className="stat-k">Thẻ đang yếu</div><div className="stat-v" style={{ color: 'var(--red)' }}>{data.still_weak_count}</div></div>
-        <div><div className="stat-k">Thẻ đến hạn</div><div className="stat-v" style={{ color: 'var(--yel)' }}>{stats?.cards.due_now ?? dueCount ?? '—'}</div></div>
+        <div><div className="stat-k">Still weak</div><div className="stat-v" style={{ color: 'var(--red)' }}>{data.still_weak_count}</div></div>
+        <div><div className="stat-k">Due</div><div className="stat-v" style={{ color: 'var(--yel)' }}>{stats?.cards.due_now ?? dueCount ?? '—'}</div></div>
         <div>
-          <div className="stat-k">Độ chính xác {stats?.range_days ?? 14} ngày</div>
+          <div className="stat-k">Accuracy, {stats?.range_days ?? 14} days</div>
           <div className="stat-v" style={{ color: 'var(--green)' }}>
             {stats?.reviews.accuracy != null ? `${Math.round(stats.reviews.accuracy * 100)}%` : '—'}
           </div>
         </div>
-        <div><div className="stat-k">Chuỗi ngày học</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{stats?.streak_days ?? '—'}</div></div>
+        <div><div className="stat-k">Day streak</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{stats?.streak_days ?? '—'}</div></div>
       </div>
 
       <div className="toolbar" style={{ marginBottom: 14 }}>
         <label className="radio" style={{ fontSize: 12.5, color: 'var(--mut)' }}>
           <input type="checkbox" checked={includeClosed} onChange={(e) => setIncludeClosed(e.target.checked)} style={{ position: 'static', width: 'auto', height: 'auto', opacity: 1, pointerEvents: 'auto' }} />
-          Hiện cả những đợt đã xong
+          Show finished rounds too
         </label>
       </div>
       <hr className="rule" style={{ marginBottom: 18 }} />
@@ -90,10 +90,10 @@ function Weak() {
         <div className="notice notice-info" style={{ maxWidth: 760 }}>
           <i className="ph ph-check-circle" />
           <div>
-            <div className="notice-title">Chưa có thẻ nào bị đánh dấu yếu</div>
+            <div className="notice-title">No card has been marked weak</div>
             <div>
-              Mnemosyne chỉ xét một thẻ sau khi nó có đủ {data.window} lượt ôn. Cứ ôn đều ở Thẻ ghi nhớ, phần này
-              sẽ tự xuất hiện khi có thẻ liên tục bị quên.
+              Mnemosyne only judges a card once it has {data.window} reviews. Keep reviewing in Flashcards; this
+              fills in by itself when a card keeps being forgotten.
             </div>
           </div>
         </div>
@@ -121,21 +121,21 @@ function TaskCard({ task, expanded, onToggle }: { task: WeakTask; expanded: bool
           {closed ? (
             <span className="tag tag-dim tag-sm">{doneAgo(task.closed_at!)}</span>
           ) : task.still_weak_count > 0 ? (
-            <span className="tag tag-red tag-sm">{task.still_weak_count} thẻ đang yếu</span>
+            <span className="tag tag-red tag-sm">{task.still_weak_count} still weak</span>
           ) : (
-            <span className="tag tag-green tag-sm">Đã ổn lại</span>
+            <span className="tag tag-green tag-sm">Recovered</span>
           )}
-          <span className="wk-meta">{task.cards.length} thẻ trong đợt này</span>
+          <span className="wk-meta">{task.cards.length} card{task.cards.length === 1 ? '' : 's'} in this round</span>
         </div>
         <p className="wk-desc">
-          Mở {relative(task.opened_at)} · thẻ yếu gần nhất {relative(task.last_weak_card_at)}.
-          {task.still_weak_count === 0 && !closed && ' Các thẻ đã hồi phục nhưng vẫn được liệt kê cho tới khi bạn đánh dấu xong việc ôn của set này ở Việc cần ôn.'}
+          Opened {relative(task.opened_at)} · last weak card {relative(task.last_weak_card_at)}.
+          {task.still_weak_count === 0 && !closed && ' These cards have recovered but stay listed until you tick off this set’s item in To-do.'}
         </p>
         {r && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 9 }}>
             <div className="bar"><div style={{ width: `${r.pct}%`, background: barColor }} /></div>
             <span style={{ fontSize: 11, color: 'var(--dim)' }}>
-              Nhớ đúng {r.correct}/{r.total} lượt gần nhất
+              Recalled {r.correct}/{r.total} recent reviews
             </span>
           </div>
         )}
@@ -146,13 +146,13 @@ function TaskCard({ task, expanded, onToggle }: { task: WeakTask; expanded: bool
                 <div style={{ fontSize: 13.5, color: 'var(--tx2)', lineHeight: 1.5 }}>{c.question}</div>
                 <div className="wk-meta" style={{ marginTop: 3 }}>
                   {c.recent_reviews === 0
-                    ? 'Chưa ôn lần nào kể từ khi được liệt kê'
-                    : `Sai ${c.recent_wrong}/${c.recent_reviews} lượt gần nhất`}
-                  {c.last_reviewed_at && ` · ôn ${relative(c.last_reviewed_at)}`}
+                    ? 'Not reviewed since it was listed'
+                    : `Missed ${c.recent_wrong}/${c.recent_reviews} recent reviews`}
+                  {c.last_reviewed_at && ` · reviewed ${relative(c.last_reviewed_at)}`}
                   {c.still_weak ? (
-                    <span className="tag tag-red tag-sm" style={{ marginLeft: 8 }}>đang yếu</span>
+                    <span className="tag tag-red tag-sm" style={{ marginLeft: 8 }}>weak</span>
                   ) : (
-                    <span className="tag tag-green tag-sm" style={{ marginLeft: 8 }}>đã ổn</span>
+                    <span className="tag tag-green tag-sm" style={{ marginLeft: 8 }}>recovered</span>
                   )}
                 </div>
               </div>
@@ -163,10 +163,10 @@ function TaskCard({ task, expanded, onToggle }: { task: WeakTask; expanded: bool
       <div className="wk-side">
         <button className="btn btn-soft" onClick={onToggle}>
           <i className={`ph ${expanded ? 'ph-caret-up' : 'ph-caret-down'}`} />
-          {expanded ? 'Thu gọn' : 'Xem thẻ'}
+          {expanded ? 'Collapse' : 'Show cards'}
         </button>
         <a className="btn btn-frost" href={href({ view: 'chat', newSetId: task.study_set_id })}>
-          <i className="ph ph-student" />Học bài
+          <i className="ph ph-student" />Study
         </a>
       </div>
     </div>

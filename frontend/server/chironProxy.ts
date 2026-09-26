@@ -10,9 +10,9 @@
  *   /api/ks/health               → KS GET /health          (no auth upstream)
  *   /api/ks/nodes?…              → KS GET /nodes           (Bearer CHIRON_KS_TOKEN)
  *   /api/ks/nodes/{id}           → KS GET /nodes/{id}      (Bearer CHIRON_KS_TOKEN)
- *   /api/ks/edges?…              → KS GET /edges           (cạnh đã duyệt, cho bản đồ khái niệm)
+ *   /api/ks/edges?…              → KS GET /edges           (approved edges, for the concept map)
  *   /api/ks/notes…, /api/ks/extracted…
- *                                → ghi chép scan và duyệt khái niệm (bảng KS_WRITE_ROUTES)
+ *                                → note scan and concept review (KS_WRITE_ROUTES)
  *
  * Deliberately an allowlist of (method, path) pairs. The only KS writes open
  * here are the note-scan flow and its review step — and even those cannot put
@@ -105,12 +105,12 @@ async function forward(
     res.end(body);
   } catch (err) {
     // Process down, wrong port, DNS, or timeout: the upstream never answered.
-    // 502 with a machine-readable code so the UI can say "không kết nối được"
+    // 502 with a machine-readable code so the UI can say "cannot reach"
     // for that one area instead of treating it as a bug.
     const timedOut = err instanceof Error && err.name === 'TimeoutError';
     sendJson(res, 502, {
       error: timedOut ? 'upstream_timeout' : 'upstream_unreachable',
-      detail: `${label}: ${timedOut ? `không phản hồi sau ${timeoutMs / 1000}s` : 'không kết nối được'}`,
+      detail: `${label}: ${timedOut ? `no response after ${timeoutMs / 1000}s` : 'unreachable'}`,
     });
   }
 }
@@ -128,10 +128,10 @@ function createHandler(env: ProxyEnv): Connect.NextHandleFunction {
       const sub = path.slice('/api/ks'.length);
       const route = KS_WRITE_ROUTES.find((r) => r.method === req.method && r.pattern.test(sub));
       if (!route) {
-        return sendJson(res, 405, { error: 'method_not_allowed', detail: `${req.method} ${path} không nằm trong danh sách proxy` });
+        return sendJson(res, 405, { error: 'method_not_allowed', detail: `${req.method} ${path} is not on the proxy allowlist` });
       }
       if (!env.ksToken) {
-        return sendJson(res, 503, { error: 'not_configured', detail: 'CHIRON_KS_TOKEN đang trống trong frontend/.env' });
+        return sendJson(res, 503, { error: 'not_configured', detail: 'CHIRON_KS_TOKEN is empty in frontend/.env' });
       }
       let body: Buffer | undefined;
       if (req.method !== 'GET') {
@@ -139,7 +139,7 @@ function createHandler(env: ProxyEnv): Connect.NextHandleFunction {
           body = await readBody(req, MAX_UPLOAD_BYTES);
         } catch (err) {
           if (err instanceof BodyTooLarge) {
-            return sendJson(res, 413, { error: 'too_large', detail: `Tổng dung lượng tối đa ${MAX_UPLOAD_BYTES / 1024 / 1024} MB` });
+            return sendJson(res, 413, { error: 'too_large', detail: `Upload limit is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB in total` });
           }
           throw err;
         }
@@ -155,7 +155,7 @@ function createHandler(env: ProxyEnv): Connect.NextHandleFunction {
     }
 
     if (req.method !== 'GET') {
-      return sendJson(res, 405, { error: 'method_not_allowed', detail: 'proxy này chỉ cho phép GET' });
+      return sendJson(res, 405, { error: 'method_not_allowed', detail: 'this proxy only allows GET here' });
     }
 
     // ------------------------------------------------------------ status
@@ -171,7 +171,7 @@ function createHandler(env: ProxyEnv): Connect.NextHandleFunction {
     }
     if (path === '/api/ks/edges') {
       if (!env.ksToken) {
-        return sendJson(res, 503, { error: 'not_configured', detail: 'CHIRON_KS_TOKEN đang trống trong frontend/.env' });
+        return sendJson(res, 503, { error: 'not_configured', detail: 'CHIRON_KS_TOKEN is empty in frontend/.env' });
       }
       return void forward(res, `${env.ksUrl}/edges${url.search}`, 'Knowledge Store', { Authorization: `Bearer ${env.ksToken}` }, KS_TIMEOUT_MS);
     }
@@ -180,7 +180,7 @@ function createHandler(env: ProxyEnv): Connect.NextHandleFunction {
       if (!env.ksToken) {
         return sendJson(res, 503, {
           error: 'not_configured',
-          detail: 'CHIRON_KS_TOKEN đang trống trong frontend/.env',
+          detail: 'CHIRON_KS_TOKEN is empty in frontend/.env',
         });
       }
       // The id segment is forwarded as the browser encoded it; the regex has
@@ -198,7 +198,7 @@ function createHandler(env: ProxyEnv): Connect.NextHandleFunction {
       );
     }
 
-    return sendJson(res, 404, { error: 'not_proxied', detail: `${path} không nằm trong danh sách proxy` });
+    return sendJson(res, 404, { error: 'not_proxied', detail: `${path} is not on the proxy allowlist` });
   };
 }
 

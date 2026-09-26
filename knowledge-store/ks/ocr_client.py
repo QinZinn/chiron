@@ -1,7 +1,7 @@
-"""Gọi service OCR (Chiron/ocr). Chỉ thư viện chuẩn — KS không kéo thêm dependency.
+"""Calls the OCR service (Chiron/ocr). Standard library only — KS pulls in no extra dependency.
 
-Protocol + fake như LLMProvider và CardClient: test thay OcrClient bằng hàm giả,
-không cần PaddleOCR thật.
+Protocol + fake, like LLMProvider and CardClient: tests swap OcrClient for a fake
+function and need no real PaddleOCR.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from ks import settings
 
 
 class OcrError(Exception):
-    """OCR không trả được kết quả. `status` gợi ý mã HTTP nên trả cho client."""
+    """OCR returned no result. `status` suggests the HTTP code to return to the client."""
 
     def __init__(self, message: str, status: int = 502, code: str = "ocr_failed"):
         super().__init__(message)
@@ -28,7 +28,7 @@ class OcrError(Exception):
 
 class OcrNotConfigured(OcrError):
     def __init__(self):
-        super().__init__(f"Chưa cấu hình {settings.OCR_URL_ENV}", status=503, code="ocr_not_configured")
+        super().__init__(f"{settings.OCR_URL_ENV} is not configured", status=503, code="ocr_not_configured")
 
 
 @dataclass(frozen=True)
@@ -48,8 +48,8 @@ def _multipart(uploads: list[Upload]) -> tuple[bytes, str]:
     boundary = f"chiron-{uuid.uuid4().hex}"
     parts: list[bytes] = []
     for up in uploads:
-        # Tên tệp tiếng Việt: dạng filename*=UTF-8'' theo RFC 5987, kèm filename
-        # ASCII dự phòng — Werkzeug đọc được cả hai.
+        # Non-ASCII file names: filename*=UTF-8'' per RFC 5987, plus an ASCII
+        # fallback filename — Werkzeug reads both.
         safe = up.filename.encode("ascii", "replace").decode().replace('"', "_")
         quoted = urllib.request.quote(up.filename)
         parts.append(
@@ -83,8 +83,8 @@ class HttpOcrClient:
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            # Lỗi do tệp (400/413) và "model đang tải" (503) được chuyển nguyên
-            # cho người học — họ sửa được. Lỗi khác là của service OCR.
+            # File errors (400/413) and "model still loading" (503) are passed
+            # through to the learner as-is — they can fix them. Anything else is the OCR service's.
             try:
                 payload = json.loads(exc.read().decode("utf-8"))
                 detail, code = payload.get("detail", str(exc)), payload.get("error", "ocr_failed")
@@ -93,7 +93,7 @@ class HttpOcrClient:
             status = exc.code if exc.code in (400, 413, 503) else 502
             raise OcrError(detail, status=status, code=code) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise OcrError(f"Không kết nối được service OCR: {exc}", status=502, code="ocr_unreachable") from exc
+            raise OcrError(f"Could not reach the OCR service: {exc}", status=502, code="ocr_unreachable") from exc
 
 
 def client_from_env(env: dict[str, str] | None = None) -> OcrClient:

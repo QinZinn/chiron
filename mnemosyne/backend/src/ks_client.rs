@@ -175,7 +175,7 @@ impl std::error::Error for KsError {}
 /// Written out rather than pulled from a crate because reqwest's `query()`
 /// helper is not available under this project's minimal feature set, and a
 /// subject filter can legitimately contain spaces and non-ASCII text
-/// ("Vật lý"), which must not be pasted into a URL raw. Only the unreserved
+/// ("Vật lý" — Vietnamese for "Physics"), which must not be pasted into a URL raw. Only the unreserved
 /// set from RFC 3986 survives untouched; everything else, including every
 /// byte of a multi-byte UTF-8 character, is escaped.
 fn percent_encode_query_value(value: &str) -> String {

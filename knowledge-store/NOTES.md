@@ -1,576 +1,623 @@
-# NOTES — quyết định, giới hạn, và bẫy đã trả giá
+# NOTES — decisions, limits, and traps we paid for
 
-## Quyết định đã chốt (không bàn lại)
-- Postgres `nodes` + `edges`, **không Neo4j**.
-- Node = một khái niệm, **không phải một phiên học**.
-- Dò trùng bằng full-text `pg_trgm`, ngưỡng **0.6**. **Không embedding, không pgvector** —
-  nâng cấp chờ bằng chứng thật từ Mnemosyne.
-- Edge: LLM gợi ý → `pending` → người duyệt → `approved`. **Không auto-approve.**
-- `subject` là TEXT tự do, **KHÔNG enum** (Horae không có taxonomy môn học đóng kín).
-- `rejected` / `discarded` giữ vĩnh viễn, không xoá — "không hỏi lại câu người dùng đã trả lời".
-- Merge node dùng `merged_into_id`, **không xoá cứng**.
-- Mnemosyne ghi sau cả phiên, không sau mỗi câu trả lời.
-- Lưu transcript raw TRƯỚC, extraction là job riêng retry được.
-- LLM client viết riêng cho KS, không import gì từ Horae, nhưng cùng quy ước.
+Some evidence below (similarity measurements, concept titles extracted from real
+notes) was recorded while Chiron still worked in Vietnamese. Strings whose exact
+characters matter are kept verbatim, with an English gloss.
 
-## Hai hàm cốt lõi ĐỐI LẬP nhau có chủ đích
-| Hàm | Hành vi |
+## Settled decisions (not reopened)
+- Postgres `nodes` + `edges`, **not Neo4j**.
+- A node is one concept, **not one study session**.
+- Duplicate detection with `pg_trgm` full-text, threshold **0.6**. **No embeddings,
+  no pgvector** — an upgrade waits for real evidence from Mnemosyne.
+- Edges: the LLM suggests → `pending` → a person reviews → `approved`. **No auto-approve.**
+- `subject` is free TEXT, **NOT an enum** (Horae has no closed subject taxonomy).
+- `rejected` / `discarded` rows are kept forever, never deleted — "never ask again a
+  question the user already answered".
+- Merging nodes uses `merged_into_id`, **no hard delete**.
+- Mnemosyne writes after the whole session, not after every answer.
+- The raw transcript is stored FIRST; extraction is a separate, retryable job.
+- The LLM client is written separately for KS and imports nothing from Horae, but
+  follows the same conventions.
+
+## Two core functions that are opposites on purpose
+| Function | Behaviour |
 |---|---|
-| `save_transcript` | **KHÔNG BAO GIỜ raise.** Nuốt mọi lỗi kể cả mất kết nối DB → `SaveResult(ok=False)`. Phiên học không được hỏng vì KS chết; Mnemosyne là system of record. |
-| `ingest_concepts` | **Fail-loud.** `psycopg.Error` văng thẳng ra. Wrapper HTTP bắt → 503. |
+| `save_transcript` | **NEVER raises.** Swallows every error, including a lost DB connection → `SaveResult(ok=False)`. A study session must not break because KS is down; Mnemosyne is the system of record. |
+| `ingest_concepts` | **Fail-loud.** `psycopg.Error` propagates. The HTTP wrapper catches it → 503. |
 
-## Giới hạn đã biết — KHÔNG sửa, chỉ khoá bằng test
-Dedup trigram gộp nhầm khái niệm tên gần giống. Khoá bằng
+## Known limits — NOT fixed, only locked in by tests
+Trigram dedup wrongly merges concepts with near-identical names. Locked in by
 `tests/test_dedup_limits.py::test_numbered_variants_are_wrongly_deduped`.
 
-### Ba evidence point — đã truy lại được, môi trường KHÔNG đổi
-Đo trên PostgreSQL 18.6, pg_trgm 1.6, collation `en_US.UTF-8`, provider `libc`:
+### Three evidence points — traced back, the environment did NOT change
+Measured on PostgreSQL 18.6, pg_trgm 1.6, collation `en_US.UTF-8`, provider `libc`.
+The strings are Vietnamese physics terms and must stay verbatim — the numbers
+depend on the exact characters.
 
-| Chuỗi A (nguyên văn) | Chuỗi B (nguyên văn) | similarity | Gộp ở 0.6? |
-|---|---|---|---|
-| `Định luật Newton 1` | `Định luật Newton 2` | 0.8095 | **có** |
-| `Định luật khúc xạ ánh sáng` | `Định luật phản xạ ánh sáng` | 0.6774 | **có** |
-| `Định luật Ohm (curl-nodes)` | `Định luật Newton 2 (curl-nodes)` | 0.6364 | **có** |
-| `khúc xạ` | `phản xạ` | 0.2308 | không |
-| `Định luật Ohm` | `Định luật Newton 2` | 0.4348 | không |
+| String A (verbatim) | String B (verbatim) | Gloss | similarity | Merged at 0.6? |
+|---|---|---|---|---|
+| `Định luật Newton 1` | `Định luật Newton 2` | Newton's first / second law | 0.8095 | **yes** |
+| `Định luật khúc xạ ánh sáng` | `Định luật phản xạ ánh sáng` | law of refraction / reflection of light | 0.6774 | **yes** |
+| `Định luật Ohm (curl-nodes)` | `Định luật Newton 2 (curl-nodes)` | Ohm's law / Newton's second law | 0.6364 | **yes** |
+| `khúc xạ` | `phản xạ` | refraction / reflection | 0.2308 | no |
+| `Định luật Ohm` | `Định luật Newton 2` | Ohm's law / Newton's second law | 0.4348 | no |
 
-Cả ba evidence point của lần build trước đều tái hiện **chính xác** khi đo đúng
-chuỗi (0.636 → 0.6364; 0.677 → 0.6774). Ban đầu tôi đo trên cặp title trần
-(`khúc xạ` vs `phản xạ`, `Định luật Ohm` vs `Định luật Newton 2`) và kết luận
-nhầm rằng môi trường đã đổi. **Không có khác biệt môi trường nào.** Giả thuyết
-collation đã bị bác bỏ, không cần điều tra thêm.
+All three evidence points from the previous build reproduce **exactly** when the
+exact strings are measured (0.636 → 0.6364; 0.677 → 0.6774). At first I measured
+the bare title pairs (`khúc xạ` vs `phản xạ`, `Định luật Ohm` vs
+`Định luật Newton 2`) and wrongly concluded the environment had changed. **There is
+no environmental difference.** The collation hypothesis is refuted; no further
+investigation needed.
 
-Cơ chế: phần chung của hai chuỗi chiếm đa số trigram. Cùng tiền tố
-`"Định luật "` cộng cùng hậu tố `" ánh sáng"` / `" (curl-nodes)"` đẩy similarity
-từ 0.23 lên 0.68 dù phần khác biệt y hệt nhau. Hậu tố dùng chung là thứ nguy
-hiểm nhất cho dedup trigram — và title thật từ Mnemosyne rất dễ có hậu tố chung
-(tên chương, tên môn, tên bộ đề).
+Mechanism: the shared part of two strings makes up most of the trigrams. The same
+prefix `"Định luật "` ("law of") plus the same suffix `" ánh sáng"` ("of light") /
+`" (curl-nodes)"` pushes similarity from 0.23 to 0.68 even though the differing part
+is identical. A shared suffix is the most dangerous thing for trigram dedup — and
+real titles from Mnemosyne easily share suffixes (chapter names, subject names,
+question-set names).
 
-### QUY TẮC: cách ghi một evidence point
-Ghi lại một con số mà không ghi chuỗi đầu vào chính xác thì **không tái sử dụng
-được** — đó là bài học đắt nhất rút ra ở đây. Hai trong ba số cũ suýt bị diễn
-giải thành "môi trường đã đổi" chỉ vì thiếu chuỗi gốc.
+### RULE: how to record an evidence point
+A number recorded without its exact input strings **cannot be reused** — the most
+expensive lesson here. Two of the three old numbers were nearly read as "the
+environment changed" just because the original strings were missing.
 
-Từ nay mọi evidence point về dedup PHẢI ghi đủ:
-1. **Nguyên văn cả hai chuỗi**, kể cả tiền tố/hậu tố trông như rác kỹ thuật
-   (`(curl-nodes)` chính là thứ tạo ra con số).
+From now on every dedup evidence point MUST record:
+1. **Both strings verbatim**, including prefixes/suffixes that look like technical
+   noise (`(curl-nodes)` is exactly what produced the number).
 2. `SELECT extversion FROM pg_extension WHERE extname = 'pg_trgm';`
 3. `SELECT datcollate, datctype, datlocprovider FROM pg_database WHERE datname = current_database();`
 
-Thiếu ba thứ này thì đến lúc quyết pgvector sẽ không biết số cũ nghĩa là gì.
-`tests/test_dedup_limits.py` khoá cả ba bằng test, gồm cả dấu vân tay môi trường.
+Without these three, when the time comes to decide on pgvector nobody will know
+what the old numbers meant. `tests/test_dedup_limits.py` locks all three in with
+tests, including the environment fingerprint.
 
-## QUY TẮC: trao đổi dữ liệu thô, không trao đổi kết luận
+## RULE: exchange raw data, not conclusions
 
-Ba lần trong đợt làm việc với Mnemosyne, KS kết luận rộng hơn dữ liệu cho phép,
-và cả ba đều bị bên kia bắt được:
+Three times while working with Mnemosyne, KS concluded more than the data allowed,
+and all three were caught by the other side:
 
-1. "restart `chiron-ks-http` kích hoạt fallback của Mnemosyne" — sai, restart
-   cho `connection refused` → `knowledge_store_error`. Fallback chỉ chạy khi KS
-   sống nhưng chạy code cũ.
-2. Test truncated dùng body có field `message` — body thật chỉ có `error` và
-   `reason`.
-3. "0 dòng 502 nên không có lỗi cũ cần diễn giải lại" — đúng ra là giả thuyết
-   KHÔNG CÓ CA NÀO ĐỂ KIỂM, chưa bị bác bỏ.
+1. "Restarting `chiron-ks-http` triggers Mnemosyne's fallback" — wrong: a restart
+   gives `connection refused` → `knowledge_store_error`. The fallback only runs when
+   KS is alive but running old code.
+2. The truncated test used a body with a `message` field — the real body has only
+   `error` and `reason`.
+3. "0 rows with 502, so there are no old errors to reinterpret" — correctly: the
+   hypothesis had NO CASES TO TEST; it was not refuted.
 
-Cả ba đều là kết luận rút ra từ chỗ **chỉ một bên nhìn thấy dữ liệu**. KS không
-có cách nào biết `restart` cho `connection refused` thay vì HTML 404, vì hành vi
-đó nằm trong client phía Mnemosyne.
+All three were conclusions drawn where **only one side could see the data**. KS had
+no way to know that a restart gives `connection refused` rather than an HTML 404,
+because that behaviour lives in Mnemosyne's client.
 
-Thứ làm chúng lộ ra không phải sự cẩn thận của bên nào, mà là việc **hai bên
-viết ra đủ cụ thể để bên kia đối chiếu được với thứ mình đang cầm**: KS gửi
-payload nguyên văn thay vì mô tả, Mnemosyne gửi bảng số thay vì kết luận. Nhờ
-vậy chỗ lệch mới va vào nhau thay vì trôi qua.
+What exposed them was not either side's care, but **both sides writing specifically
+enough that the other could check it against what they held**: KS sent verbatim
+payloads rather than descriptions, Mnemosyne sent tables of numbers rather than
+conclusions. That is how the mismatches collided instead of slipping past.
 
-Áp dụng: khi báo cáo qua ranh giới module, gửi payload/số đo nguyên văn kèm
-theo kết luận, đừng gửi mỗi kết luận. Cùng gốc với quy tắc evidence point ở trên.
+In practice: when reporting across a module boundary, send the verbatim
+payload/measurements along with the conclusion, never the conclusion alone. Same
+root as the evidence-point rule above.
 
-## Nợ kỹ thuật đã ghi nhận
-- `find_candidates` dùng `similarity()` chứ không dùng toán tử `%`, nên **không
-  dùng GIN index**. Đổi lại: ngưỡng không phụ thuộc GUC `pg_trgm.similarity_threshold`
-  của session. Chấp nhận được ở quy mô một người dùng.
+## Recorded technical debt
+- `find_candidates` uses `similarity()` rather than the `%` operator, so it **does
+  not use the GIN index**. In exchange, the threshold does not depend on the
+  session's `pg_trgm.similarity_threshold` GUC. Acceptable at single-user scale.
 
-## deepseek-v4-flash là model REASONING — reasoning token tính vào max_tokens
+## deepseek-v4-flash is a REASONING model — reasoning tokens count toward max_tokens
 
-Phát hiện khi chạy thật, không phải suy đoán. Một lần gọi gợi ý edge với 2 ứng viên:
+Found in a real run, not guessed. One edge-suggestion call with 2 candidates:
 
 ```
 completion_tokens: 222
-  completion_tokens_details.reasoning_tokens: 158   ← 71% ngân sách
+  completion_tokens_details.reasoning_tokens: 158   ← 71% of the budget
 prompt_tokens: 474 (cached 384)
 ```
 
-Lượng reasoning thay đổi mỗi lần chạy. Với `max_tokens=1000`, đã có lần reasoning
-ngốn gần hết ngân sách và chỉ còn ~15 token cho JSON → phản hồi cụt giữa chừng:
+The amount of reasoning varies per run. With `max_tokens=1000`, reasoning once ate
+almost the whole budget and left ~15 tokens for the JSON → a response cut off
+mid-way:
 
 ```
 [
   {
     "candidate": 0,
-    "relation_type": "pr        ← hết token ở đây
+    "relation_type": "pr        ← out of tokens here
 ```
 
-Hai thứ đã sửa:
-1. `EDGE_SUGGESTION_MAX_TOKENS` / `EXTRACTION_MAX_TOKENS` = **4000**. Đừng hạ hai
-   số này theo độ dài output NHÌN THẤY được (~200 ký tự) — phần lớn ngân sách là
-   reasoning vô hình. Chi phí chỉ tính theo token thực sinh ra; cắt ngang thì
-   hỏng cả lô.
-2. `LLMTruncatedError` (con của `LLMTransientError`) bắt `finish_reason == "length"`
-   ở OpenAI-compatible và `stop_reason == "max_tokens"` ở Anthropic. Trước đó JSON
-   cụt lọt xuống `json.loads` và hiện ra dưới dạng `LLMParseError` — chẩn đoán sai
-   hoàn toàn, vì cấu trúc phản hồi không hề sai, nó chỉ chưa viết xong. Là lớp con
-   của Transient nên retry được: cùng `max_tokens` lúc đủ lúc không.
+Two fixes:
+1. `EDGE_SUGGESTION_MAX_TOKENS` / `EXTRACTION_MAX_TOKENS` = **4000** (both since
+   raised; see the sections at the end). Do not lower these to match the VISIBLE
+   output length (~200 characters) — most of the budget is invisible reasoning. Cost
+   only accrues for tokens actually generated; a cut-off ruins the whole batch.
+2. `LLMTruncatedError` (a subclass of `LLMTransientError`) catches
+   `finish_reason == "length"` on OpenAI-compatible APIs and
+   `stop_reason == "max_tokens"` on Anthropic. Before, the truncated JSON reached
+   `json.loads` and surfaced as an `LLMParseError` — a completely wrong diagnosis,
+   since the response structure was not wrong, just unfinished. As a subclass of
+   Transient it is retryable: the same `max_tokens` is sometimes enough and
+   sometimes not.
 
-Instrumentation đã ghi đúng sự cố này (`edge_suggestion_run.outcome = 'parse_error'`)
-— đây chính là bằng chứng ràng buộc §7 có tác dụng thật.
+Instrumentation recorded exactly this incident (`edge_suggestion_run.outcome =
+'parse_error'`) — evidence that the §7 constraint works in practice.
 
-## card_sync: trạng thái verify từng nhánh
+## card_sync: verification status of each branch
 
-Năm ca đã chạy thật với Mnemosyne sống trên `127.0.0.1:8081`:
+Five cases were run for real against a live Mnemosyne on `127.0.0.1:8081`:
 
-| Ca | Verify | Kết quả |
+| Case | Verified | Result |
 |---|---|---|
-| 201 card mới | ✅ thật | `sent` |
-| 409 card đã có | ✅ thật | `sent` (Mnemosyne check TRƯỚC khi gọi LLM → không tốn token) |
-| 404 set/node sai | ✅ thật | `skipped`, không retry |
-| Không gọi nổi Mnemosyne | ✅ thật | dừng cả lô, `attempts` giữ nguyên |
-| 503 KS chưa cấu hình | ❌ chỉ fake | `pending` |
-| 502 `reason="truncated"` | ⚠️ đã thử 6 node, không tái hiện | `failed`, không retry |
+| 201 new card | ✅ real | `sent` |
+| 409 card already exists | ✅ real | `sent` (Mnemosyne checks BEFORE calling the LLM → no tokens spent) |
+| 404 wrong set/node | ✅ real | `skipped`, no retry |
+| Mnemosyne unreachable | ✅ real | the whole batch stops, `attempts` unchanged |
+| 503 KS not configured | ❌ fake only | `pending` |
+| 502 `reason="truncated"` | ⚠️ tried 6 nodes, not reproduced | `failed`, no retry |
 
-### ĐÃ SĂN: 6 node, KHÔNG tái hiện được truncation tự nhiên qua card_sync
+### HUNTED: 6 nodes, natural truncation through card_sync could NOT be reproduced
 
-Mục tiêu: ép một ca `reason="truncated"` **tự nhiên** (không hạ `max_tokens`)
-đi qua đúng đường `card_sync` → `POST /cards/from_node` → DeepSeek mặc định.
-Kết quả: **6/6 node đều `sent` (201). Không ca nào truncated.**
+Goal: force a **natural** `reason="truncated"` case (without lowering `max_tokens`)
+through the real path `card_sync` → `POST /cards/from_node` → DeepSeek defaults.
+Result: **6/6 nodes `sent` (201). No truncation.**
 
-| Node | prompt (ký tự) | token tiêu | Kết quả |
+| Node | prompt (chars) | tokens used | Result |
 |---|---|---|---|
-| Sự hình thành và tiến hóa của sao | 2345 | 1925 | sent |
-| Định lý bất toàn Gödel | 3023 | **5164** | sent |
-| Nghịch lý Sorites | 1059 | 1116 | sent |
-| Mèo Schrödinger | 1092 | **3058** | sent |
-| Con tàu Theseus | 1034 | 1150 | sent |
-| Bài toán xe điên | 1247 | **3811** | sent |
+| Formation and evolution of stars | 2345 | 1925 | sent |
+| Gödel's incompleteness theorems | 3023 | **5164** | sent |
+| The sorites paradox | 1059 | 1116 | sent |
+| Schrödinger's cat | 1092 | **3058** | sent |
+| The ship of Theseus | 1034 | 1150 | sent |
+| The trolley problem | 1247 | **3811** | sent |
 
-**Giả thuyết ban đầu SAI, và số đo bác bỏ nó.** Tôi cho rằng summary dài sẽ đẩy
-tới trần. Mnemosyne chỉ ra lỗi lập luận: summary dài làm tăng token phía
-**prompt**, còn `max_tokens` chỉ chặn phía **completion** — hai ngân sách khác
-nhau. Biến thật là **độ khó suy luận**.
+**The initial hypothesis was WRONG, and the measurements refute it.** I assumed a
+long summary would push toward the cap. Mnemosyne pointed out the flaw: a long
+summary increases **prompt** tokens, while `max_tokens` only caps the **completion**
+— two different budgets. The real variable is **reasoning difficulty**.
 
-Số đo xác nhận họ đúng: Schrödinger prompt 1092 ký tự đốt 3058 token, còn
-Theseus prompt 1034 ký tự chỉ đốt 1150 — cùng độ dài, chênh 2,7 lần. Node cuối
-(“Bài toán xe điên”, thiết kế riêng để tối đa hoá cân nhắc: bốn khung đạo đức
-cạnh tranh cộng một trực giác đảo chiều) đốt 3811 token với prompt chỉ 1247 ký
-tự. Hướng đúng, nhưng vẫn không chạm trần.
+The numbers confirm they were right: Schrödinger, a 1092-character prompt, burned
+3058 tokens, while Theseus, 1034 characters, burned only 1150 — same length, 2.7×
+apart. The last node ("The trolley problem", designed to maximise deliberation:
+four competing ethical frameworks plus a reversing intuition) burned 3811 tokens
+with a prompt of only 1247 characters. Right direction, but still not the cap.
 
-Cao nhất quan sát được là **5164 token, vẫn thành công** — nên ngân sách mặc
-định của DeepSeek còn dư trên mức đó.
+The highest observed was **5164 tokens, still successful** — so DeepSeek's default
+budget has room above that.
 
-**Kết luận (hợp lệ, không phải bế tắc):** ở phân bố dữ liệu hiện tại, truncation
-tự nhiên qua `card_sync` **hiếm tới mức 6 lần thử có chủ đích không gặp**. Điều
-này CỦNG CỐ quyết định giữ `failed` / không retry: một hiện tượng hiếm tới vậy
-không đáng đánh đổi lấy rủi ro retry mù. Bảng sáu nhánh dưới giữ nguyên nhãn
-`fake` cho dòng này, nhưng ghi chú đổi từ “chưa thử” thành “đã thử 6 node,
-không tái hiện”.
+**Conclusion (valid, not a dead end):** with the current data distribution, natural
+truncation through `card_sync` is **rare enough that 6 deliberate attempts did not
+hit it**. That STRENGTHENS the decision to keep `failed` / no retry: something this
+rare is not worth the risk of blind retries. The branch table keeps the `fake` label
+for this row, with the note changed from "not tried" to "tried 6 nodes, not
+reproduced".
 
-### ⚠️ Timeout 30s của KS đã CHE MẤT một phân loại thật
-Phát hiện ngoài dự kiến trong lúc săn. `HttpCardClient` đặt timeout cứng 30 giây.
-Node Gödel mất hơn 30s để sinh card, nên KS bỏ cuộc và ghi `CardClientError:
-timeout`, **mất luôn** phân loại thật mà Mnemosyne sắp trả về.
+### ⚠️ KS's 30 s timeout HID a real classification
+An unexpected finding during the hunt. `HttpCardClient` had a hard 30-second
+timeout. The Gödel node took over 30 s to generate a card, so KS gave up and
+recorded `CardClientError: timeout`, **losing** the real classification Mnemosyne
+was about to return.
 
-Timeout ngắn tệ hơn là chậm: nó ghi đè mọi `reason` (`truncated` /
-`provider_error` / `knowledge_store_error`) thành một lỗi hạ tầng vô nghĩa. Đúng
-một lần nó đã che mất ca đang cần quan sát.
+A short timeout is worse than slowness: it overwrites every `reason` (`truncated` /
+`provider_error` / `knowledge_store_error`) with a meaningless infrastructure error.
+Exactly once it hid the very case we needed to see.
 
-Đã sửa: `KS_MNEMOSYNE_TIMEOUT`, mặc định **180 giây**. Chạy lại cùng node đó với
-timeout rộng thì ra `sent` (201) sau 36 giây.
+Fixed: `KS_MNEMOSYNE_TIMEOUT`, default **180 seconds**. Re-running the same node
+with the wider timeout gave `sent` (201) after 36 seconds.
 
-**Nghi vấn đã bị BÁC BỎ — Actix KHÔNG huỷ handler khi client ngắt kết nối.**
-Tôi từng nghi timeout của KS làm huỷ request DeepSeek đang dở phía Mnemosyne.
-Sai. Mnemosyne chứng minh bằng thí nghiệm: giết client sau 2 giây
-(`curl --max-time 2`), handler của họ vẫn chạy tới cùng và **tạo card bình
-thường** 3 giây sau đó.
+**Suspicion REFUTED — Actix does NOT cancel the handler when the client disconnects.**
+I suspected KS's timeout cancelled the in-flight DeepSeek request on Mnemosyne's
+side. Wrong. Mnemosyne proved it by experiment: killing the client after 2 seconds
+(`curl --max-time 2`), their handler still ran to completion and **created the card
+normally** 3 seconds later.
 
-Đáng chú ý hơn: phản chứng chặt nhất nằm ngay trong dữ liệu tôi đã cầm. Nếu
-handler bị huỷ thì dòng `ai_interactions` lúc 15:07:58 **không thể tồn tại** —
-future bị drop thì không chạy nhánh lỗi, không INSERT được gì. Dòng đó có mặt,
-tức handler vẫn sống 31 giây sau khi KS bỏ cuộc. Chính khoảng lệch thời gian mà
-tôi thấy khả nghi lại là bằng chứng bác bỏ. Bài học: tôi có sẵn phản chứng và
-không dùng.
+More striking: the strongest counter-evidence was already in the data I held. Had
+the handler been cancelled, the `ai_interactions` row at 15:07:58 **could not
+exist** — a dropped future does not run its error branch and cannot INSERT
+anything. The row is there, so the handler was alive 31 seconds after KS gave up.
+The very time gap I found suspicious was the refutation. Lesson: I had the
+counter-evidence and did not use it.
 
-Lỗi EOF thật sự là gì: message của Mnemosyne kèm `body snippet:` **rỗng**, tức
-DeepSeek trả **HTTP 2xx kèm body rỗng**. Kết nối đứt giữa chừng thì reqwest báo
-`Network` chứ không phải `Parse`. Đây là bất thường phía upstream, không liên
-quan tới KS.
+What the EOF error really was: Mnemosyne's message carried an **empty**
+`body snippet:`, i.e. DeepSeek returned **HTTP 2xx with an empty body**. A
+connection dropped mid-way makes reqwest report `Network`, not `Parse`. This is an
+upstream anomaly, unrelated to KS.
 
-### Lai lịch 6 node trong DB production — GIỮ có chủ đích, không phải rác
-Sáu node dưới đây được tạo trong vòng săn truncation, **không phải vì có học
-sinh nào học chúng**. Người dùng đã quyết giữ; cả hai phía không dọn.
+### Where the 6 nodes in the production DB came from — kept on purpose, not junk
+The six nodes below were created during the truncation hunt, **not because any
+student studied them**. The user decided to keep them; neither side cleans them up.
 
-`Sự hình thành và tiến hóa của sao` · `Định lý bất toàn Gödel` ·
-`Nghịch lý Sorites` · `Mèo Schrödinger` · `Con tàu Theseus` · `Bài toán xe điên`
+`Sự hình thành và tiến hóa của sao` (formation and evolution of stars) ·
+`Định lý bất toàn Gödel` (Gödel's incompleteness theorems) ·
+`Nghịch lý Sorites` (the sorites paradox) · `Mèo Schrödinger` (Schrödinger's cat) ·
+`Con tàu Theseus` (the ship of Theseus) · `Bài toán xe điên` (the trolley problem)
 
-Chúng là khái niệm mạch lạc, đã tốn token thật để sinh card, và mỗi node có đúng
-một card trong set "KS review" phía Mnemosyne (tổng 8 card = 2 node cũ + 6 node
-này). Giữ chúng không gây hại, và xoá thì tốn công phối hợp hai phía.
+They are coherent concepts, real tokens were spent generating their cards, and each
+has exactly one card in Mnemosyne's "KS review" set (8 cards in total = 2 older
+nodes + these 6). Keeping them does no harm, and deleting them takes coordination
+on both sides.
 
-**Nếu sau này quyết dọn: phải dọn ĐỒNG THỜI hai phía.** Xoá node phía KS mà để
-card lại thì card mồ côi; xoá card phía Mnemosyne mà để node lại thì `card_sync`
-sinh lại chúng ở lần chạy kế tiếp. Không bên nào tự dọn một mình được.
+**If they are ever cleaned up: clean BOTH sides AT THE SAME TIME.** Deleting the KS
+node but keeping the card leaves an orphan card; deleting the card in Mnemosyne but
+keeping the node makes `card_sync` recreate it on the next run. Neither side can
+clean up alone.
 
-### Timeout sinh ra KẾT QUẢ MỒ CÔI, không phá việc
-Vì handler bên kia chạy tới cùng, timeout của KS không huỷ gì cả — nó tạo ra
-tình trạng **hai bên tin hai chuyện khác nhau về cùng một node**: Mnemosyne có
-card, KS ghi hỏng.
+### A timeout creates ORPHANED RESULTS, it does not break anything
+Because the handler on the other side runs to completion, KS's timeout cancels
+nothing — it creates a state where **the two sides believe different things about
+the same node**: Mnemosyne has a card, KS recorded a failure.
 
-Hệ thống tự hoà giải, nhưng chỉ nhờ một chuỗi hai bước mà **cả hai bước đều bắt
-buộc**:
+The system reconciles itself, but only through a two-step chain where **both steps
+are required**:
 
-1. Timeout ghi `pending`, **không phải** `failed` → node còn được chọn lại.
-2. Lần sau nhận `409` → ghi `sent`, vì **409 không phải lỗi**. Mnemosyne cố ý
-   trả kèm `existing_card_id` chính vì mục đích hoà giải này.
+1. A timeout records `pending`, **not** `failed` → the node can be picked again.
+2. The next run gets `409` → records `sent`, because **409 is not an error**.
+   Mnemosyne deliberately returns `existing_card_id` with it for exactly this
+   reconciliation.
 
-Đổi bất kỳ bước nào cũng làm ca mồ côi mắc kẹt vĩnh viễn. Đã khoá bằng test
-`test_timeout_roi_409_tu_hoa_giai_ket_qua_mo_coi` chạy đúng chuỗi đó.
+Changing either step leaves the orphan stuck forever. Locked in by the test
+`test_timeout_then_409_reconciles_an_orphaned_result`, which runs exactly that chain.
 
-Ca Gödel thực tế **không** mồ côi — lần đó handler của họ cũng thất bại thật
-(body rỗng), nên set "KS review" có đúng 8 card, không dư. Nhưng nếu DeepSeek
-trả lời bình thường thì đã có một card mà KS ghi là hỏng.
+The actual Gödel case was **not** orphaned — that time their handler really failed
+too (empty body), so the "KS review" set has exactly 8 cards, none extra. But had
+DeepSeek answered normally, there would be a card KS recorded as failed.
 
-### `truncated`: wire format đã xác nhận, đường KS vẫn chưa chạy thật
-Mnemosyne đã ép được truncation qua API thật (vá tạm `max_tokens=200` trong
-client của họ, chạy một lần, bỏ vá không commit). Cả ba giá trị `reason` giờ
-đều đã thấy trên dây thật. Body nguyên văn:
+### `truncated`: the wire format is confirmed, the KS path has not run for real
+Mnemosyne forced truncation through the real API (temporarily patching
+`max_tokens=200` in their client, running once, dropping the patch without
+committing). All three `reason` values have now been seen on the real wire. The
+verbatim body:
 
 ```json
 {"error": "DeepSeek stopped mid-answer at its token limit (length); nothing was parsed. Retrying, or requesting fewer items, may succeed.",
  "reason": "truncated"}
 ```
 
-**Không có field `message`** — bản test cũ của KS bịa ra field đó. Test giờ
-anchor vào payload nguyên văn ở trên (`TRUNCATED_BODY` trong
-`tests/test_card_sync.py`), đúng bài học evidence point: neo vào wire thật,
-đừng neo vào tưởng tượng.
+**There is no `message` field** — KS's old test made that field up. The test now
+anchors on the verbatim payload above (`TRUNCATED_BODY` in
+`tests/test_card_sync.py`), per the evidence-point lesson: anchor on the real wire,
+not on imagination.
 
-Vẫn phải nói cho đúng phạm vi: **`card_sync` của KS chưa từng NHẬN một response
-truncated thật.** Probe của Mnemosyne gọi thẳng endpoint của họ, không đi qua
-job này. Cái đã được xác nhận là *hình dạng dữ liệu*, không phải *đường đi*.
-`_decide()` đã được kiểm bằng chính payload đó và trả `failed` đúng thiết kế.
+The scope still has to be stated precisely: **KS's `card_sync` has never RECEIVED a
+real truncated response.** Mnemosyne's probe called their endpoint directly, not
+through this job. What is confirmed is the *shape of the data*, not the *path*.
+`_decide()` has been checked with that exact payload and returns `failed` as designed.
 
-### CHỐT: KHÔNG retry `truncated`. Quyết định đã đóng, đừng mở lại.
-Brief chốt "KHÔNG retry cùng input — gần như chắc chắn lặp lại y hệt".
-Mnemosyne đo 40 call thật (cùng node, cùng prompt, 10 lần mỗi mức ngân sách):
+### SETTLED: NO retry for `truncated`. The decision is closed; do not reopen it.
+The brief settled "NO retry with the same input — it almost certainly repeats
+exactly". Mnemosyne measured 40 real calls (same node, same prompt, 10 per budget):
 
-| max_tokens | truncated | reasoning quan sát | retry cùng input thành công |
+| max_tokens | truncated | reasoning observed | retry with same input succeeded |
 |---|---|---|---|
-| 200 | 10/10 | 200 (đụng trần) | 0/10 |
+| 200 | 10/10 | 200 (hit the cap) | 0/10 |
 | 350 | 10/10 | 232 – 350 | 0/10 |
 | 500 | 8/10 | 78 – 500 | 2/8 |
 | 650 | 7/10 | 162 – 650 | 2/7 |
 
-Cả hai câu khẳng định trước đó đều sai một nửa: dưới vùng biên retry thành công
-**0/20**, trong vùng biên **2–3/10**. Retry đáng giá nhưng chỉ ở vùng biên, và
-nhiều nhất 1–2 lượt.
+Both earlier claims were half wrong: below the boundary zone retries succeed
+**0/20**, inside it **2–3/10**. Retrying pays off, but only in the boundary zone, and
+for 1–2 attempts at most.
 
-**CẢNH BÁO khi đọc bảng này — đừng mang tỉ lệ 2–3/10 sang vận hành thật.**
-Mnemosyne **không gửi `max_tokens`**, dùng mặc định của model. Nên truncation
-trong vận hành nghĩa là reasoning đã ăn hết TOÀN BỘ ngân sách mặc định — rơi ra
-**ngoài** vùng đo được ở trên. Không ai có số cho chế độ đó và không suy ra được.
+**WARNING when reading this table — do not carry the 2–3/10 rate over to real
+operation.** Mnemosyne **does not send `max_tokens`**; it uses the model's default.
+So truncation in operation means reasoning has eaten the ENTIRE default budget —
+**outside** the range measured above. Nobody has numbers for that regime and they
+cannot be inferred.
 
-**Agent A đã chốt: giữ `failed`, không retry.** Lý do nêu rõ khi chốt — *không
-đổi hành vi dựa trên số liệu đo khác phạm vi cần quyết*. Bảng 40-call là dữ liệu
-tốt, nhưng đo trong dải ép `max_tokens` thấp, còn phạm vi cần quyết là chế độ
-mặc định của model. Số liệu tốt ở sai phạm vi vẫn là sai căn cứ.
+**Agent A settled it: keep `failed`, no retry.** The reason stated when settling —
+*do not change behaviour based on measurements from a different regime than the
+one being decided*. The 40-call table is good data, but measured in a forced
+low-`max_tokens` band, while the decision concerns the model's default regime. Good
+numbers from the wrong regime are still the wrong basis.
 
-Đây là quyết định ĐÃ ĐÓNG. Chỉ mở lại khi có số đo trong ĐÚNG chế độ vận hành
-(không ép `max_tokens`). Nếu khi đó đổi ý, chỗ sửa là nhánh `truncated` trong
-`ks/card_sync.py::_decide()`, và nó nên dùng chung ngân sách retry với
-`provider_error` chứ không retry vô hạn.
+This decision is CLOSED. Reopen it only with measurements in the RIGHT operating
+regime (no forced `max_tokens`). If the answer changes then, the place to change is
+the `truncated` branch in `ks/card_sync.py::_decide()`, and it should share the
+retry budget with `provider_error` rather than retry without limit.
 
-### Reply bị cắt THƯỜNG có nội dung — đây mới là cái bẫy thật
-Ở `max_tokens=350`, **5/10** call truncated vẫn trả về content thật (JSON viết
-dở, tới 310 ký tự). Không phải ca hiếm.
+### A truncated reply OFTEN has content — that is the real trap
+At `max_tokens=350`, **5/10** truncated calls still returned real content
+(half-written JSON, up to 310 characters). Not a rare case.
 
-Không check `finish_reason` thì đám đó đi thẳng vào parser và báo lỗi **định
-dạng**, khiến người đọc log đi soi prompt trong khi lỗi thật là **ngân sách
-token**. Đúng bug production ban đầu của KS — trước khi có `LLMTruncatedError`,
-`suggest_edges` đã báo `parse_error` cho chính ca này.
+Without checking `finish_reason`, those go straight to the parser and are reported
+as **format** errors, sending whoever reads the log off to inspect the prompt when
+the real error is the **token budget**. Exactly KS's original production bug —
+before `LLMTruncatedError`, `suggest_edges` reported `parse_error` for this very case.
 
-KS được bảo vệ: trong `ks/llm.py`, `finish_reason == "length"` được kiểm TRƯỚC
-khi đọc `content`, nên phản hồi cắt-nhưng-có-nội-dung vẫn thành `LLMTruncatedError`.
-Ba test khoá lại:
-- cắt kèm JSON dở → `LLMTruncatedError`, không phải `LLMParseError`
-- **cắt kèm JSON HỢP LỆ CÚ PHÁP** → vẫn `LLMTruncatedError`. Đây là ca âm thầm
-  nguy hiểm nhất: model viết xong `]` rồi mới cạn token, chuỗi parse được nhưng
-  nội dung THIẾU. Chấp nhận nó là im lặng mất dữ liệu. Ngân sách phải thắng cú pháp.
-- đối chứng `finish_reason == "stop"` → đi qua bình thường, không chặn nhầm
+KS is protected: in `ks/llm.py`, `finish_reason == "length"` is checked BEFORE
+`content` is read, so a truncated-but-non-empty response still becomes
+`LLMTruncatedError`. Three tests lock it in:
+- truncated with half-written JSON → `LLMTruncatedError`, not `LLMParseError`
+- **truncated with SYNTACTICALLY VALID JSON** → still `LLMTruncatedError`. This is
+  the most dangerous silent case: the model writes the closing `]` and then runs out
+  of tokens; the string parses but the content is INCOMPLETE. Accepting it would
+  silently lose data. The budget must win over the syntax.
+- control: `finish_reason == "stop"` → passes through normally, no false block
 
-Kiểm lại lịch sử `ks.card_sync_log`: **không có dòng 502 nào**. Đọc cho đúng —
-nghĩa là giả thuyết "lỗi parse cũ thật ra là truncation" **không có ca nào để
-kiểm chứng**, KHÔNG phải đã bị bác bỏ. Sạch theo nghĩa không có nợ cũ, không
-phải theo nghĩa đã chứng minh được điều gì.
+Checked the history of `ks.card_sync_log`: **no 502 rows at all**. Read it
+correctly — the hypothesis "old parse errors were really truncations" had **no cases
+to test**; it was NOT refuted. Clean in the sense of no old debt, not in the sense of
+having proven anything.
 
-Chi tiết tái hiện nằm ở `docs/gotchas.md` mục 2 phía Mnemosyne.
+Reproduction details are in Mnemosyne's `docs/gotchas.md`, item 2.
 
-### Biến động chi phí một prompt: gấp 4 lần
-Đo của KS (65 → 200) đúng và còn nhẹ. Ở `max_tokens=650`, cùng một request tiêu
-từ **162 tới 650** reasoning token, không có gì thay đổi phía người gọi. **Bất
-kỳ logic nào giả định một prompt có chi phí ổn định đều sai** — kể cả việc chọn
-`max_tokens` theo độ dài output nhìn thấy được.
+### Cost variation for one prompt: 4×
+KS's measurement (65 → 200) was right and understated. At `max_tokens=650`, the
+same request used anywhere from **162 to 650** reasoning tokens with nothing changed
+on the caller's side. **Any logic that assumes a prompt has a stable cost is wrong**
+— including choosing `max_tokens` from the visible output length.
 
-### ⚠️ `tokens_used` bên Mnemosyne ghi 0 cho mọi lượt fail
-Mnemosyne tự phát hiện: call bị truncated **vẫn đốt token thật** (~200 ở lần
-probe) nhưng `ai_interactions.tokens_used` ghi `0`, vì `LLMError::Truncated`
-không mang theo `usage`. Mọi lượt thất bại đều vô hình trong sổ chi phí — và
-truncation là loại đắt nhất, vì reasoning token đã cháy hết trước khi hỏng.
+### ⚠️ Mnemosyne's `tokens_used` records 0 for every failed call
+Mnemosyne found it themselves: a truncated call **still burns real tokens** (~200 in
+the probe) but `ai_interactions.tokens_used` records `0`, because
+`LLMError::Truncated` carries no `usage`. Every failed call is invisible in the cost
+ledger — and truncation is the most expensive kind, since the reasoning tokens are
+all spent before it fails.
 
-Ảnh hưởng tới KS: **không**. `ks stats` không có cột chi phí nào và không nên
-thêm — KS không phải nơi ghi sổ token của Mnemosyne. Chỉ cần nhớ: nếu sau này
-ai đó đọc số liệu chi phí phía Mnemosyne, cột đó **không tin được cho các lượt
-fail**. Họ đã báo lên phía điều phối của họ, KS không đụng vào.
+Impact on KS: **none**. `ks stats` has no cost column and should not get one — KS is
+not where Mnemosyne's tokens are accounted. Just remember: if anyone later reads
+Mnemosyne's cost figures, that column **cannot be trusted for failed calls**. They
+reported it to their own coordinator; KS does not touch it.
 
-### Đính chính: điều gì KÍCH HOẠT fallback list-scan của Mnemosyne
-Tôi từng nói với Mnemosyne rằng `systemctl --user restart chiron-ks-http` sẽ
-kích hoạt nhánh fallback của họ. **Sai.** Service chưa lên thì connection bị
-refuse → `KsError::Unreachable` → 502 `knowledge_store_error`, không phải đường
-fallback.
+### Correction: what TRIGGERS Mnemosyne's list-scan fallback
+I once told Mnemosyne that `systemctl --user restart chiron-ks-http` would trigger
+their fallback branch. **Wrong.** While the service is down the connection is
+refused → `KsError::Unreachable` → 502 `knowledge_store_error`, not the fallback path.
 
-Fallback chỉ chạy khi KS **đang sống nhưng chạy code cũ**: Werkzeug trả HTML 404
-cho route chưa tồn tại, và HTML 404 đó không phân biệt được với "node không tồn
-tại" nếu chỉ nhìn mã trạng thái. Tức là **lệch phiên bản**, không phải downtime.
-Ca này có thật vì hai service phát triển song song trong cùng một checkout.
-Mnemosyne giữ fallback và cho nó log warning khi chạy — hai đường không tương
-đương (đường list-scan không resolve được merge), nên thay thế âm thầm sẽ để lại
-khác biệt đó thành một bí ẩn phát hiện sau.
+The fallback only runs when KS is **alive but running old code**: Werkzeug returns an
+HTML 404 for a route that does not exist yet, and from the status code alone that
+404 cannot be told apart from "node does not exist". So it is **version skew**, not
+downtime. The case is real because the two services were developed side by side in
+the same checkout. Mnemosyne keeps the fallback and makes it log a warning when it
+runs — the two paths are not equivalent (the list-scan path cannot resolve merges),
+so replacing one with the other silently would leave that difference as a mystery to
+discover later.
 
-## Mnemosyne KHÔNG có systemd unit
+## Mnemosyne had NO systemd unit
 
-`card_sync` phụ thuộc Mnemosyne sống ở `127.0.0.1:8081`, nhưng Mnemosyne chạy
-thủ công bằng `cargo run -p backend` và không có unit systemd nào. Timer
-`chiron-ks-card-sync.timer` chạy hằng giờ bất kể — khi Mnemosyne chết, job ghi
-`pending` và KHÔNG đốt lượt retry, nên tick sau tự bù. Không mất dữ liệu, chỉ
-trễ. Không cần sửa gì phía KS.
+`card_sync` depends on Mnemosyne being alive at `127.0.0.1:8081`, but at the time
+Mnemosyne was run by hand with `cargo run -p backend` and had no systemd unit
+(it has user units in `mnemosyne/deploy/` now). The `chiron-ks-card-sync.timer` runs
+hourly regardless — when Mnemosyne is down the job records `pending` and does NOT
+burn retry attempts, so the next tick catches up. No data loss, only delay. Nothing
+to fix on the KS side.
 
-Mnemosyne cũng chưa có auth layer (simplification có chủ ý phía họ), nên
-`KS_MNEMOSYNE_TOKEN` để trống được. KS vẫn gửi header `Authorization` NẾU biến
-có giá trị, để sẵn sàng cho lúc họ thêm auth.
+Mnemosyne also had no auth layer on this route (a deliberate simplification on
+their side), so `KS_MNEMOSYNE_TOKEN` may be empty. KS still sends the
+`Authorization` header IF the variable has a value, ready for when they add auth.
 
-### ⚠️ Endpoint `card_sync` phụ thuộc CHƯA có trên origin
-Tính tới lúc viết dòng này, Mnemosyne có **11 commit chưa push**, và
-`POST /cards/from_node` nằm trong số đó. Nghĩa là toàn bộ `card_sync` đang phụ
-thuộc vào một endpoint **chỉ tồn tại ở local checkout của máy này** — không có
-trên origin, không khôi phục được nếu máy hỏng.
+### ⚠️ The endpoint `card_sync` depends on was NOT on origin (at the time)
+When this was written, Mnemosyne had **11 unpushed commits**, and
+`POST /cards/from_node` was among them. So all of `card_sync` depended on an
+endpoint that **existed only in this machine's local checkout** — not on origin,
+not recoverable if the machine failed.
 
-Đừng ghi ở đâu rằng phía Mnemosyne "đã an toàn trên origin". Nó chưa.
+Do not write anywhere that the Mnemosyne side "is safe on origin" without checking.
 
-Hệ quả cụ thể cần nêu, và chỉ nêu: **`card_sync` đang được xác nhận là đúng dựa
-trên code chỉ tồn tại ở local phía Mnemosyne.** Nếu máy đó gặp sự cố, milestone
-vừa giao KHÔNG verify lại được.
+The concrete consequence to state, and only state: **`card_sync` was confirmed
+correct against code that existed only locally on the Mnemosyne side.** Had that
+machine failed, the milestone just delivered could NOT have been re-verified.
 
-KS không push repo của họ, và **không nhắc họ push nữa** — kể cả với lý do chính
-đáng. Đây là thông tin để người dùng phía Mnemosyne tự quyết, không phải yêu cầu.
-Push lên origin là hành động hướng ra ngoài, quyền thuộc về người dùng của họ, và
-một lần cho phép trước đó không phải cho phép vĩnh viễn. KS đã một lần thúc và
-nhận sai; Agent A cũng từng lặp nhẹ lỗi tương tự. Không lặp lại.
+KS does not push their repository, and **does not remind them to push again** —
+even for a good reason. It is information for the Mnemosyne-side user to decide on,
+not a request. Pushing to origin is an outward-facing action that belongs to their
+user, and one earlier permission is not permanent permission. KS pushed once and was
+told it was wrong; Agent A also briefly repeated a similar mistake. Do not repeat it.
 
-Đối chiếu: chính brief dựng lại KS tồn tại vì lần trước code không được push
-trước khi cài lại máy — mất sạch. Đây là cùng một hình dạng rủi ro, ở module
-khác.
+For comparison: the brief to rebuild KS exists because last time the code was not
+pushed before the machine was reinstalled — everything was lost. This was the same
+shape of risk, in a different module.
 
-## LỆCH BRIEF CÓ CHỦ ĐÍCH: systemd ở mức USER, không phải system
+## DELIBERATE DEPARTURE FROM THE BRIEF: USER-level systemd, not system
 
-Brief §10 và bản build lần trước dùng system-level (`/etc/systemd/system/`,
-`sudo systemctl ...`). Lần này chốt **user-level** (`~/.config/systemd/user/`).
+Brief §10 and the previous build used system-level units (`/etc/systemd/system/`,
+`sudo systemctl ...`). This time it is settled as **user-level**
+(`~/.config/systemd/user/`).
 
-Hệ quả — mọi lệnh vận hành trong brief và tài liệu cũ đều phải thêm `--user`:
+Consequence — every operational command in the brief and older documents needs `--user`:
 
-| Tài liệu cũ | Đúng cho bản này |
+| Old documents | Correct for this build |
 |---|---|
 | `sudo systemctl status chiron-ks-http` | `systemctl --user status chiron-ks-http` |
 | `sudo systemctl restart chiron-ks-http` | `systemctl --user restart chiron-ks-http` |
 | `sudo journalctl -u chiron-ks-http` | `journalctl --user -u chiron-ks-http` |
 | `sudo systemctl show ... -p MainPID` | `systemctl --user show ... -p MainPID` |
 
-Đánh đổi đã cân nhắc:
-- **Được:** không cần sudo mỗi lần sửa unit; unit chạy đúng dưới user `zinnn`,
-  cùng user sở hữu PGDATA `~/.local/share/chiron-ks-postgres`, nên không phải
-  khai báo `User=`/`Group=` hay lo quyền thư mục.
-- **Mất:** cần `sudo loginctl enable-linger zinnn` (một lần) thì service mới
-  sống qua logout và tự lên lúc boot. **Chưa chạy** — `Linger=no`. Không có
-  linger thì KS chết khi logout và Mnemosyne mất endpoint.
+Trade-offs considered:
+- **Gained:** no sudo for every unit change; units run as user `zinnn`, the same user
+  that owns PGDATA `~/.local/share/chiron-ks-postgres`, so there is no need for
+  `User=`/`Group=` or directory-permission worries.
+- **Lost:** `sudo loginctl enable-linger zinnn` (once) is needed for the services to
+  survive logout and start at boot. **Not run yet** — `Linger=no`. Without linger, KS
+  dies at logout and Mnemosyne loses its endpoint.
 
-## Bẫy vận hành — đừng lặp lại
-1. **`fish` không có `export`.** Truyền biến bằng `env VAR=value command`.
-2. **Trước khi kill tiến trình `ks serve`:** xác nhận
-   `systemctl --user show chiron-ks-http.service -p MainPID`. Đã có lần SIGKILL
-   nhầm service production hai lần vì phán đoán "orphan" chỉ dựa vào `lsof`/port.
-3. **Sửa code xong, systemd vẫn chạy code cũ** cho tới khi `systemctl restart`.
-4. Postgres mặc định `unix_socket_directories = '/run/postgresql'` → user thường
-   gặp `FATAL: could not create lock file`. Sửa thành PGDATA.
-5. Port là **5432** (mặc định `initdb`). Nếu thấy `55432` ở đâu đó, đó là cluster
-   của lần build trước — không dùng lại.
+## Operational traps — do not repeat
+1. **`fish` has no `export`.** Pass variables with `env VAR=value command`.
+2. **Before killing a `ks serve` process:** confirm with
+   `systemctl --user show chiron-ks-http.service -p MainPID`. The production service
+   was SIGKILLed by mistake twice, judged "orphaned" from `lsof`/ports alone.
+3. **After a code change, systemd keeps running the old code** until `systemctl restart`.
+4. Postgres defaults to `unix_socket_directories = '/run/postgresql'` → a regular user
+   gets `FATAL: could not create lock file`. Change it to PGDATA.
+5. The port is **5432** (the `initdb` default). If you see `55432` anywhere, that is
+   the cluster from the previous build — do not reuse it.
 
-## Phát hiện mới trong lần build này
-**`KS_HTTP_TOKEN` bắt buộc phải là ASCII.** Đo bằng curl thật: token chứa tiếng
-Việt làm MỌI request 403 vĩnh viễn. Nguyên nhân: WSGI giải mã giá trị header HTTP
-bằng latin-1, nên byte UTF-8 của token tới tay ứng dụng dưới dạng mojibake và
-không bao giờ khớp. Đây là lỗi CẤU HÌNH, không phải lỗi client — nên
-`validate_token_config()` chạy lúc `ks serve` khởi động và chết ngay nếu token
-non-ASCII, thay vì im lặng hỏng.
+## New finding in this build
+**`KS_HTTP_TOKEN` must be ASCII.** Measured with real curl: a token containing
+Vietnamese characters made EVERY request 403 forever. Cause: WSGI decodes HTTP header
+values as latin-1, so the token's UTF-8 bytes reach the application as mojibake and
+never match. This is a CONFIGURATION error, not a client error — so
+`validate_token_config()` runs when `ks serve` starts and dies at once on a
+non-ASCII token instead of failing silently.
 
-Khác với bug `hmac.compare_digest` (§9 của brief): bug đó là header CLIENT gửi lên
-có ký tự non-ASCII làm crash 500; đã chặn bằng cách so trên bytes. Hai lỗi độc lập,
-đều có test riêng.
+Different from the `hmac.compare_digest` bug (§9 of the brief): that one was a
+non-ASCII header sent by the CLIENT crashing with 500; it is stopped by comparing
+bytes. Two independent bugs, each with its own test.
 
-## Rút khái niệm từ ghi chép scan — đo thật 2026-09-25
+## Extracting concepts from scanned notes — measured 2026-09-25
 
-**Dữ liệu.** 3 trang vở viết tay thật của người học: 1 trang Hoá (phân bón),
-2 trang Sinh (trao đổi chất, kiểu Cornell). Chạy qua đúng đường của ứng dụng:
-`POST /notes` → `PATCH /notes/{id}` → `POST /notes/{id}/extract`, với
-deepseek-v4-flash. Hai note:
+**Data.** 3 real handwritten pages from the learner's notebooks (in Vietnamese): 1
+Chemistry page (fertilisers), 2 Biology pages (metabolism, Cornell style). Run
+through the application's own path: `POST /notes` → `PATCH /notes/{id}` →
+`POST /notes/{id}/extract`, with deepseek-v4-flash. Two notes:
 
-- **A — đã sửa:** văn bản OCR được thay bằng bản gõ lại đúng như vở, tức việc
-  người học làm ở bước sửa (3051 ký tự).
-- **B — OCR thô:** không sửa gì (CER khoảng 22 %, xem `ocr/NOTES.md`).
+- **A — corrected:** the OCR text replaced by a retyped copy exactly as written,
+  i.e. what the learner does at the correction step (3051 characters).
+- **B — raw OCR:** nothing corrected (CER about 22 %, see `ocr/NOTES.md`).
 
-**Truncation là thật, và `EXTRACTION_MAX_TOKENS=4000` không đủ.** Với 4000, cả A
-lẫn B đều trả `extraction_failed`:
-`deepseek: phản hồi bị cắt vì cạn max_tokens … completion_tokens=4000, reasoning_tokens=4000`.
-Model dùng hết ngân sách để suy luận. Lỗi được nhận đúng là truncation, không
-bị báo nhầm thành lỗi parse. Đo lại với ngân sách 16000 (gọi thẳng provider):
+**Truncation is real, and `EXTRACTION_MAX_TOKENS=4000` was not enough.** With 4000,
+both A and B returned `extraction_failed`:
+`deepseek: response cut off because max_tokens ran out … completion_tokens=4000, reasoning_tokens=4000`
+(the message was in Vietnamese at the time). The model spent the whole budget
+reasoning. The error was correctly identified as truncation, not misreported as a
+parse error. Re-measured with a 16000 budget (calling the provider directly):
 
-| Đầu vào | Ký tự | completion | reasoning | Thời gian |
+| Input | Chars | completion | reasoning | Time |
 |---|---:|---:|---:|---:|
-| 3 trang, lần 1 | 3050 | 8270 | 6871 | 32 s |
-| 3 trang, lần 2 | 3050 | 8577 | 6880 | 29 s |
-| Trang Hoá | 914 | 2382 | 1754 | 9 s |
-| Trang Sinh 1 | 922 | 944 | 297 | 3 s |
-| Trang Sinh 2 | 1210 | 8723 | 7824 | 30 s |
+| 3 pages, run 1 | 3050 | 8270 | 6871 | 32 s |
+| 3 pages, run 2 | 3050 | 8577 | 6880 | 29 s |
+| Chemistry page | 914 | 2382 | 1754 | 9 s |
+| Biology page 1 | 922 | 944 | 297 | 3 s |
+| Biology page 2 | 1210 | 8723 | 7824 | 30 s |
 
-Tách theo trang không giúp được: riêng một trang đã cần 8723 token. Đã nâng
-`EXTRACTION_MAX_TOKENS` lên 16000 và timeout HTTP tới LLM lên 150 s (`ks/llm.py`).
-Sau khi sửa: A mất 31 s và ra 20 khái niệm, B mất 52 s và ra 17 khái niệm.
+Splitting by page does not help: a single page needed 8723 tokens. Raised
+`EXTRACTION_MAX_TOKENS` to 16000 and the HTTP timeout to the LLM to 150 s
+(`ks/llm.py`). After the fix: A took 31 s and gave 20 concepts, B took 52 s and gave 17.
 
-**A — 20 khái niệm, nguyên văn, kèm đánh giá**
+**A — 20 concepts, with assessment** (English translations of the Vietnamese
+originals; the verbatim text is in the database)
 
-| # | Khái niệm (nguyên văn) | Đánh giá |
+| # | Concept | Assessment |
 |---|---|---|
-| 1 | [Hóa học] Phân bón — Là sản phẩm có chức năng cung cấp dinh dưỡng cho cây trồng hoặc cải tạo đất. Nếu thiếu phân bón, cây sẽ kém phát triển, bệnh, chết. | Đúng |
-| 2 | [Hóa học] Phân loại phân bón — Phân bón được phân loại theo hàm lượng nguyên tố trong cây, gồm đa lượng, trung lượng, vi lượng. Phân loại dựa vào nguồn gốc gồm vô cơ và hữu cơ. | Đúng, nhưng **trùng một phần** với 3–7 (khái niệm "ô" chứa các khái niệm con) |
-| 3 | [Hóa học] Đa lượng — Theo phân loại theo hàm lượng nguyên tố trong cây, chiếm khối lượng tương đối lớn (>1000 mg/kg), bao gồm N, P, K. | Nội dung đúng; **tên quá chung**: "Đa lượng" đứng một mình, lẽ ra là "Phân bón đa lượng" / "Nguyên tố đa lượng" |
-| 4 | [Hóa học] Trung lượng — … (100-1000 mg/kg), gồm Ca, Mg, S. | Như 3 |
-| 5 | [Hóa học] Vi lượng — … (<100 mg/kg), gồm B, Cu, Fe, Cl, Mn, Na, Zn, Ni, Mo,... | Như 3 |
-| 6 | [Hóa học] Phân bón vô cơ — Làm từ sản phẩm hóa học vô cơ và được sản xuất theo quy trình công nghiệp. | Đúng |
-| 7 | [Hóa học] Phân bón hữu cơ — Làm từ các chất hữu cơ, chất thải hữu cơ qua chế biến, pha trộn, lên men và bổ sung thêm khoáng chất. | Đúng |
-| 8 | [Hóa học] Vai trò của phân bón — Tăng độ phì nhiêu của đất, bổ sung chất dinh dưỡng cho cây và điều khiển vòng tuần hoàn dinh dưỡng trong đất. | Đúng |
-| 9 | [Sinh học] Trao đổi chất và chuyển hóa năng lượng ở sinh vật — Duy trì sự sống, giúp sinh vật tồn tại và phát triển; cung cấp nguyên liệu và năng lượng cho cơ thể. | Đúng, nhưng tên là tên bài còn nội dung là mục "Vai trò"; hơi lệch |
-| 10 | [Sinh học] Dấu hiệu đặc trưng của trao đổi chất — Gồm 7 đặc trưng: thu nhận, vận chuyển, biến đổi, tổng hợp và tích lũy, phân giải và giải phóng, đào thải, điều hòa. | Đúng |
-| 11 | [Sinh học] Các giai đoạn chuyển hóa trong sinh giới — Gồm tổng hợp (từ ánh sáng), phân giải (tích lũy năng lượng trong chất hữu cơ) và huy động (tích lũy năng lượng trong ATP). | **Mơ hồ, dễ hiểu sai.** Vở vẽ mỗi giai đoạn có đầu vào (←) và đầu ra (→): ánh sáng → tổng hợp → năng lượng trong chất hữu cơ → phân giải → ATP → huy động → hoạt động sống. Văn bản chỉ giữ một chiều, nên câu đọc như thể "phân giải = tích lũy năng lượng trong chất hữu cơ". Nguyên nhân: sơ đồ mũi tên bị làm phẳng thành chữ, ngay cả trong bản gõ lại |
-| 12 | [Sinh học] Nguồn năng lượng chủ yếu của sinh giới — Năng lượng ánh sáng là nguồn năng lượng chủ yếu của sinh giới, được chuyển hóa và tích lũy trong hợp chất hữu cơ được toàn bộ các sinh vật sử dụng. | Đúng |
-| 13 | [Sinh học] Trao đổi chất ở sinh vật đơn bào — Toàn bộ quá trình trao đổi chất diễn ra ở cấp độ tế bào. | Đúng |
-| 14 | [Sinh học] Trao đổi chất ở sinh vật đa bào — Quá trình diễn ra ở cả cấp cơ thể và tế bào, gồm 3 giai đoạn: môi trường ngoài ⇄ cơ thể, môi trường trong ⇄ tế bào, tế bào ⇄ tế bào. | Đúng, và nối đúng câu "Có 3 giai đoạn" ở cuối trang 1 với danh sách ở đầu trang 2 |
-| 15 | [Sinh học] Các phương thức trao đổi chất — Có 2 phương thức trao đổi là tự dưỡng và dị dưỡng. | Đúng, **trùng một phần** với 16 và 20 |
-| 16 | [Sinh học] Tự dưỡng — Là phương thức tự sống, tự hấp thụ, tự tồn tại; gồm quang tự dưỡng và hóa tự dưỡng. | Đúng, lấy đúng từ cột gợi ý Cornell |
-| 17 | [Sinh học] Quang tự dưỡng — Dùng chất vô cơ, nước, CO2 và ánh sáng; điển hình là thực vật. | Đúng |
-| 18 | [Sinh học] Hóa tự dưỡng — Dùng nguồn carbon (CO2) và chất vô cơ (H2S, NO2-, ...); điển hình là một số vi khuẩn. | Đúng |
-| 19 | [Sinh học] Vai trò của tự dưỡng — Cung cấp O2, bảo đảm hoạt động sống của hầu hết sinh vật; cung cấp thức ăn, nơi ở và sinh sản cho động vật; điều hòa khí hậu tạo nhiệt độ, độ ẩm thuận lợi cho sinh vật. | Đúng |
-| 20 | [Sinh học] Dị dưỡng — Lấy chất hữu cơ từ sinh vật tự dưỡng hoặc động vật khác; thông qua hấp thu, tiêu hóa, đồng hóa các chất để xây dựng cơ thể và sử dụng năng lượng; điển hình là động vật. | Đúng; bỏ mất ý ở cột gợi ý ("cần các yếu tố dị loại") |
+| 1 | [Chemistry] Fertiliser — A product that supplies nutrients to crops or improves the soil. Without fertiliser, plants grow poorly, get diseases, die. | Correct |
+| 2 | [Chemistry] Classification of fertilisers — Classified by the element content in plants: macro-, secondary and micronutrients. Classified by origin: inorganic and organic. | Correct, but **partly overlaps** 3–7 (an "umbrella" concept holding sub-concepts) |
+| 3 | [Chemistry] Macro — By element content in plants, a relatively large mass (>1000 mg/kg), including N, P, K. | Content correct; **name too generic**: "Macro" on its own, should be "Macronutrient fertiliser" / "Macronutrients" |
+| 4 | [Chemistry] Secondary — … (100-1000 mg/kg), including Ca, Mg, S. | As 3 |
+| 5 | [Chemistry] Micro — … (<100 mg/kg), including B, Cu, Fe, Cl, Mn, Na, Zn, Ni, Mo,... | As 3 |
+| 6 | [Chemistry] Inorganic fertiliser — Made from inorganic chemical products and produced industrially. | Correct |
+| 7 | [Chemistry] Organic fertiliser — Made from organic matter and organic waste through processing, mixing, fermentation and added minerals. | Correct |
+| 8 | [Chemistry] Role of fertiliser — Increases soil fertility, supplies nutrients to plants and regulates the nutrient cycle in the soil. | Correct |
+| 9 | [Biology] Metabolism and energy conversion in organisms — Sustains life, helps organisms survive and grow; supplies materials and energy to the body. | Correct, but the name is the lesson title while the content is the "Role" section; slightly off |
+| 10 | [Biology] Characteristic signs of metabolism — 7 features: intake, transport, transformation, synthesis and storage, breakdown and release, excretion, regulation. | Correct |
+| 11 | [Biology] Stages of conversion in the living world — Synthesis (from light), breakdown (storing energy in organic matter) and mobilisation (storing energy in ATP). | **Vague, easy to misread.** The notebook draws each stage with an input (←) and output (→): light → synthesis → energy in organic matter → breakdown → ATP → mobilisation → life activity. The text keeps only one direction, so it reads as if "breakdown = storing energy in organic matter". Cause: the arrow diagram flattened into text, even in the retyped copy |
+| 12 | [Biology] The main energy source of the living world — Light energy, converted and stored in organic compounds used by all organisms. | Correct |
+| 13 | [Biology] Metabolism in unicellular organisms — The whole metabolic process takes place at the cell level. | Correct |
+| 14 | [Biology] Metabolism in multicellular organisms — Takes place at both body and cell level, in 3 stages: external environment ⇄ body, internal environment ⇄ cells, cell ⇄ cell. | Correct, and correctly joins "There are 3 stages" at the end of page 1 with the list at the top of page 2 |
+| 15 | [Biology] Modes of metabolism — There are 2 modes: autotrophy and heterotrophy. | Correct, **partly overlaps** 16 and 20 |
+| 16 | [Biology] Autotrophy — Self-feeding, self-absorbing, self-sustaining; includes photoautotrophy and chemoautotrophy. | Correct, taken correctly from the Cornell cue column |
+| 17 | [Biology] Photoautotrophy — Uses inorganic matter, water, CO2 and light; typically plants. | Correct |
+| 18 | [Biology] Chemoautotrophy — Uses a carbon source (CO2) and inorganic matter (H2S, NO2-, ...); typically some bacteria. | Correct |
+| 19 | [Biology] Role of autotrophy — Supplies O2, sustains the life of most organisms; provides food, shelter and breeding grounds for animals; regulates climate, giving favourable temperature and humidity. | Correct |
+| 20 | [Biology] Heterotrophy — Takes organic matter from autotrophs or other animals; through absorption, digestion and assimilation builds the body and uses energy; typically animals. | Correct; drops the cue-column point ("needs foreign factors") |
 
-Tổng kết A: không khái niệm nào bịa kiến thức ngoài vở. 1 khái niệm mơ hồ (#11,
-do sơ đồ). 3 tên quá chung (#3–5). 3 cặp trùng một phần (#2 với 3–7, #15 với
-16/20, #9 lệch tên). Người học vẫn phải duyệt; đó đúng là việc của bước
-`pending_review`.
+Summary of A: no concept invented knowledge beyond the notebook. 1 vague concept
+(#11, from the diagram). 3 names too generic (#3–5). 3 partial overlaps (#2 with
+3–7, #15 with 16/20, #9 misnamed). The learner still has to review; that is exactly
+what the `pending_review` step is for.
 
-**B — 17 khái niệm từ OCR thô: những gì sai** (cả 17 vẫn nằm trong
-`ks.extracted_concepts` với status `discarded`, note `75a80c37…`):
+**B — 17 concepts from raw OCR: what went wrong** (all 17 remain in
+`ks.extracted_concepts` with status `discarded`, note `75a80c37…`):
 
-- **#3–5 bịa đơn vị:** "(>1000 mg/l)", "(100-1000 mg/l)", "(<100 mg/l)". Vở ghi
-  `mg/kg`; OCR đọc thành "ông lấy"/"mg lấy" và model đoán ra `mg/l`. Sai kiến
-  thức mà trông rất hợp lý.
-- **#16 Dị dưỡng sai hẳn:** "dùng nguồn cacbon và chất vô cơ để hấp thu, sử dụng
-  năng lượng; điển hình ở một số vi khuẩn". Đó là nội dung của hoá tự dưỡng.
-  Nguyên nhân: OCR nối dòng gợi ý Cornell "Dị dưỡng: cần các yếu tố" vào dòng
-  "Dùng nguồn carbon…" cùng độ cao.
-- **#17 "Dinh dưỡng":** OCR đọc "Dị dưỡng" (mục thứ hai) thành "Dinh văng", nên
-  model đặt tên sai và tạo khái niệm trùng với #16.
-- **#14, #15 rỗng:** "Quang tự dưỡng — Một hình thức của tự dưỡng.", "Hóa tự
-  dưỡng — Một hình thức của tự dưỡng." Vô dụng.
-- **#7** lấy "bổ sung khoáng chất" (một bước làm phân hữu cơ) làm vai trò của
-  phân bón, và mất "điều khiển vòng tuần hoàn dinh dưỡng".
-- **#9 trùng #8** (cùng nội dung "vai trò"). **#12** đặt tên sai ("Mối quan hệ
-  giữa trao đổi chất và chuyển hóa năng lượng" cho mục nói về cấp tế bào/cơ thể).
+- **#3–5 invented a unit:** "(>1000 mg/l)", "(100-1000 mg/l)", "(<100 mg/l)". The
+  notebook says `mg/kg`; OCR read it as "ông lấy"/"mg lấy" and the model guessed
+  `mg/l`. Wrong knowledge that looks entirely plausible.
+- **#16 Heterotrophy completely wrong:** "uses a carbon source and inorganic matter
+  to absorb and use energy; typical of some bacteria". That is chemoautotrophy's
+  content. Cause: OCR joined the Cornell cue line "Heterotrophy: needs factors" onto
+  the "Uses a carbon source…" line at the same height.
+- **#17 "Nutrition":** OCR read "Dị dưỡng" (heterotrophy, the second entry) as
+  "Dinh văng", so the model named it wrongly and created a duplicate of #16.
+- **#14, #15 empty:** "Photoautotrophy — A form of autotrophy.", "Chemoautotrophy —
+  A form of autotrophy." Useless.
+- **#7** took "added minerals" (a step in making organic fertiliser) as a role of
+  fertiliser, and lost "regulates the nutrient cycle".
+- **#9 duplicates #8** (the same "role" content). **#12** is misnamed ("The
+  relationship between metabolism and energy conversion" for the section on
+  cell/body level).
 
-**Kết luận.**
+**Conclusions.**
 
-1. Với văn bản đã sửa, chất lượng dùng được: 16/20 khái niệm đúng và gọn, còn
-   lại mơ hồ, quá chung hoặc trùng; không có khái niệm nào sai kiến thức.
-2. Bỏ qua bước sửa là nguy hiểm, không chỉ kém: văn bản OCR thô sinh ra lỗi
-   **trông hợp lý** (`mg/l`, dị dưỡng ↔ hoá tự dưỡng). Người duyệt không đối
-   chiếu vở thì khó phát hiện.
-3. Hai nguồn lỗi còn lại không nằm ở LLM: **sơ đồ mũi tên** mất chiều khi làm
-   phẳng thành chữ, và **cột gợi ý Cornell** bị trộn vào dòng ghi chép.
-
-
-## GET /edges — route đọc riêng cho bản đồ khái niệm (2026-09-26)
-
-- `GET /nodes` vẫn **không** trả edges (quyết định đã chốt). Cạnh có route riêng.
-- Chỉ trả `approved`. `pending` là gợi ý chưa ai duyệt, `rejected` là câu "không"
-  của người duyệt; vẽ chúng lên bản đồ là nói sai điều người học đã quyết.
-- Hai đầu resolve `merged_into_id` **đúng một bước**, cùng luật `_LIST_SQL`, nên
-  mọi id trong cạnh đều là id `GET /nodes` trả về (test khoá lại điều này). Sau
-  khi resolve, cạnh A→A bị bỏ và cạnh trùng `(from, to, relation)` gộp thành một.
-- Test: `tests/test_edges_http.py` (7 test). Kiểm trên trình duyệt với một DB
-  test riêng: 12 node, 11 cạnh approved + 1 pending + 1 rejected, có một node đã
-  merge. Bản đồ vẽ đúng 12 node và 11 cạnh (8 prerequisite, 1 related,
-  2 contrasts_with); cạnh của node đã merge chuyển sang node đích.
-- **Dữ liệu thật hiện có 0 node, 0 cạnh.** 20 khái niệm từ vở đang chờ duyệt.
-  Chưa có bằng chứng nào về bản đồ trên dữ liệu học thật.
+1. With corrected text the quality is usable: 16/20 concepts correct and concise, the
+   rest vague, too generic or overlapping; no concept is factually wrong.
+2. Skipping the correction step is dangerous, not merely worse: raw OCR text produces
+   **plausible-looking** errors (`mg/l`, heterotrophy ↔ chemoautotrophy). A reviewer
+   who does not check against the notebook will struggle to spot them.
+3. The two remaining error sources are not in the LLM: **arrow diagrams** lose their
+   direction when flattened into text, and the **Cornell cue column** gets mixed into
+   the note lines.
 
 
-## Bộ dò trùng gộp sai trên dữ liệu thật; màn duyệt hỏi trước (2026-09-26)
+## GET /edges — a separate read route for the concept map (2026-09-26)
 
-**Dữ liệu.** Người học chấp nhận 20 khái niệm từ vở Hoá + Sinh. Quy tắc tự động
-(`similarity >= 0.6`) gộp 5 khái niệm vào node có sẵn, và **cả 5 lần đều sai**:
+- `GET /nodes` still does **not** return edges (a settled decision). Edges have their
+  own route.
+- Only `approved` edges. `pending` is a suggestion nobody has reviewed, `rejected` is
+  the reviewer's "no"; drawing them on the map would misstate what the learner decided.
+- Both ends resolve `merged_into_id` **exactly one step**, the same rule as
+  `_LIST_SQL`, so every id in an edge is an id `GET /nodes` returns (a test locks this
+  in). After resolving, A→A edges are dropped and duplicate `(from, to, relation)`
+  edges collapse into one.
+- Tests: `tests/test_edges_http.py` (7 tests). Checked in a browser against a separate
+  test DB: 12 nodes, 11 approved edges + 1 pending + 1 rejected, with one merged node.
+  The map drew exactly 12 nodes and 11 edges (8 prerequisite, 1 related,
+  2 contrasts_with); the merged node's edges moved to the target node.
+- **At the time the real data had 0 nodes, 0 edges.** 20 concepts from the notebooks
+  were awaiting review. There is no evidence yet about the map on real study data.
 
-| Khái niệm | Bị gộp vào | similarity |
+
+## The duplicate detector merged wrongly on real data; the review screen asks first (2026-09-26)
+
+**Data.** The learner accepted 20 concepts from the Chemistry + Biology notebooks. The
+automatic rule (`similarity >= 0.6`) merged 5 concepts into existing nodes, and **all
+5 were wrong**:
+
+| Concept | Merged into | similarity |
 |---|---|---:|
-| Trao đổi chất ở sinh vật đa bào | … đơn bào (khái niệm trái nghĩa) | 0,85 |
-| Quang tự dưỡng | Tự dưỡng (khái niệm cha) | 0,64 |
-| Hóa tự dưỡng | Tự dưỡng | ≥ 0,6 |
-| Phân bón vô cơ | Phân bón | 0,60 |
-| Phân loại phân bón | Phân bón | ≥ 0,6 |
+| Metabolism in multicellular organisms | … unicellular organisms (the opposite concept) | 0.85 |
+| Photoautotrophy | Autotrophy (the parent concept) | 0.64 |
+| Chemoautotrophy | Autotrophy | ≥ 0.6 |
+| Inorganic fertiliser | Fertiliser | 0.60 |
+| Classification of fertilisers | Fertiliser | ≥ 0.6 |
 
-Trigram trên tiêu đề không phân biệt được một khái niệm với khái niệm cha của
-nó, hay với khái niệm trái nghĩa có tên gần giống. Vở học đầy những cặp như vậy.
+(The titles were Vietnamese, e.g. `Quang tự dưỡng` vs `Tự dưỡng`; the scores are for
+those original strings.) Trigrams on titles cannot tell a concept from its parent,
+or from an opposite concept with a near-identical name. School notes are full of
+such pairs.
 
-**Quyết định của người dùng:** giữ ngưỡng 0.6 cho đường tự động, nhưng màn duyệt
-phải hỏi trước khi ghi.
+**The user's decision:** keep the 0.6 threshold for the automatic path, but the review
+screen must ask before writing.
 
-- `GET /extracted/{id}/candidates`: node gần giống (điểm ≥ 0.3, tối đa 5), kèm
-  `suggested_node_id` là node mà ngưỡng sẽ gộp vào.
-- `POST /extracted/{id}/accept` với `{"decision":"create"}` hoặc
-  `{"decision":"merge","node_id":…}`. Không có body thì dùng quy tắc tự động như
-  trước (CLI `ks accept`, Mnemosyne).
-- Giao diện: khi có candidate vượt ngưỡng thì **không chọn sẵn**, và nút chấp
-  nhận khoá tới khi người học chọn. Dưới ngưỡng thì mặc định tạo mới.
-- `ks.ingest_log.chosen_by` (migration 0006): `rule` hay `learner`. Một dòng
-  `chosen_by='learner'`, `decision='created'`, `top_score >= threshold` chính là
-  một false positive của ngưỡng, có kèm điểm. Từ đây đo được ngưỡng sai bao
-  nhiêu lần trên dữ liệu thật.
+- `GET /extracted/{id}/candidates`: near-duplicate nodes (score ≥ 0.3, at most 5), with
+  `suggested_node_id`, the node the threshold would merge into.
+- `POST /extracted/{id}/accept` with `{"decision":"create"}` or
+  `{"decision":"merge","node_id":…}`. Without a body the automatic rule applies as
+  before (CLI `ks accept`, Mnemosyne).
+- UI: when a candidate is over the threshold, **nothing is preselected**, and the
+  accept button stays locked until the learner chooses. Below the threshold the
+  default is to create a new node.
+- `ks.ingest_log.chosen_by` (migration 0006): `rule` or `learner`. A row with
+  `chosen_by='learner'`, `decision='created'`, `top_score >= threshold` is exactly a
+  false positive of the threshold, with its score. From here on it is measurable how
+  often the threshold is wrong on real data.
 
-Test: `tests/test_review_dedup.py` (7 test, dùng đúng các cặp tên ở bảng trên).
-Kiểm trên trình duyệt với một DB test: 3 khái niệm có candidate vượt ngưỡng (nút
-khoá, hiện "quy tắc tự động sẽ chọn"), 1 khái niệm không có (nút mở); chọn tạo
-mới 2 cái, gộp tay 1 cái; `ingest_log` ghi đủ 4 dòng `learner` với đúng
-`top_score`.
+Tests: `tests/test_review_dedup.py` (7 tests, using exactly the name pairs from the
+table above). Checked in a browser against a test DB: 3 concepts with a candidate over
+the threshold (button locked, showing "the automatic rule would choose"), 1 without
+(button open); created 2 new, merged 1 by hand; `ingest_log` recorded all 4 `learner`
+rows with the right `top_score`.
 
-**Chưa làm:** 5 node đã gộp sai trên dữ liệu thật vẫn còn nguyên, chờ người dùng
-quyết có tách ra hay không.
+**Fixed afterwards:** the 5 wrongly merged concepts on real data were split off with
+the new `ks split <concept_id>` command (`ks/confirm.py::split`), which creates a node
+from the concept's own title, subject and summary and logs the decision as the
+learner's. The 20 concepts now map to 20 nodes.
 
-## Gợi ý cạnh cũng bị cắt ở 4000 token (2026-09-26)
+## Edge suggestion was also cut off at 4000 tokens (2026-09-26)
 
-Chạy `suggest-edges` cho 15 node thật: 8/15 lần cắt, reasoning 3630–4000, tức
-**toàn bộ node Sinh học**. Người dùng chọn `EDGE_SUGGESTION_MAX_TOKENS=20000`.
-Chạy lại 8 node đó: 8/8 `ok`, 6–35 s mỗi node, thêm 30 cạnh `pending`; tổng cộng
-47 cạnh chờ duyệt. `edge_suggestion_run` không ghi số token, nên chưa biết
-20000 còn dư bao nhiêu.
+Running `suggest-edges` for 15 real nodes: 8/15 were cut off, reasoning 3630–4000 —
+**every Biology node**. The user chose `EDGE_SUGGESTION_MAX_TOKENS=20000`. Re-running
+those 8 nodes: 8/8 `ok`, 6–35 s per node, 30 more `pending` edges; 47 edges awaiting
+review in total. `edge_suggestion_run` does not record token counts, so it is not yet
+known how much headroom 20000 leaves.
+
+## The English switch (2026-09-26)
+
+Chiron is now English only, for an international hackathon. The extraction and
+edge-suggestion prompts ask for English output, and every error message, CLI line,
+docstring and comment in KS is English. Concepts and edges already in the database
+keep their original Vietnamese text; nothing was machine-translated in place.

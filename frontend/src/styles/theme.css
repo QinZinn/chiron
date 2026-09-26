@@ -3,7 +3,7 @@
    the design (.nv, .md, .rule, .wk, …) keep their names and values.
 
    Tints of the accent are written as color-mix() on var(--frost) rather than
-   the design's literal rgba(136,192,208,…), so the accent picker in Cài đặt
+   the design's literal rgba(136,192,208,…), so the accent picker in Settings
    (the design's `accent` prop) recolours them too. At the default accent the
    two are identical. */
 

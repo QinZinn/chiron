@@ -1,4 +1,4 @@
--- 0001_init.sql — schema gốc: nodes + edges.
+-- 0001_init.sql — base schema: nodes + edges.
 CREATE SCHEMA ks;
 
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
@@ -11,7 +11,7 @@ CREATE TYPE ks.edge_status     AS ENUM ('pending', 'approved', 'rejected');
 CREATE TABLE ks.nodes (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title          TEXT NOT NULL,
-  subject        TEXT NOT NULL,          -- TEXT tự do, KHÔNG enum
+  subject        TEXT NOT NULL,          -- free TEXT, NOT an enum
   summary        TEXT NOT NULL,
   source_module  ks.source_module NOT NULL,
   merged_into_id UUID NULL REFERENCES ks.nodes(id),

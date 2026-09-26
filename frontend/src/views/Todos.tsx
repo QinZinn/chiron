@@ -1,5 +1,5 @@
 /**
- * Việc cần ôn — Mnemosyne `/todos`, plus a Pomodoro timer.
+ * To-do — Mnemosyne `/todos`, plus a Pomodoro timer.
  *
  * A plain list the learner works through in their own order. Weak-card items
  * are opened by Mnemosyne when a set's cards keep being failed (one open item
@@ -19,7 +19,7 @@ export function TodosView() {
   const { user } = useApp();
   return (
     <main className="main">
-      <PageHeader title="Việc cần ôn" />
+      <PageHeader title="To-do" />
       <div className="page">
         <div className="page-inner">{user ? <Todos /> : <NeedToken />}</div>
       </div>
@@ -76,7 +76,7 @@ function Todos() {
     }
   };
 
-  if (q.loading && !q.data) return <Loading label="Đang tải danh sách…" />;
+  if (q.loading && !q.data) return <Loading label="Loading your list…" />;
   if (q.error) return <ErrorNotice error={q.error} onRetry={q.reload} />;
   const all = q.data!.todos;
   const open = all.filter((t) => !t.done);
@@ -87,14 +87,14 @@ function Todos() {
     <>
       <div className="page-head">
         <div>
-          <h2>{open.length > 0 ? `${open.length} việc chưa xong` : 'Không còn việc nào'}</h2>
+          <h2>{open.length > 0 ? `${open.length} open item${open.length === 1 ? '' : 's'}` : 'Nothing left to do'}</h2>
           <p>
-            Danh sách việc cần ôn, làm theo thứ tự bạn muốn. Khi một bộ thẻ có thẻ liên tục bị quên, Mnemosyne tự thêm
-            việc “Ôn lại các thẻ đang yếu” cho bộ đó (mỗi bộ tối đa một việc chưa xong). Chiron không tự xếp giờ.
+            Things to review, in whatever order you like. When cards in a set keep being forgotten, Mnemosyne adds a
+            “Review weak cards” item for that set (at most one open item per set). Chiron never schedules anything for you.
           </p>
         </div>
         <button className="btn btn-secondary btn-soft" onClick={q.reload}>
-          <i className="ph ph-arrow-clockwise" />Tải lại
+          <i className="ph ph-arrow-clockwise" />Reload
         </button>
       </div>
       <hr className="rule" style={{ margin: '0 0 18px' }} />
@@ -104,12 +104,12 @@ function Todos() {
           <form className="gen todo-add" onSubmit={add}>
             <div className="gen-row">
               <div className="field">
-                <label htmlFor="todo-title">Thêm việc</label>
+                <label htmlFor="todo-title">Add an item</label>
                 <input
                   id="todo-title"
                   className="input input-sm"
-                  lang="vi"
-                  placeholder="Ví dụ: Làm lại đề cương chương 3"
+                  lang="en"
+                  placeholder="e.g. Redo the chapter 3 outline"
                   value={title}
                   maxLength={MAX_TITLE}
                   onChange={(e) => setTitle(e.target.value)}
@@ -117,16 +117,16 @@ function Todos() {
                 />
               </div>
               <div className="field" style={{ flex: '0 1 220px' }}>
-                <label htmlFor="todo-set">Bộ thẻ (tuỳ chọn)</label>
+                <label htmlFor="todo-set">Study set (optional)</label>
                 <select id="todo-set" className="input" value={setId} onChange={(e) => setSetId(e.target.value)} disabled={adding}>
-                  <option value="">Không gắn bộ thẻ</option>
+                  <option value="">No study set</option>
                   {(studySets ?? []).map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
               </div>
               <button className="btn btn-primary btn-main" type="submit" disabled={adding || !title.trim()}>
-                {adding ? <span className="spin" /> : <i className="ph ph-plus" />}Thêm
+                {adding ? <span className="spin" /> : <i className="ph ph-plus" />}Add
               </button>
             </div>
             {addError !== undefined && <ErrorNotice error={addError} compact />}
@@ -134,11 +134,11 @@ function Todos() {
 
           {actionError !== undefined && <ErrorNotice error={actionError} compact />}
 
-          <div className="section-label">Chưa xong · {open.length}</div>
+          <div className="section-label">Open · {open.length}</div>
           {open.length === 0 ? (
-            <div className="wk-desc">Chưa có việc nào. Thêm việc ở trên, hoặc ôn thẻ ở Thẻ ghi nhớ — thẻ nào bị quên nhiều sẽ tự thành một việc ở đây.</div>
+            <div className="wk-desc">Nothing here yet. Add an item above, or review in Flashcards — cards you keep forgetting turn into an item here on their own.</div>
           ) : (
-            <ul className="list todo-list" aria-label="Việc chưa xong">
+            <ul className="list todo-list" aria-label="Open items">
               {open.map((t) => (
                 <TodoRow
                   key={t.id}
@@ -155,10 +155,10 @@ function Todos() {
           {done.length > 0 && (
             <>
               <button className="btn btn-soft" style={{ marginTop: 18 }} onClick={() => setShowDone(!showDone)} aria-expanded={showDone}>
-                <i className={`ph ${showDone ? 'ph-caret-down' : 'ph-caret-right'}`} />Đã xong · {done.length}
+                <i className={`ph ${showDone ? 'ph-caret-down' : 'ph-caret-right'}`} />Done · {done.length}
               </button>
               {showDone && (
-                <ul className="list todo-list" aria-label="Việc đã xong" style={{ marginTop: 10 }}>
+                <ul className="list todo-list" aria-label="Done items" style={{ marginTop: 10 }}>
                   {done.map((t) => <TodoRow key={t.id} todo={t} />)}
                 </ul>
               )}
@@ -174,7 +174,7 @@ function Todos() {
 
 function addedAgo(iso: string): string {
   const r = relative(iso);
-  return r === 'vừa xong' ? 'Vừa thêm' : `Thêm ${r}`;
+  return `Added ${r}`;
 }
 
 function label(t: Todo): string {
@@ -201,20 +201,20 @@ function TodoRow({
         <div className="wk-head">
           <span className="wk-title" style={{ fontSize: 15 }}>{t.title}</span>
           {t.study_set_name && <span className="wk-meta">{t.study_set_name}</span>}
-          {weak ? <span className="tag tag-red tag-sm">Thẻ yếu · {t.card_count} thẻ</span> : <span className="tag tag-dim tag-sm">Tự thêm</span>}
+          {weak ? <span className="tag tag-red tag-sm">Weak cards · {t.card_count}</span> : <span className="tag tag-dim tag-sm">Added by you</span>}
         </div>
         <p className="wk-desc">
           {t.done
             ? doneAgo(t.done_at!)
             : weak && t.last_weak_card_at
-              ? `${addedAgo(t.created_at)} · thẻ yếu gần nhất ${relative(t.last_weak_card_at)}`
+              ? `${addedAgo(t.created_at)} · last weak card ${relative(t.last_weak_card_at)}`
               : addedAgo(t.created_at)}
         </p>
         {weak && !t.done && t.study_set_id && (
           <div className="todo-links">
-            <a href={href({ view: 'weak' })}>Xem thẻ yếu</a>
-            <a href={href({ view: 'flashcards' })}>Ôn ở Thẻ ghi nhớ</a>
-            <a href={href({ view: 'chat', newSetId: t.study_set_id })}>Học lại với Socratic</a>
+            <a href={href({ view: 'weak' })}>See weak cards</a>
+            <a href={href({ view: 'flashcards' })}>Review in Flashcards</a>
+            <a href={href({ view: 'chat', newSetId: t.study_set_id })}>Study it with Socratic</a>
           </div>
         )}
       </div>
@@ -223,8 +223,8 @@ function TodoRow({
           <button className="btn btn-frost" onClick={onComplete} disabled={busy}>
             {busy ? <span className="spin" /> : <i className="ph ph-check" />}Xong
           </button>
-          <button className={`btn btn-soft${current ? ' btn-on' : ''}`} onClick={onFocus} aria-pressed={current} title="Gắn với đồng hồ Pomodoro">
-            <i className="ph ph-timer" />{current ? 'Đang làm' : 'Làm việc này'}
+          <button className={`btn btn-soft${current ? ' btn-on' : ''}`} onClick={onFocus} aria-pressed={current} title="Attach to the Pomodoro timer">
+            <i className="ph ph-timer" />{current ? 'Working on it' : 'Work on this'}
           </button>
         </div>
       )}

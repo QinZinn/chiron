@@ -1,5 +1,5 @@
 /**
- * Scan ghi chép — ảnh/PDF → OCR (PaddleOCR + VietOCR) → sửa văn bản → rút khái niệm → duyệt.
+ * Note scan — image/PDF → OCR (PaddleOCR) → correct the text → extract concepts → review.
  *
  * Two checkpoints on purpose, and the UI keeps them visible as separate steps:
  * the learner corrects the OCR text before any LLM reads it, then decides on
@@ -22,24 +22,24 @@ function friendly(err: unknown): { title: string; detail: string } | null {
   if (!(err instanceof ApiError)) return null;
   switch (err.code) {
     case 'ocr_not_configured':
-      return { title: 'Chưa bật service OCR', detail: 'Knowledge Store chưa có KS_OCR_URL — chạy bằng docker compose để có service `ocr`.' };
+      return { title: 'OCR service not enabled', detail: 'The Knowledge Store has no KS_OCR_URL — run with docker compose to get the `ocr` service.' };
     case 'ocr_unreachable':
-      return { title: 'Không kết nối được service OCR', detail: 'Container `ocr` đang tắt hoặc đang khởi động. Thử lại sau ít giây.' };
+      return { title: 'Cannot reach the OCR service', detail: 'The `ocr` container is down or still starting. Try again in a few seconds.' };
     case 'not_ready':
-      return { title: 'Mô hình OCR đang tải', detail: 'Service OCR vừa khởi động và đang nạp mô hình vào bộ nhớ, thường dưới một phút. Thử lại sau một lúc.' };
+      return { title: 'OCR models are loading', detail: 'The OCR service has just started and is loading its models, usually in under a minute. Try again shortly.' };
     case 'invalid_document':
-      return { title: 'Tệp không đọc được', detail: err.message };
+      return { title: 'Unreadable file', detail: err.message };
     case 'too_many_pages':
     case 'too_large':
-      return { title: 'Tệp quá lớn', detail: err.message };
+      return { title: 'File too large', detail: err.message };
     case 'llm_not_configured':
-      return { title: 'Knowledge Store chưa cấu hình LLM', detail: `${err.message}. Điền khoá LLM trong knowledge-store/.env để rút khái niệm.` };
+      return { title: 'The Knowledge Store has no LLM configured', detail: `${err.message}. Set an LLM key in knowledge-store/.env to extract concepts.` };
     case 'extraction_failed':
       return err.message.includes('max_tokens')
-        ? { title: 'Ghi chép quá dài cho một lần rút', detail: 'Mô hình dùng hết ngân sách token trước khi trả kết quả. Bấm rút lại (mỗi lần tốn một lượng khác nhau), hoặc tách ghi chép thành nhiều lần scan.' }
-        : { title: 'Không rút được khái niệm', detail: err.message };
+        ? { title: 'Note too long for one extraction', detail: 'The model ran out of its token budget before answering. Try extracting again (usage varies between runs), or split the note into several scans.' }
+        : { title: 'Could not extract concepts', detail: err.message };
     case 'empty_note':
-      return { title: 'Ghi chép không còn chữ nào', detail: 'OCR không đọc được gì, hoặc văn bản đã bị xoá hết.' };
+      return { title: 'The note has no text', detail: 'OCR read nothing, or all the text was deleted.' };
     default:
       return null;
   }
@@ -56,7 +56,7 @@ function Problem({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
         <div>{f.detail}</div>
         {onRetry && (
           <button className="btn btn-soft" onClick={onRetry}>
-            <i className="ph ph-arrow-clockwise" />Thử lại
+            <i className="ph ph-arrow-clockwise" />Retry
           </button>
         )}
       </div>
@@ -67,10 +67,10 @@ function Problem({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
 export function NotesView({ noteId }: { noteId?: string }) {
   return (
     <main className="main">
-      <PageHeader title={noteId ? 'Ghi chép' : 'Scan ghi chép'}>
+      <PageHeader title={noteId ? 'Note' : 'Note scan'}>
         {noteId && (
           <a className="btn btn-secondary btn-soft" href={href({ view: 'notes' })}>
-            <i className="ph ph-arrow-left" />Tất cả ghi chép
+            <i className="ph ph-arrow-left" />All notes
           </a>
         )}
       </PageHeader>
@@ -135,10 +135,10 @@ function NoteList() {
     <>
       <div className="page-head">
         <div>
-          <h2>Scan ghi chép</h2>
+          <h2>Note scan</h2>
           <p>
-            Chụp vở hoặc tải PDF. Chiron nhận dạng chữ (PaddleOCR + VietOCR), bạn sửa lại văn bản, rồi Chiron rút khái niệm để bạn
-            duyệt từng cái trước khi vào Knowledge Store.
+            Photograph your notebook or upload a PDF. Chiron reads the text (PaddleOCR), you correct it, then Chiron extracts
+            concepts for you to review one by one before they go into the Knowledge Store.
           </p>
         </div>
       </div>
@@ -156,11 +156,11 @@ function NoteList() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <i className="ph ph-scan" style={{ fontSize: 26, color: 'var(--frost)' }} />
           <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: 14, color: 'var(--tx2)' }}>Kéo ảnh hoặc PDF vào đây</div>
-            <div className="wk-meta">JPG, PNG, WebP, PDF · tối đa 30 trang, 40 MB mỗi lần</div>
+            <div style={{ fontSize: 14, color: 'var(--tx2)' }}>Drop images or PDFs here</div>
+            <div className="wk-meta">JPG, PNG, WebP, PDF · up to 30 pages, 40 MB per scan</div>
           </div>
           <button className="btn btn-secondary btn-soft" onClick={() => input.current?.click()} disabled={scanning}>
-            <i className="ph ph-folder-open" />Chọn tệp
+            <i className="ph ph-folder-open" />Choose files
           </button>
           <input
             ref={input}
@@ -185,7 +185,7 @@ function NoteList() {
                   <span className="wk-meta">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
                   <button
                     className="icon-btn"
-                    title="Bỏ tệp này"
+                    title="Remove this file"
                     disabled={scanning}
                     onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
                   >
@@ -196,11 +196,11 @@ function NoteList() {
             </div>
             <div className="gen-row">
               <div className="field">
-                <label>Tiêu đề (tuỳ chọn)</label>
+                <label>Title (optional)</label>
                 <input
                   className="input input-sm"
-                  lang="vi"
-                  placeholder="Ví dụ: Vật lý 11 · Chương 5 · Cảm ứng điện từ"
+                  lang="en"
+                  placeholder="e.g. Physics · Chapter 5 · Electromagnetic induction"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   disabled={scanning}
@@ -209,28 +209,28 @@ function NoteList() {
               <button className="btn btn-primary btn-main" onClick={scan} disabled={scanning || totalMb > 40}>
                 {scanning ? (
                   <>
-                    <span className="spin" />Đang nhận dạng… {elapsed}s
+                    <span className="spin" />Reading text… {elapsed}s
                   </>
                 ) : (
                   <>
-                    <i className="ph ph-text-aa" />Nhận dạng chữ
+                    <i className="ph ph-text-aa" />Read text
                   </>
                 )}
               </button>
             </div>
             {scanning && (
-              <div className="wk-meta">OCR chạy trên CPU: thường vài giây mỗi trang, PDF dài có thể mất vài phút.</div>
+              <div className="wk-meta">OCR runs on the CPU: a few seconds per page; a long PDF can take a few minutes.</div>
             )}
-            {totalMb > 40 && <div className="wk-meta" style={{ color: 'var(--yel)' }}>Tổng {totalMb.toFixed(1)} MB — vượt giới hạn 40 MB.</div>}
+            {totalMb > 40 && <div className="wk-meta" style={{ color: 'var(--yel)' }}>{totalMb.toFixed(1)} MB in total — over the 40 MB limit.</div>}
           </>
         )}
         {error != null && <Problem error={error} onRetry={files.length ? scan : undefined} />}
       </div>
 
-      <div className="section-label">Ghi chép đã scan</div>
+      <div className="section-label">Scanned notes</div>
       {listQ.loading && !listQ.data && <Loading />}
       {listQ.error != null && <Problem error={listQ.error} onRetry={listQ.reload} />}
-      {listQ.data && listQ.data.notes.length === 0 && <div className="wk-desc">Chưa có ghi chép nào.</div>}
+      {listQ.data && listQ.data.notes.length === 0 && <div className="wk-desc">No notes yet.</div>}
       <div className="list" style={{ maxWidth: 760 }}>
         {listQ.data?.notes.map((n) => (
           <a key={n.id} className="wk wk-click" href={href({ view: 'notes', noteId: n.id })}>
@@ -238,15 +238,15 @@ function NoteList() {
               <div className="wk-head">
                 <span className="wk-title" style={{ fontSize: 15 }}>{n.title}</span>
                 {n.status === 'extracted' ? (
-                  <span className="tag tag-green tag-sm">Đã rút khái niệm</span>
+                  <span className="tag tag-green tag-sm">Concepts extracted</span>
                 ) : (
-                  <span className="tag tag-yel tag-sm">Bản nháp</span>
+                  <span className="tag tag-yel tag-sm">Draft</span>
                 )}
               </div>
-              <p className="wk-desc clamp2">{n.text || '(không nhận dạng được chữ nào)'}</p>
+              <p className="wk-desc clamp2">{n.text || '(no text was recognised)'}</p>
             </div>
             <div className="wk-side">
-              <span className="wk-meta">{n.page_count} trang</span>
+              <span className="wk-meta">{n.page_count} page{n.page_count === 1 ? '' : 's'}</span>
               <span className="wk-meta">{dateTime(n.created_at)}</span>
             </div>
           </a>
@@ -276,7 +276,7 @@ function NoteDetail({ noteId }: { noteId: string }) {
     }
   }, [q.data]);
 
-  if (q.loading && !q.data) return <Loading label="Đang tải ghi chép…" />;
+  if (q.loading && !q.data) return <Loading label="Loading note…" />;
   if (q.error) return <Problem error={q.error} onRetry={q.reload} />;
   const note = q.data!;
   const dirty = title !== note.title || text !== note.text;
@@ -320,52 +320,52 @@ function NoteDetail({ noteId }: { noteId: string }) {
         <div style={{ flex: 1, minWidth: 260 }}>
           <input
             className="title-input"
-            lang="vi"
+            lang="en"
             value={title ?? ''}
             onChange={(e) => setTitle(e.target.value)}
-            aria-label="Tiêu đề ghi chép"
+            aria-label="Note title"
           />
           <p>
-            {note.page_count} trang · {note.filenames.join(', ')} · scan {dateTime(note.created_at)}
+            {note.page_count} page{note.page_count === 1 ? '' : 's'} · {note.filenames.join(', ')} · scan {dateTime(note.created_at)}
           </p>
         </div>
       </div>
 
       <div className="steps">
-        <Step n={1} title="Sửa văn bản nhận dạng" done={!dirty && note.text.trim() !== ''} />
-        <Step n={2} title="Rút khái niệm" done={(concepts?.length ?? 0) > 0} />
-        <Step n={3} title="Duyệt từng khái niệm" done={(concepts?.length ?? 0) > 0 && pending === 0} />
+        <Step n={1} title="Correct the recognised text" done={!dirty && note.text.trim() !== ''} />
+        <Step n={2} title="Extract concepts" done={(concepts?.length ?? 0) > 0} />
+        <Step n={3} title="Review each concept" done={(concepts?.length ?? 0) > 0 && pending === 0} />
       </div>
       <hr className="rule" style={{ margin: '14px 0 18px' }} />
 
       <div className="note-grid">
         <div>
-          <div className="section-label" style={{ marginTop: 0 }}>Văn bản · sửa lỗi nhận dạng trước khi rút khái niệm</div>
+          <div className="section-label" style={{ marginTop: 0 }}>Text · fix recognition errors before extracting concepts</div>
           <textarea
             className="input note-text"
-            lang="vi"
+            lang="en"
             spellCheck={false}
             value={text ?? ''}
             onChange={(e) => setText(e.target.value)}
-            placeholder="OCR không nhận dạng được chữ nào — có thể gõ tay nội dung vào đây."
+            placeholder="OCR recognised no text — you can type the content here."
           />
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <button className="btn btn-secondary btn-soft" onClick={save} disabled={!dirty || saving}>
-              {saving ? <span className="spin" /> : <i className="ph ph-floppy-disk" />}Lưu văn bản
+              {saving ? <span className="spin" /> : <i className="ph ph-floppy-disk" />}Save text
             </button>
             <button className="btn btn-primary btn-main" onClick={extract} disabled={extracting || saving || !(text ?? '').trim()}>
               {extracting ? (
                 <>
-                  <span className="spin" />Đang rút khái niệm…
+                  <span className="spin" />Extracting concepts…
                 </>
               ) : (
                 <>
                   <i className="ph ph-sparkle" />
-                  {concepts && concepts.length > 0 ? 'Rút lại khái niệm' : 'Rút khái niệm'}
+                  {concepts && concepts.length > 0 ? 'Extract again' : 'Extract concepts'}
                 </>
               )}
             </button>
-            {dirty && <span className="wk-meta" style={{ color: 'var(--yel)' }}>Có thay đổi chưa lưu</span>}
+            {dirty && <span className="wk-meta" style={{ color: 'var(--yel)' }}>Unsaved changes</span>}
           </div>
           {saveError != null && <div style={{ marginTop: 10 }}><Problem error={saveError} /></div>}
           {extractError != null && <div style={{ marginTop: 10 }}><Problem error={extractError} onRetry={extract} /></div>}
@@ -377,7 +377,7 @@ function NoteDetail({ noteId }: { noteId: string }) {
       {concepts && concepts.length > 0 && (
         <>
           <div className="section-label">
-            Khái niệm · {pending > 0 ? `${pending} chờ duyệt` : 'đã duyệt xong'}
+            Concepts · {pending > 0 ? `${pending} to review` : 'all reviewed'}
           </div>
           <div className="list" style={{ maxWidth: 760 }}>
             {concepts.map((c) => (
@@ -389,7 +389,7 @@ function NoteDetail({ noteId }: { noteId: string }) {
       {concepts && concepts.length === 0 && note.status === 'extracted' && (
         <div className="notice notice-info" style={{ maxWidth: 760, marginTop: 18 }}>
           <i className="ph ph-info" />
-          <div>LLM không tìm thấy khái niệm rõ ràng nào trong ghi chép này. Có thể sửa văn bản rồi rút lại.</div>
+          <div>The LLM found no clear concept in this note. You can correct the text and extract again.</div>
         </div>
       )}
     </>
@@ -410,19 +410,19 @@ function OcrQuality({ pages }: { pages: OcrPage[] }) {
   const flagged = useMemo(
     () =>
       pages.flatMap((p) =>
-        p.lines.filter((l) => l.confidence < 0.8).map((l) => ({ page: `${p.source} · tr.${p.number}`, ...l })),
+        p.lines.filter((l) => l.confidence < 0.8).map((l) => ({ page: `${p.source} · p.${p.number}`, ...l })),
       ),
     [pages],
   );
   return (
     <aside className="kn-detail" style={{ padding: '16px 18px' }}>
-      <div className="section-label" style={{ marginTop: 0 }}>Độ tin cậy OCR</div>
+      <div className="section-label" style={{ marginTop: 0 }}>OCR confidence</div>
       <div className="list" style={{ gap: 6 }}>
         {pages.map((p) => (
           <div key={`${p.source}-${p.number}`} className="ocr-page">
-            <span className="wk-meta" style={{ flex: 1 }}>{p.source} · trang {p.number}</span>
+            <span className="wk-meta" style={{ flex: 1 }}>{p.source} · page {p.number}</span>
             {p.mean_confidence === null ? (
-              <span className="tag tag-dim tag-sm">không có chữ</span>
+              <span className="tag tag-dim tag-sm">no text</span>
             ) : (
               <span className={`tag tag-sm ${p.mean_confidence >= 0.9 ? 'tag-green' : p.mean_confidence >= 0.8 ? 'tag-yel' : 'tag-red'}`}>
                 {Math.round(p.mean_confidence * 100)}%
@@ -431,9 +431,9 @@ function OcrQuality({ pages }: { pages: OcrPage[] }) {
           </div>
         ))}
       </div>
-      <div className="section-label">Dòng nên kiểm tra · {flagged.length}</div>
+      <div className="section-label">Lines to check · {flagged.length}</div>
       {flagged.length === 0 ? (
-        <div className="wk-desc">Không có dòng nào độ tin cậy thấp.</div>
+        <div className="wk-desc">No low-confidence lines.</div>
       ) : (
         <div className="list" style={{ gap: 6, maxHeight: 320, overflowY: 'auto' }}>
           {flagged.map((l, i) => (
@@ -447,8 +447,8 @@ function OcrQuality({ pages }: { pages: OcrPage[] }) {
         </div>
       )}
       <p className="wk-meta" style={{ marginTop: 12, lineHeight: 1.6 }}>
-        Chữ viết tay, dấu tiếng Việt và công thức là chỗ OCR dễ sai nhất. Dòng độ tin cậy thấp vẫn được giữ trong văn bản
-        — chỉ đánh dấu để bạn soát.
+        Handwriting, two-column layouts and formulas are where OCR goes wrong most. Low-confidence lines stay in the text —
+        they are only flagged for you to check, and unflagged lines can still be wrong.
       </p>
     </aside>
   );
@@ -517,9 +517,9 @@ function ConceptCard({ concept, onChange }: { concept: ReviewConcept; onChange: 
       <div style={{ minWidth: 0 }}>
         {edit ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <input className="input input-sm" lang="vi" value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} aria-label="Tên khái niệm" />
-            <input className="input input-sm" lang="vi" value={edit.subject} onChange={(e) => setEdit({ ...edit, subject: e.target.value })} aria-label="Môn học" />
-            <textarea className="input" lang="vi" style={{ minHeight: 70 }} value={edit.summary} onChange={(e) => setEdit({ ...edit, summary: e.target.value })} aria-label="Tóm tắt" />
+            <input className="input input-sm" lang="en" value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} aria-label="Concept name" />
+            <input className="input input-sm" lang="en" value={edit.subject} onChange={(e) => setEdit({ ...edit, subject: e.target.value })} aria-label="Subject" />
+            <textarea className="input" lang="en" style={{ minHeight: 70 }} value={edit.summary} onChange={(e) => setEdit({ ...edit, summary: e.target.value })} aria-label="Summary" />
           </div>
         ) : (
           <>
@@ -528,31 +528,31 @@ function ConceptCard({ concept, onChange }: { concept: ReviewConcept; onChange: 
               <span className="wk-meta">{concept.subject}</span>
               {concept.status === 'accepted' && (
                 <span className="tag tag-green tag-sm">
-                  {result && !result.created ? `Đã gộp vào “${mergedInto ?? 'khái niệm có sẵn'}”` : 'Đã thêm vào KS'}
+                  {result && !result.created ? `Merged into “${mergedInto ?? 'an existing concept'}”` : 'Added to the Knowledge Store'}
                 </span>
               )}
-              {concept.status === 'discarded' && <span className="tag tag-dim tag-sm">Đã bỏ</span>}
+              {concept.status === 'discarded' && <span className="tag tag-dim tag-sm">Discarded</span>}
             </div>
             <p className="wk-desc">{concept.summary}</p>
           </>
         )}
         {pending && candQ.error != null && <div style={{ marginTop: 8 }}><ErrorNotice error={candQ.error} onRetry={candQ.reload} compact /></div>}
         {pending && cands.length > 0 && (
-          <fieldset className="dup" aria-label="Khái niệm gần giống đã có">
+          <fieldset className="dup" aria-label="Similar existing concepts">
             <legend className="wk-meta">
               {suggested
-                ? 'Đã có khái niệm rất giống. Chọn gộp vào khái niệm đó hay thêm thành khái niệm mới:'
-                : 'Có khái niệm hơi giống (chưa tới ngưỡng gộp). Mặc định thêm mới:'}
+                ? 'A very similar concept already exists. Merge into it, or add this as a new concept:'
+                : 'Somewhat similar concepts exist (below the merge threshold). Adding as new by default:'}
             </legend>
             <label className={`dup-opt${effectiveChoice === 'create' ? ' dup-on' : ''}`}>
               <input type="radio" name={`dup-${concept.id}`} checked={effectiveChoice === 'create'} onChange={() => setChoice('create')} disabled={busy} />
-              <span><b>Thêm thành khái niệm mới</b></span>
+              <span><b>Add as a new concept</b></span>
             </label>
             {cands.map((c) => (
               <label key={c.node_id} className={`dup-opt${effectiveChoice === c.node_id ? ' dup-on' : ''}`}>
                 <input type="radio" name={`dup-${concept.id}`} checked={effectiveChoice === c.node_id} onChange={() => setChoice(c.node_id)} disabled={busy} />
                 <span style={{ minWidth: 0 }}>
-                  Gộp vào <b>{c.title}</b> <span className="wk-meta">· {c.subject} · giống {Math.round(c.score * 100)}%{c.node_id === suggested ? ' · quy tắc tự động sẽ chọn' : ''}</span>
+                  Merge into <b>{c.title}</b> <span className="wk-meta">· {c.subject} · {Math.round(c.score * 100)}% similar{c.node_id === suggested ? ' · the automatic rule would pick this' : ''}</span>
                   <span className="wk-desc clamp2" style={{ display: 'block' }}>{c.summary}</span>
                 </span>
               </label>
@@ -566,11 +566,11 @@ function ConceptCard({ concept, onChange }: { concept: ReviewConcept; onChange: 
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {edit ? (
               <>
-                <button className="btn btn-soft" onClick={saveEdit} disabled={busy}>Lưu</button>
-                <button className="btn btn-soft" onClick={() => setEdit(undefined)} disabled={busy}>Huỷ</button>
+                <button className="btn btn-soft" onClick={saveEdit} disabled={busy}>Save</button>
+                <button className="btn btn-soft" onClick={() => setEdit(undefined)} disabled={busy}>Cancel</button>
               </>
             ) : (
-              <button className="icon-btn" title="Sửa trước khi chấp nhận" onClick={() => setEdit({ title: concept.title, subject: concept.subject, summary: concept.summary })}>
+              <button className="icon-btn" title="Edit before accepting" onClick={() => setEdit({ title: concept.title, subject: concept.subject, summary: concept.summary })}>
                 <i className="ph ph-pencil-simple" />
               </button>
             )}
@@ -578,12 +578,12 @@ function ConceptCard({ concept, onChange }: { concept: ReviewConcept; onChange: 
               className="btn btn-frost"
               onClick={accept}
               disabled={busy || candQ.loading || !effectiveChoice}
-              title={!effectiveChoice ? 'Chọn gộp hay thêm mới trước' : undefined}
+              title={!effectiveChoice ? 'Choose merge or new first' : undefined}
             >
-              {busy ? <span className="spin" /> : <i className="ph ph-check" />}Chấp nhận
+              {busy ? <span className="spin" /> : <i className="ph ph-check" />}Accept
             </button>
             <button className="btn btn-soft" onClick={discard} disabled={busy}>
-              <i className="ph ph-x" />Bỏ
+              <i className="ph ph-x" />Discard
             </button>
           </div>
         )}

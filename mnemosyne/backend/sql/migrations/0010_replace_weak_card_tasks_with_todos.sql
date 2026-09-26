@@ -6,7 +6,7 @@
 -- these items: they are a list, the learner decides when.
 --
 -- `todo_item_cards` keeps which cards made a set weak — the same evidence
--- `weak_card_task_cards` held — because the Điểm yếu screen (GET /weak_cards)
+-- `weak_card_task_cards` held — because the Weak spots screen (GET /weak_cards)
 -- is built from it. Existing rows are carried over before the old tables go,
 -- so no weak-card history is lost.
 

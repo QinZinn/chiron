@@ -32,7 +32,7 @@ pub struct TodoQuery {
 #[derive(Debug, Deserialize)]
 pub struct CreateTodo {
     pub title: String,
-    /// Optional for a manual item: "ôn chương 3" can belong to a set or not.
+    /// Optional for a manual item: "review chapter 3" can belong to a set or not.
     pub study_set_id: Option<Uuid>,
 }
 

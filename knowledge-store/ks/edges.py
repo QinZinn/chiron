@@ -1,10 +1,10 @@
-"""Gợi ý cạnh (top-K → LLM → pending) và các thao tác duyệt.
+"""Edge suggestion (top-K → LLM → pending) and the review operations.
 
-LLM chỉ GỢI Ý. Mọi cạnh vào DB ở trạng thái 'pending' và phải qua người duyệt —
-không auto-approve. Row 'rejected' giữ vĩnh viễn và bị loại khỏi candidate set
-lần sau: không hỏi lại câu người dùng đã trả lời.
+The LLM only SUGGESTS. Every edge enters the DB as 'pending' and must be reviewed
+by a person — no auto-approve. 'rejected' rows are kept forever and excluded from
+the next candidate set: a question the user already answered is not asked again.
 
-INSTRUMENTATION: mọi log ở đây nằm trong chính hàm nghiệp vụ, cùng transaction.
+INSTRUMENTATION: every log here is written inside the business function itself, in the same transaction.
 """
 
 from __future__ import annotations
@@ -27,9 +27,9 @@ from ks.models import (
     SuggestionRun,
 )
 
-# Candidate set: cùng subject trước, rồi tới similarity trigram cao nhất giữa
-# title-với-title và summary-với-summary. Loại sẵn mọi cặp ĐÃ có cạnh ở BẤT KỲ
-# trạng thái nào — kể cả 'rejected'.
+# Candidate set: same subject first, then the highest trigram similarity of
+# title-to-title and summary-to-summary. Every pair that ALREADY has an edge in ANY
+# status is excluded up front — 'rejected' included.
 _CANDIDATE_SQL = """
 SELECT n.id, n.title, n.subject, n.summary,
        GREATEST(similarity(n.title, %(title)s), similarity(n.summary, %(summary)s)) AS score
@@ -59,21 +59,21 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 _SYSTEM_PROMPT = (
-    "Bạn là trợ lý xây dựng đồ thị khái niệm cho học sinh. "
-    "Cho một khái niệm gốc và danh sách khái niệm ứng viên, hãy chỉ ra quan hệ ĐÁNG TIN. "
-    "Chỉ trả JSON, không giải thích ngoài JSON."
+    "You help build a concept graph for a student. "
+    "Given a root concept and a list of candidate concepts, name only the RELIABLE relations. "
+    "Return only JSON, no explanation outside the JSON."
 )
 
 
 class EdgeNotFound(Exception):
-    """edge_id không tồn tại."""
+    """No edge with this edge_id."""
 
 
 class NodeNotFound(Exception):
-    """node_id không tồn tại."""
+    """No node with this node_id."""
 
 
-# ---------------------------------------------------------------- đọc node
+# ---------------------------------------------------------------- reading nodes
 
 
 def _load_node(conn: psycopg.Connection, node_id: UUID) -> tuple[str, str, str]:
@@ -81,7 +81,7 @@ def _load_node(conn: psycopg.Connection, node_id: UUID) -> tuple[str, str, str]:
         cur.execute("SELECT title, subject, summary FROM ks.nodes WHERE id = %s", (node_id,))
         row = cur.fetchone()
     if row is None:
-        raise NodeNotFound(f"Không có node {node_id}")
+        raise NodeNotFound(f"No node {node_id}")
     return row
 
 
@@ -112,24 +112,24 @@ def build_prompt(
 ) -> list[Message]:
     title, subject, summary = node
     lines = [
-        f"KHÁI NIỆM GỐC: {title}",
-        f"Môn: {subject}",
-        f"Tóm tắt: {summary}",
+        f"ROOT CONCEPT: {title}",
+        f"Subject: {subject}",
+        f"Summary: {summary}",
         "",
-        "ỨNG VIÊN:",
+        "CANDIDATES:",
     ]
     for i, cand in enumerate(candidates):
-        lines.append(f"[{i}] {cand.title} (môn: {cand.subject}) — {cand.summary}")
+        lines.append(f"[{i}] {cand.title} (subject: {cand.subject}) — {cand.summary}")
     lines += [
         "",
-        "Trả về JSON array. Mỗi phần tử:",
-        '{"candidate": <số trong ngoặc vuông>, '
+        "Return a JSON array. Each element:",
+        '{"candidate": <number in square brackets>, '
         '"relation_type": "prerequisite" | "related" | "contrasts_with", '
-        '"reason": "<một câu>"}',
+        '"reason": "<one English sentence>"}',
         "",
-        "prerequisite = phải hiểu khái niệm gốc TRƯỚC khi hiểu ứng viên (có hướng).",
-        "related = liên quan nhưng không phụ thuộc. contrasts_with = dễ nhầm lẫn với nhau.",
-        "Không chắc thì bỏ qua. Không có quan hệ nào đáng tin thì trả [].",
+        "prerequisite = the root concept must be understood BEFORE the candidate (directed).",
+        "related = connected but not dependent. contrasts_with = easily confused with each other.",
+        "If unsure, leave it out. If no relation is reliable, return [].",
     ]
     return [Message("system", _SYSTEM_PROMPT), Message("user", "\n".join(lines))]
 
@@ -140,17 +140,17 @@ def _strip_json_fence(text: str) -> str:
 
 
 def parse_suggestions(text: str, candidate_count: int) -> tuple[tuple[int, RelationType, str], ...]:
-    """Parse phản hồi LLM. Sai cấu trúc → LLMParseError.
+    """Parse the LLM response. Wrong structure → LLMParseError.
 
-    Phần tử lẻ (index ngoài phạm vi, relation_type lạ) bị BỎ QUA lặng lẽ —
-    một dòng hỏng không nên huỷ cả lô gợi ý.
+    Stray elements (index out of range, unknown relation_type) are silently SKIPPED —
+    one bad row should not void the whole batch of suggestions.
     """
     try:
         parsed = json.loads(_strip_json_fence(text))
     except (json.JSONDecodeError, ValueError) as exc:
-        raise LLMParseError(f"Phản hồi không phải JSON: {text[:200]}") from exc
+        raise LLMParseError(f"Response is not JSON: {text[:200]}") from exc
     if not isinstance(parsed, list):
-        raise LLMParseError(f"Phản hồi không phải JSON array: {text[:200]}")
+        raise LLMParseError(f"Response is not a JSON array: {text[:200]}")
 
     out: list[tuple[int, RelationType, str]] = []
     seen: set[int] = set()
@@ -179,11 +179,12 @@ def suggest_edges(
     *,
     k: int = settings.EDGE_SUGGESTION_TOP_K,
 ) -> SuggestionRun:
-    """Top-K ứng viên → LLM → ghi cạnh 'pending'.
+    """Top-K candidates → LLM → write 'pending' edges.
 
-    KHÔNG raise khi LLM lỗi: bắt LLMError, ghi outcome vào ks.edge_suggestion_run
-    rồi trả về. Nếu raise thì caller rollback và mất luôn dòng log — mà cả điểm
-    của instrumentation là đo được cả những lần thất bại. Lỗi DB vẫn văng ra.
+    Does NOT raise on LLM errors: catches LLMError, records the outcome in
+    ks.edge_suggestion_run and returns. Raising would make the caller roll back and
+    lose the log row — and the whole point of instrumentation is to measure failures
+    too. DB errors still propagate.
     """
     node = _load_node(conn, node_id)
     candidates = candidate_neighbors(conn, node_id, k=k)
@@ -218,7 +219,7 @@ def suggest_edges(
                 (node_id, cand.node_id, relation.value),
             )
             row = cur.fetchone()
-            if row is None:  # cạnh đã tồn tại — không đè lên quyết định cũ
+            if row is None:  # the edge already exists — never override an earlier decision
                 continue
             suggestions.append(
                 EdgeSuggestion(
@@ -251,7 +252,7 @@ def _log_run(conn, node_id, candidate_ids, count, outcome, provider, error) -> N
         )
 
 
-# ---------------------------------------------------------------- duyệt
+# ---------------------------------------------------------------- review
 
 
 def list_pending(conn: psycopg.Connection, *, limit: int = 100) -> tuple[PendingEdge, ...]:
@@ -293,16 +294,16 @@ def _load_edge(conn: psycopg.Connection, edge_id: UUID):
         )
         row = cur.fetchone()
     if row is None:
-        raise EdgeNotFound(f"Không có edge {edge_id}")
+        raise EdgeNotFound(f"No edge {edge_id}")
     return row
 
 
 def was_in_candidate_set(conn: psycopg.Connection, a: UUID, b: UUID) -> bool:
-    """Full-text CÓ đưa được cặp này ra không?
+    """COULD full-text have surfaced this pair?
 
-    True nếu b từng nằm trong candidate set của một lần suggest trên a (hoặc
-    ngược lại). Đây là mẫu số của chỉ số quan trọng nhất: số cạnh người dùng
-    thêm tay mà full-text không đề xuất nổi.
+    True if b was ever in the candidate set of a suggest run on a (or the other way
+    round). This is the denominator of the most important metric: edges the user
+    adds by hand that full-text could not suggest.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -347,8 +348,8 @@ def approve_edge(conn: psycopg.Connection, edge_id: UUID) -> None:
 
 
 def reject_edge(conn: psycopg.Connection, edge_id: UUID) -> None:
-    """Giữ row vĩnh viễn với status='rejected' — không xoá. Cặp này bị loại
-    khỏi candidate set lần suggest sau."""
+    """Keep the row forever with status='rejected' — nothing is deleted. The pair is
+    excluded from the candidate set of the next suggest run."""
     from_id, to_id, relation, suggested_by, _ = _load_edge(conn, edge_id)
     with conn.cursor() as cur:
         cur.execute("UPDATE ks.edges SET status = 'rejected' WHERE id = %s", (edge_id,))
@@ -359,7 +360,7 @@ def reject_edge(conn: psycopg.Connection, edge_id: UUID) -> None:
 
 
 def edit_edge(conn: psycopg.Connection, edge_id: UUID, relation_type: RelationType) -> None:
-    """Người dùng sửa loại quan hệ rồi chấp nhận. Ghi lại loại cũ để đo LLM sai gì."""
+    """The user corrected the relation type, then accepted. The old type is recorded to measure what the LLM got wrong."""
     from_id, to_id, old_relation, suggested_by, _ = _load_edge(conn, edge_id)
     with conn.cursor() as cur:
         cur.execute(
@@ -378,10 +379,10 @@ def add_edge(
     to_node_id: UUID,
     relation_type: RelationType,
 ) -> UUID:
-    """Người dùng tự thêm cạnh. Vào thẳng 'approved' — người dùng khẳng định,
-    không cần tự duyệt lại chính mình.
+    """The user adds an edge by hand. Goes straight to 'approved' — the user asserted
+    it; there is no need to review their own decision.
 
-    was_in_candidate_set=False ở đây chính là bằng chứng full-text bỏ sót.
+    was_in_candidate_set=False here is exactly the evidence that full-text missed it.
     """
     _load_node(conn, from_node_id)
     _load_node(conn, to_node_id)
@@ -403,14 +404,14 @@ def add_edge(
     return edge_id
 
 
-# ---------------------------------------------------------------- đọc đồ thị
+# ---------------------------------------------------------------- reading the graph
 
 
 def neighbors(conn: psycopg.Connection, node_id: UUID) -> tuple[Neighbor, ...]:
-    """Node kề qua cạnh đã approved.
+    """Nodes adjacent through an approved edge.
 
-    'related' và 'contrasts_with' đối xứng: lưu một chiều, query HAI chiều.
-    'prerequisite' có hướng: direction 'out' = node này là tiền đề của kia.
+    'related' and 'contrasts_with' are symmetric: stored one way, queried BOTH ways.
+    'prerequisite' is directed: direction 'out' = this node is a prerequisite of the other.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -430,7 +431,7 @@ def neighbors(conn: psycopg.Connection, node_id: UUID) -> tuple[Neighbor, ...]:
     out: list[Neighbor] = []
     for node, title, relation, direction in rows:
         rel = RelationType(relation)
-        # Đối xứng → hướng không mang nghĩa, chuẩn hoá thành 'both'.
+        # Symmetric → direction carries no meaning, normalised to 'both'.
         if rel in (RelationType.RELATED, RelationType.CONTRASTS_WITH):
             direction = "both"
         out.append(Neighbor(node_id=node, title=title, relation_type=rel, direction=direction))
@@ -438,7 +439,7 @@ def neighbors(conn: psycopg.Connection, node_id: UUID) -> tuple[Neighbor, ...]:
 
 
 def stats(conn: psycopg.Connection) -> dict:
-    """Số liệu instrumentation. Dòng quan trọng nhất: manual_add_missed_by_fulltext."""
+    """Instrumentation numbers. The most important row: manual_add_missed_by_fulltext."""
     with conn.cursor() as cur:
         cur.execute("SELECT count(*) FROM ks.nodes WHERE merged_into_id IS NULL")
         nodes = cur.fetchone()[0]
@@ -463,9 +464,9 @@ def stats(conn: psycopg.Connection) -> dict:
         card_sync = {r[0]: r[1] for r in cur.fetchall()}
 
     return {
-        # nodes_total là chỉ số vận hành chung (quy mô dữ liệu KS đang ở đâu).
-        # Ban đầu thêm vì giới hạn limit=500 phía Mnemosyne; giới hạn đó đã hết
-        # nhờ GET /nodes/{id}, nhưng chỉ số vẫn hữu ích nên giữ.
+        # nodes_total is a general operational metric (how big KS data is).
+        # Originally added because of Mnemosyne's limit=500; that limit is gone
+        # thanks to GET /nodes/{id}, but the metric is still useful, so it stays.
         "nodes_total": nodes + merged,
         "nodes": nodes,
         "nodes_merged": merged,
@@ -475,6 +476,6 @@ def stats(conn: psycopg.Connection) -> dict:
         "suggestion_runs_by_outcome": runs_by_outcome,
         "edge_decisions": decisions,
         "manual_add_total": manual_total,
-        # Căn cứ DUY NHẤT để sau này quyết pgvector.
+        # The ONLY evidence for a future decision on pgvector.
         "manual_add_missed_by_fulltext": missed,
     }

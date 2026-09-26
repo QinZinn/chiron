@@ -13,15 +13,15 @@ import { FeynmanView } from './views/Feynman';
 import { SettingsView } from './views/Settings';
 
 const AREA_NAME: Record<Route['view'], string> = {
-  chat: 'Trò chuyện',
-  flashcards: 'Thẻ ghi nhớ',
+  chat: 'Chat',
+  flashcards: 'Flashcards',
   quiz: 'Quiz',
-  knowledge: 'Kiến thức',
-  notes: 'Scan ghi chép',
-  weak: 'Điểm yếu',
-  todos: 'Việc cần ôn',
-  feynman: 'Giảng lại',
-  settings: 'Cài đặt',
+  knowledge: 'Knowledge',
+  notes: 'Note scan',
+  weak: 'Weak spots',
+  todos: 'To-do',
+  feynman: 'Teach back',
+  settings: 'Settings',
 };
 
 function View({ route }: { route: Route }) {
@@ -52,7 +52,7 @@ export function App() {
   return (
     <AppProvider>
       <div className="app">
-        <AreaBoundary area="Thanh bên">
+        <AreaBoundary area="Sidebar">
           <Sidebar route={route} />
         </AreaBoundary>
         {/* One boundary per area: a crash in one view leaves the sidebar and

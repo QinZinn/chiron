@@ -296,7 +296,8 @@ fn output_format_rules(n: u32, with_node_index: bool) -> String {
          correct, and `correct_index` is its 0-based position in `choices`. \
          The wrong choices must be plausible — a learner who does not know the \
          material should not be able to eliminate them by length, phrasing, or \
-         obvious absurdity. Vary which position holds the correct answer.\
+         obvious absurdity. Vary which position holds the correct answer. \
+         Write the questions and choices in English.\
          {node_rule}\n\
          No prose, no markdown fences, no commentary outside the JSON."
     )

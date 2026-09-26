@@ -32,8 +32,8 @@ Mnemosyne is a backend module of the Chiron ecosystem. It is feature-complete fo
 - [x] Milestone 3 — Socratic Tutor + Feynman Evaluation
 - [x] Milestone 4 — Chiron integration (local Postgres, transcript hand-off to the Knowledge Store)
 - [x] Milestone 5 — Knowledge Store card generation loop: `POST /cards/from_node` turns one approved KS concept node into one flashcard, idempotent via a `UNIQUE(set_id, source_node_id)` constraint, with a machine-readable `reason` on every failure so a caller (namely the Knowledge Store's own `card_sync` job) can tell a token-budget truncation apart from a transient network blip. Verified end-to-end against production data, not just fixtures.
-- [x] Sửa và xoá — mọi thứ trước đây chỉ có thể thêm, kể cả thẻ do LLM sinh sai
-- [x] Hỏi bài / Giải bài — direct answers and step-by-step solutions (`/chat/*`), kept apart from Socratic in both prompt and storage
+- [x] Edit and delete — for everything that could previously only be added, including cards the LLM generated wrong
+- [x] Ask / Solve — direct answers and step-by-step solutions (`/chat/*`), kept apart from Socratic in both prompt and storage
 - [x] Weak-card dashboard — `GET /weak_cards` reads back what `POST /review` has been writing
 - [x] Blurting — write down everything remembered, judged card by card against the set
 - [x] Review todo list — `/todos`: weak-card items plus items the learner adds; never scheduled
@@ -91,7 +91,7 @@ Mnemosyne       ──GET /nodes, /nodes/{id}→ Knowledge Store (reading a conc
 | `POST /study_sets/{id}/generate_cards` | AI-generate flashcards from source text (`recall` or `elaboration` style) |
 | `POST /socratic/start`, `POST /socratic/{id}/reply`, `POST /socratic/{id}/end`, `GET /socratic/{id}` | Multi-turn Socratic dialogue on a study set. `/end` ships the transcript to the Knowledge Store and stamps `ended_at` |
 | `GET /socratic` | The learner's Socratic sessions, most recently active first |
-| `POST /chat/start`, `POST /chat/{id}/reply`, `GET /chat/{id}`, `GET /chat` | "Hỏi bài" (`mode: "ask"` — direct answers) and "Giải bài" (`mode: "solve"` — worked step by step). The opposite of Socratic, which withholds answers on purpose; a study set may be attached as context |
+| `POST /chat/start`, `POST /chat/{id}/reply`, `GET /chat/{id}`, `GET /chat` | "Ask" (`mode: "ask"` — direct answers) and "Solve" (`mode: "solve"` — worked step by step). The opposite of Socratic, which withholds answers on purpose; a study set may be attached as context |
 | `PATCH /me` | Edit the learner's own profile |
 | `PATCH`/`DELETE` `/study_sets/{id}`, `/cards/{id}`; `DELETE /quiz/{id}`, `/socratic/{id}`, `/chat/{id}` | Edit and delete. Real deletes, cascading — a study set takes its cards, their review history and its quiz questions with it |
 | `GET /stats` | Reviews, accuracy, study streak, card and session counts — counted at read time, in the caller's timezone (`tz_offset_minutes`) |
@@ -135,7 +135,7 @@ Every learner endpoint requires `Authorization: Bearer <token>` and derives
 is 32 bytes of CSPRNG output, stored only as a SHA-256 hash, and shown once:
 
 ```bash
-cargo run -p backend -- create-user learner@example.com "Lớp 11"  # learner + first token
+cargo run -p backend -- create-user learner@example.com "Grade 11"  # learner + first token
 cargo run -p backend -- mint-token  learner@example.com laptop    # another token
 cargo run -p backend -- list-tokens learner@example.com
 cargo run -p backend -- revoke-token <token-id>

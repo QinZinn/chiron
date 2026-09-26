@@ -1,6 +1,6 @@
-"""LLM client: map lỗi HTTP, parse phản hồi, chọn provider từ env.
+"""LLM client: mapping HTTP errors, parsing responses, choosing the provider from env.
 
-Không gọi mạng thật — mọi test bơm fake `post`.
+No real network calls — every test injects a fake `post`.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from ks.llm import (
     ProviderConfig,
 )
 
-MSGS = [Message("user", "xin chào")]
+MSGS = [Message("user", "hello")]
 
 
 def fake_post(status, data, sink=None):
@@ -49,21 +49,21 @@ def fake_post(status, data, sink=None):
         (503, LLMTransientError),
     ],
 )
-def test_map_status_ve_dung_loai_loi(status, expected):
+def test_status_maps_to_the_right_error_class(status, expected):
     provider = AnthropicProvider("m", "k", post=fake_post(status, {"error": "x"}))
     with pytest.raises(expected):
         provider.complete(MSGS)
 
 
-def test_moi_loi_deu_la_LLMError():
-    """Caller bắt được tất cả bằng một except duy nhất."""
+def test_every_error_is_an_LLMError():
+    """Callers can catch everything with a single except."""
     for cls in (LLMAuthError, LLMQuotaError, LLMTransientError,
                 LLMBadRequestError, LLMParseError, LLMRefusalError):
         assert issubclass(cls, llm.LLMError)
 
 
-def test_khong_doan_dinh_dang_loi_ben_thu_ba():
-    """403 kèm body Cloudflare vẫn chỉ là LLMAuthError — không soi 'error code: 1010'."""
+def test_does_not_guess_third_party_error_formats():
+    """A 403 with a Cloudflare body is still just LLMAuthError — no sniffing for 'error code: 1010'."""
     body = "error code: 1010"
     provider = OpenAICompatibleProvider("m", "k", base_url="https://x/v1", post=fake_post(403, body))
     with pytest.raises(LLMAuthError):
@@ -73,9 +73,9 @@ def test_khong_doan_dinh_dang_loi_ben_thu_ba():
 # ---------------------------------------------------------------- anthropic
 
 
-def test_anthropic_doc_content_0_text():
-    data = {"content": [{"text": "kết quả"}], "stop_reason": "end_turn"}
-    assert AnthropicProvider("m", "k", post=fake_post(200, data)).complete(MSGS) == "kết quả"
+def test_anthropic_reads_content_0_text():
+    data = {"content": [{"text": "result"}], "stop_reason": "end_turn"}
+    assert AnthropicProvider("m", "k", post=fake_post(200, data)).complete(MSGS) == "result"
 
 
 def test_anthropic_stop_reason_refusal():
@@ -84,12 +84,12 @@ def test_anthropic_stop_reason_refusal():
         AnthropicProvider("m", "k", post=fake_post(200, data)).complete(MSGS)
 
 
-def test_anthropic_200_nhung_sai_cau_truc_la_parse_error():
+def test_anthropic_200_with_wrong_structure_is_a_parse_error():
     with pytest.raises(LLMParseError):
-        AnthropicProvider("m", "k", post=fake_post(200, {"gì đó": 1})).complete(MSGS)
+        AnthropicProvider("m", "k", post=fake_post(200, {"something": 1})).complete(MSGS)
 
 
-def test_anthropic_gui_dung_header_va_url():
+def test_anthropic_sends_the_right_headers_and_url():
     sink = []
     data = {"content": [{"text": "x"}]}
     AnthropicProvider("m", "secret", post=fake_post(200, data, sink)).complete(MSGS)
@@ -102,14 +102,14 @@ def test_anthropic_gui_dung_header_va_url():
 # ---------------------------------------------------------------- openai-compatible
 
 
-def test_openai_compatible_doc_choices_0_message_content():
-    data = {"choices": [{"message": {"content": "kết quả"}}]}
+def test_openai_compatible_reads_choices_0_message_content():
+    data = {"choices": [{"message": {"content": "result"}}]}
     provider = OpenAICompatibleProvider("m", "k", base_url="https://api.deepseek.com/v1",
                                         post=fake_post(200, data))
-    assert provider.complete(MSGS) == "kết quả"
+    assert provider.complete(MSGS) == "result"
 
 
-def test_openai_compatible_url_va_bearer():
+def test_openai_compatible_url_and_bearer():
     sink = []
     data = {"choices": [{"message": {"content": "x"}}]}
     provider = OpenAICompatibleProvider("m", "secret", base_url="https://api.deepseek.com/v1/",
@@ -121,7 +121,7 @@ def test_openai_compatible_url_va_bearer():
 
 
 def test_openai_compatible_refusal_field():
-    data = {"choices": [{"message": {"content": None, "refusal": "không thể giúp"}}]}
+    data = {"choices": [{"message": {"content": None, "refusal": "cannot help"}}]}
     provider = OpenAICompatibleProvider("m", "k", base_url="https://x/v1", post=fake_post(200, data))
     with pytest.raises(LLMRefusalError):
         provider.complete(MSGS)
@@ -134,14 +134,14 @@ def test_openai_compatible_content_filter():
         provider.complete(MSGS)
 
 
-def test_openai_compatible_thieu_choices_la_parse_error():
+def test_openai_compatible_missing_choices_is_a_parse_error():
     provider = OpenAICompatibleProvider("m", "k", base_url="https://x/v1",
                                         post=fake_post(200, {"choices": []}))
     with pytest.raises(LLMParseError):
         provider.complete(MSGS)
 
 
-def test_body_mang_dung_model_va_messages():
+def test_body_carries_the_model_and_messages():
     import json
     sink = []
     data = {"choices": [{"message": {"content": "x"}}]}
@@ -156,7 +156,7 @@ def test_body_mang_dung_model_va_messages():
                                    {"role": "user", "content": "u"}]
 
 
-# ---------------------------------------------------------------- config từ env
+# ---------------------------------------------------------------- config from env
 
 
 def test_config_from_env_deepseek():
@@ -171,20 +171,20 @@ def test_config_from_env_deepseek():
                                  "DEEPSEEK_API_KEY", "https://api.deepseek.com/v1")
 
 
-def test_api_key_env_la_TEN_bien_khong_phai_gia_tri():
-    """Chốt quy ước: config chứa tên biến, giá trị chỉ đọc lúc dựng provider."""
+def test_api_key_env_is_the_variable_NAME_not_its_value():
+    """Pins the convention: config holds the variable name; the value is only read when the provider is built."""
     cfg = ProviderConfig("deepseek", "m", "DEEPSEEK_API_KEY", "https://x/v1")
     assert cfg.api_key_env == "DEEPSEEK_API_KEY"
-    provider = llm.build_provider(cfg, env={"DEEPSEEK_API_KEY": "giá-trị-thật"})
+    provider = llm.build_provider(cfg, env={"DEEPSEEK_API_KEY": "real-value"})
     assert provider.name == "deepseek"
 
 
-def test_thieu_bien_bat_buoc_la_bad_request():
+def test_missing_required_variable_is_a_bad_request():
     with pytest.raises(LLMBadRequestError):
         llm.config_from_env({"KS_LLM_PROVIDER": "deepseek"})
 
 
-def test_openai_compatible_thieu_base_url_la_bad_request():
+def test_openai_compatible_missing_base_url_is_a_bad_request():
     with pytest.raises(LLMBadRequestError):
         llm.config_from_env({
             "KS_LLM_PROVIDER": "deepseek",
@@ -193,7 +193,7 @@ def test_openai_compatible_thieu_base_url_la_bad_request():
         })
 
 
-def test_anthropic_khong_can_base_url():
+def test_anthropic_needs_no_base_url():
     cfg = llm.config_from_env({
         "KS_LLM_PROVIDER": "anthropic",
         "KS_LLM_MODEL": "claude-opus-5",
@@ -202,13 +202,13 @@ def test_anthropic_khong_can_base_url():
     assert cfg.base_url == ""
 
 
-def test_key_rong_la_auth_error_chu_khong_im_lang():
+def test_empty_key_is_an_auth_error_not_silence():
     cfg = ProviderConfig("deepseek", "m", "KHONG_TON_TAI", "https://x/v1")
     with pytest.raises(LLMAuthError):
         llm.build_provider(cfg, env={})
 
 
-def test_provider_from_env_dung_ten_provider_lam_nhan():
+def test_provider_from_env_uses_the_provider_name_as_label():
     provider = llm.provider_from_env({
         "KS_LLM_PROVIDER": "deepseek",
         "KS_LLM_MODEL": "deepseek-v4-flash",
@@ -220,13 +220,13 @@ def test_provider_from_env_dung_ten_provider_lam_nhan():
     assert provider.model == "deepseek-v4-flash"
 
 
-# ---------------------------------------------------------------- cắt ngang (reasoning model)
+# ---------------------------------------------------------------- truncation (reasoning model)
 
 
-def test_openai_compatible_finish_reason_length_la_truncated():
-    """ĐO ĐƯỢC THẬT với deepseek-v4-flash: reasoning token tính vào max_tokens,
-    nên phản hồi có thể cụt giữa chừng. Phải nói thẳng nguyên nhân thay vì để
-    JSON cụt lọt xuống parser rồi hiện ra dưới dạng LLMParseError khó hiểu."""
+def test_openai_compatible_finish_reason_length_is_truncated():
+    """MEASURED with deepseek-v4-flash: reasoning tokens count toward max_tokens,
+    so a response can stop mid-way. The cause must be named, instead of letting
+    truncated JSON reach the parser and surface as a puzzling LLMParseError."""
     from ks.llm import LLMTruncatedError
     data = {
         "choices": [{"message": {"content": '[\n  {\n    "relation_type": "pr'},
@@ -240,26 +240,26 @@ def test_openai_compatible_finish_reason_length_la_truncated():
     assert "reasoning_tokens=985" in str(exc.value)
 
 
-def test_anthropic_stop_reason_max_tokens_la_truncated():
+def test_anthropic_stop_reason_max_tokens_is_truncated():
     from ks.llm import LLMTruncatedError
     data = {"content": [{"text": "["}], "stop_reason": "max_tokens"}
     with pytest.raises(LLMTruncatedError):
         AnthropicProvider("m", "k", post=fake_post(200, data)).complete(MSGS)
 
 
-def test_truncated_la_con_cua_transient_nen_retry_duoc():
-    """Lượng reasoning token thay đổi mỗi lần chạy — cùng max_tokens lúc đủ lúc không."""
+def test_truncated_is_a_transient_subclass_so_it_is_retryable():
+    """Reasoning tokens vary per run — the same max_tokens is sometimes enough, sometimes not."""
     from ks.llm import LLMTruncatedError
     assert issubclass(LLMTruncatedError, LLMTransientError)
 
 
-def test_truncated_CO_content_van_phai_la_truncated_KHONG_phai_parse_error():
-    """Mnemosyne đo 40 call thật: ở max_tokens=350, 5/10 reply bị cắt vẫn TRẢ
-    VỀ content — JSON viết dở, tới 310 ký tự. Không phải ca hiếm.
+def test_truncated_WITH_content_is_still_truncated_NOT_a_parse_error():
+    """Mnemosyne measured 40 real calls: at max_tokens=350, 5/10 truncated replies still
+    RETURNED content — half-written JSON, up to 310 characters. Not a rare case.
 
-    Không check finish_reason thì đám đó đi thẳng vào parser và báo lỗi ĐỊNH
-    DẠNG, khiến người đọc log đi soi prompt trong khi lỗi thật là ngân sách
-    token. Đúng bug production ban đầu của KS.
+    Without checking finish_reason those go straight to the parser and report a
+    FORMAT error, sending the log reader off to inspect the prompt when the real
+    error is the token budget. Exactly KS's original production bug.
     """
     from ks.llm import LLMTruncatedError
     data = {
@@ -275,12 +275,12 @@ def test_truncated_CO_content_van_phai_la_truncated_KHONG_phai_parse_error():
         provider.complete(MSGS)
 
 
-def test_JSON_HOP_LE_nhung_finish_reason_length_van_bi_tu_choi():
-    """Ca âm thầm nguy hiểm nhất: model viết xong `]` rồi mới cạn token. Chuỗi
-    parse được, nhưng nội dung THIẾU so với đáng lẽ phải có.
+def test_VALID_JSON_with_finish_reason_length_is_still_rejected():
+    """The most dangerous silent case: the model writes the closing `]` and then runs out of
+    tokens. The string parses, but the content is INCOMPLETE.
 
-    Chấp nhận nó là im lặng mất dữ liệu — một phần câu trả lời bị coi như toàn
-    bộ. Ngân sách token phải thắng cú pháp: cắt là bỏ, không cứu vãn.
+    Accepting it would silently lose data — part of an answer treated as the whole.
+    The token budget must win over syntax: truncated means discarded, no salvage.
     """
     from ks.llm import LLMTruncatedError
     data = {
@@ -294,8 +294,8 @@ def test_JSON_HOP_LE_nhung_finish_reason_length_van_bi_tu_choi():
         provider.complete(MSGS)
 
 
-def test_finish_reason_stop_thi_content_hop_le_van_di_qua_binh_thuong():
-    """Đối chứng: check truncation không được chặn nhầm phản hồi lành lặn."""
+def test_finish_reason_stop_lets_valid_content_through():
+    """Control: the truncation check must not block a healthy response."""
     data = {"choices": [{"message": {"content": "[]"}, "finish_reason": "stop"}]}
     provider = OpenAICompatibleProvider("m", "k", base_url="https://x/v1", post=fake_post(200, data))
     assert provider.complete(MSGS) == "[]"

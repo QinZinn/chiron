@@ -1,8 +1,8 @@
-"""RÀNG BUỘC BẮT BUỘC (§7): log nằm TRONG hàm nghiệp vụ, CÙNG transaction.
+"""REQUIRED CONSTRAINT (§7): the log is written INSIDE the business function, in the SAME transaction.
 
-Không phải bảng phụ caller tự nhớ gọi. Khoá bằng test, không bằng quy ước:
-  - gọi hàm đúng cách caller thường gọi (không cờ, không hàm log phụ) → log vẫn có
-  - rollback → mất CẢ HAI (log lẫn data)
+Not a side table the caller has to remember. Locked in by tests, not by convention:
+  - call the function the way callers normally do (no flag, no extra log call) → the log is there
+  - rollback → BOTH are lost (log and data)
 """
 
 from __future__ import annotations
@@ -33,20 +33,20 @@ def _mk(conn, title, subject="Sinh học", summary="x"):
 # ---------------------------------------------------------------- ingest_log
 
 
-def test_ingest_log_ghi_ma_KHONG_can_co_hay_ham_phu(conn):
-    """Gọi đúng cách caller thường gọi. Không tham số bật log."""
+def test_ingest_log_is_written_WITHOUT_a_flag_or_extra_call(conn):
+    """Called the way callers normally call it. No parameter to turn logging on."""
     ingest_concepts(conn, [_draft("Quang hợp")])
     assert _count(conn, "ingest_log") == 1
 
 
-def test_ingest_log_ghi_ca_khi_tao_moi(conn):
+def test_ingest_log_written_even_when_creating(conn):
     ingest_concepts(conn, [_draft("Quang hợp")])
     with conn.cursor() as cur:
         cur.execute("SELECT decision FROM ks.ingest_log")
         assert cur.fetchone()[0] == "created"
 
 
-def test_ingest_log_ghi_ca_khi_gop(conn):
+def test_ingest_log_written_even_when_merging(conn):
     ingest_concepts(conn, [_draft("Quang hợp")])
     ingest_concepts(conn, [_draft("Quang hợp")])
     with conn.cursor() as cur:
@@ -54,7 +54,7 @@ def test_ingest_log_ghi_ca_khi_gop(conn):
         assert {r[0] for r in cur.fetchall()} == {"created", "merged"}
 
 
-def test_ingest_log_luu_candidate_set_va_nguong(conn):
+def test_ingest_log_stores_the_candidate_set_and_threshold(conn):
     _mk(conn, "Định luật Ohm", "Vật lý", "U = I*R")
     ingest_concepts(conn, [_draft("Định luật Newton 2", "Vật lý", "F = m*a")])
     with conn.cursor() as cur:
@@ -68,13 +68,13 @@ def test_ingest_log_luu_candidate_set_va_nguong(conn):
     assert candidates[0]["title"] == "Định luật Ohm"
 
 
-def test_ingest_log_moi_draft_mot_dong(conn):
+def test_ingest_log_one_row_per_draft(conn):
     ingest_concepts(conn, [_draft("Quang hợp"), _draft("Chiến tranh Lạnh", "Lịch sử")])
     assert _count(conn, "ingest_log") == 2
 
 
-def test_rollback_mat_CA_HAI_log_lan_data(conn):
-    """Cùng transaction — không có chuyện log sống sót còn data thì không."""
+def test_rollback_loses_BOTH_log_and_data(conn):
+    """Same transaction — the log can never survive without the data."""
     ingest_concepts(conn, [_draft("Quang hợp")])
     assert _count(conn, "nodes") == 1 and _count(conn, "ingest_log") == 1
     conn.rollback()
@@ -84,7 +84,7 @@ def test_rollback_mat_CA_HAI_log_lan_data(conn):
 # ---------------------------------------------------------------- suggestion_run
 
 
-def test_suggestion_run_ghi_candidate_set(conn):
+def test_suggestion_run_records_the_candidate_set(conn):
     a = _mk(conn, "Quang hợp")
     b = _mk(conn, "Hô hấp tế bào")
     suggest_edges(conn, a, FakeProvider("[]"))
@@ -95,8 +95,8 @@ def test_suggestion_run_ghi_candidate_set(conn):
     assert (outcome, provider, model) == ("ok", "fake", "fake-1")
 
 
-def test_suggestion_run_ghi_ca_khi_llm_loi(conn):
-    """Đây là lý do suggest_edges không raise: lần thất bại cũng phải đo được."""
+def test_suggestion_run_recorded_even_on_llm_error(conn):
+    """This is why suggest_edges does not raise: failures must be measurable too."""
     from ks.llm import LLMTransientError
     a = _mk(conn, "Quang hợp")
     _mk(conn, "Hô hấp tế bào")
@@ -108,13 +108,13 @@ def test_suggestion_run_ghi_ca_khi_llm_loi(conn):
     assert "503" in error
 
 
-def test_suggestion_run_ghi_ca_khi_khong_co_candidate(conn):
+def test_suggestion_run_recorded_even_without_candidates(conn):
     a = _mk(conn, "Quang hợp")
     suggest_edges(conn, a, FakeProvider())
     assert _count(conn, "edge_suggestion_run", "outcome = 'no_candidates'") == 1
 
 
-def test_rollback_mat_ca_canh_lan_suggestion_run(conn):
+def test_rollback_loses_both_edges_and_suggestion_run(conn):
     a = _mk(conn, "Quang hợp")
     _mk(conn, "Hô hấp tế bào")
     suggest_edges(conn, a, FakeProvider(
@@ -127,7 +127,7 @@ def test_rollback_mat_ca_canh_lan_suggestion_run(conn):
 # ---------------------------------------------------------------- decision_log
 
 
-def test_approve_reject_edit_deu_ghi_decision_log(conn):
+def test_approve_reject_edit_all_write_the_decision_log(conn):
     a = _mk(conn, "Quang hợp")
     _mk(conn, "Hô hấp tế bào")
     _mk(conn, "Chiến tranh Lạnh", "Lịch sử")
@@ -142,8 +142,8 @@ def test_approve_reject_edit_deu_ghi_decision_log(conn):
         assert dict(cur.fetchall()) == {"approved": 1, "rejected": 1}
 
 
-def test_edit_ghi_lai_relation_type_cu(conn):
-    """Đo LLM đoán sai loại quan hệ ở đâu."""
+def test_edit_records_the_old_relation_type(conn):
+    """Measures where the LLM gets the relation type wrong."""
     a = _mk(conn, "Quang hợp")
     _mk(conn, "Hô hấp tế bào")
     run = suggest_edges(conn, a, FakeProvider(
@@ -157,8 +157,8 @@ def test_edit_ghi_lai_relation_type_cu(conn):
         assert cur.fetchone() == ("related", "contrasts_with")
 
 
-def test_add_edge_tay_ma_fulltext_KHONG_de_xuat_duoc(conn):
-    """CHỈ SỐ QUAN TRỌNG NHẤT: căn cứ duy nhất để sau này quyết pgvector."""
+def test_manual_edge_that_fulltext_could_NOT_suggest(conn):
+    """THE MOST IMPORTANT METRIC: the only evidence for a future pgvector decision."""
     a = _mk(conn, "Quang hợp", "Sinh học", "Cây dùng ánh sáng.")
     b = _mk(conn, "Chiến tranh Lạnh", "Lịch sử", "Đối đầu Mỹ - Liên Xô.")
     add_edge(conn, a, b, RelationType.RELATED)
@@ -167,17 +167,17 @@ def test_add_edge_tay_ma_fulltext_KHONG_de_xuat_duoc(conn):
     assert stats(conn)["manual_add_missed_by_fulltext"] == 1
 
 
-def test_add_edge_tay_nhung_fulltext_CO_de_xuat_thi_khong_tinh_la_bo_sot(conn):
+def test_manual_edge_that_fulltext_DID_suggest_is_not_counted_as_missed(conn):
     a = _mk(conn, "Quang hợp")
     b = _mk(conn, "Hô hấp tế bào")
-    suggest_edges(conn, a, FakeProvider("[]"))  # b lọt vào candidate set nhưng LLM bỏ qua
+    suggest_edges(conn, a, FakeProvider("[]"))  # b made it into the candidate set but the LLM skipped it
     add_edge(conn, a, b, RelationType.RELATED)
     assert stats(conn)["manual_add_missed_by_fulltext"] == 0
     assert _count(conn, "edge_decision_log",
                   "decision = 'manual_add' AND was_in_candidate_set = true") == 1
 
 
-def test_rollback_mat_ca_decision_log(conn):
+def test_rollback_loses_the_decision_log_too(conn):
     a = _mk(conn, "Quang hợp")
     b = _mk(conn, "Hô hấp tế bào")
     add_edge(conn, a, b, RelationType.RELATED)
@@ -186,7 +186,7 @@ def test_rollback_mat_ca_decision_log(conn):
     assert _count(conn, "edge_decision_log") == 0
 
 
-def test_stats_tong_hop_du_cac_muc(conn):
+def test_stats_covers_every_item(conn):
     a = _mk(conn, "Quang hợp")
     b = _mk(conn, "Hô hấp tế bào")
     add_edge(conn, a, b, RelationType.RELATED)

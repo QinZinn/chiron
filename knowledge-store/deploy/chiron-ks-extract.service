@@ -1,8 +1,8 @@
-# Job rút khái niệm từ transcript. CẦN ĐỦ BỘ BIẾN LLM (DeepSeek).
-# Type=oneshot — scheduler là việc của systemd, không nhét vào code module.
+# Job that extracts concepts from transcripts. NEEDS THE FULL SET OF LLM VARIABLES (DeepSeek).
+# Type=oneshot — scheduling is systemd's job, not something to stuff into module code.
 
 [Unit]
-Description=Chiron Knowledge Store — rút khái niệm từ transcript
+Description=Chiron Knowledge Store — extract concepts from transcripts
 After=chiron-ks-postgres.service
 Requires=chiron-ks-postgres.service
 

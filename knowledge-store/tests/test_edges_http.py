@@ -1,4 +1,4 @@
-"""GET /edges: chỉ cạnh approved, resolve merge đúng một bước như GET /nodes."""
+"""GET /edges: approved edges only, merges resolved exactly one step as in GET /nodes."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 
 from ks.http_app import create_app
 
-TOKEN = "token-thật-để-test"
+TOKEN = "real-test-token"
 
 
 @pytest.fixture
@@ -57,7 +57,7 @@ def _edges(client, query=""):
     return resp.get_json()["edges"]
 
 
-def test_edges_chi_tra_canh_approved(client):
+def test_edges_returns_only_approved_edges(client):
     a, b, c, d = (_node(t) for t in ("Quang hợp", "Pha sáng", "Pha tối", "Hô hấp"))
     _edge(a, b, "prerequisite", "approved")
     _edge(a, c, "related", "pending")
@@ -67,27 +67,27 @@ def test_edges_chi_tra_canh_approved(client):
     assert edges[0]["symmetric"] is False
 
 
-def test_edges_quan_he_doi_xung_duoc_danh_dau(client):
+def test_edges_symmetric_relations_are_marked(client):
     a, b = _node("Tự dưỡng"), _node("Dị dưỡng")
     _edge(a, b, "contrasts_with")
     assert _edges(client)[0]["symmetric"] is True
 
 
-def test_edges_resolve_merge_mot_buoc_va_bo_vong_va_gop_trung(client):
+def test_edges_resolve_merges_one_step_drop_loops_and_collapse_duplicates(client):
     a, a2, b, c = (_node(t) for t in ("Quang hợp", "Quang hợp (bản trùng)", "Pha sáng", "Diệp lục"))
     _edge(a, b)          # A → B
-    _edge(a2, b)         # A2 → B, sau khi A2 merge vào A thì trùng cạnh trên
-    _edge(a2, a, "related")  # A2 → A, sau merge thành A → A: bỏ
-    _edge(c, a2, "related")  # C → A2, sau merge thành C → A
+    _edge(a2, b)         # A2 → B: once A2 is merged into A, this duplicates the edge above
+    _edge(a2, a, "related")  # A2 → A: after the merge it becomes A → A: dropped
+    _edge(c, a2, "related")  # C → A2: after the merge it becomes C → A
     _sql("UPDATE ks.nodes SET merged_into_id = %s WHERE id = %s", (a, a2))
     got = sorted((e["from"], e["to"], e["relation_type"]) for e in _edges(client))
     assert got == sorted([(str(a), str(b), "prerequisite"), (str(c), str(a), "related")])
-    # Mọi id trong cạnh đều là id mà GET /nodes trả.
+    # Every id in an edge is an id GET /nodes returns.
     node_ids = {n["id"] for n in client.get("/nodes?limit=500", headers=_auth()).get_json()["nodes"]}
     assert {x for e in _edges(client) for x in (e["from"], e["to"])} <= node_ids
 
 
-def test_edges_loc_theo_node_ap_len_id_da_resolve(client):
+def test_edges_node_filter_applies_to_resolved_ids(client):
     a, a2, b, c = (_node(t) for t in ("A", "A trùng", "B", "C"))
     _edge(a2, b)
     _edge(b, c)
@@ -96,7 +96,7 @@ def test_edges_loc_theo_node_ap_len_id_da_resolve(client):
     assert got == [(str(a), str(b))]
 
 
-def test_edges_tham_so_sai_thi_400(client):
+def test_edges_bad_parameters_give_400(client):
     assert client.get("/edges?limit=0", headers=_auth()).status_code == 400
     assert client.get("/edges?limit=abc", headers=_auth()).status_code == 400
     assert client.get("/edges?limit=999999", headers=_auth()).status_code == 400
@@ -104,9 +104,9 @@ def test_edges_tham_so_sai_thi_400(client):
     assert r.status_code == 400 and r.get_json()["error"] == "invalid_node_id"
 
 
-def test_edges_can_token(client):
+def test_edges_needs_a_token(client):
     assert client.get("/edges").status_code == 403
 
 
-def test_edges_rong_thi_tra_mang_rong(client):
+def test_edges_empty_returns_an_empty_array(client):
     assert _edges(client) == []

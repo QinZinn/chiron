@@ -64,7 +64,7 @@ export function PageHeader({ title, after, children, line = true }: { title: Rea
     <header className={`hdr${line ? ' hdr-line' : ''}`}>
       <button
         className="icon-btn"
-        title={settings.sidebarCollapsed ? 'Mở rộng thanh bên' : 'Thu gọn thanh bên'}
+        title={settings.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         onClick={() => updateSettings({ sidebarCollapsed: !settings.sidebarCollapsed })}
       >
         <i className="ph ph-sidebar-simple" />
@@ -78,7 +78,7 @@ export function PageHeader({ title, after, children, line = true }: { title: Rea
 
 // ─────────────────────────────────────────────────────────────── state panels
 
-export function Loading({ label = 'Đang tải…' }: { label?: string }) {
+export function Loading({ label = 'Loading…' }: { label?: string }) {
   return (
     <div className="loading">
       <span className="spin" />
@@ -88,17 +88,17 @@ export function Loading({ label = 'Đang tải…' }: { label?: string }) {
 }
 
 function hintFor(err: ApiError): ReactNode {
-  if (err.kind === 'not_configured') return <>Điền giá trị trong <code>frontend/.env</code> (xem <code>.env.example</code>) rồi khởi động lại <code>npm run dev</code>.</>;
+  if (err.kind === 'not_configured') return <>Fill in the value in <code>frontend/.env</code> (see <code>.env.example</code>) and restart <code>npm run dev</code>.</>;
   if (err.kind === 'unreachable' || err.kind === 'timeout') {
     switch (err.service) {
       case 'Mnemosyne':
-        return <>Kiểm tra Mnemosyne đang chạy ở <code>{config.mnemosyneUrl}</code>. Nếu nó đang chạy mà vẫn lỗi, có thể CORS chặn origin hiện tại — frontend phải mở ở cổng 5173 hoặc 4173.</>;
+        return <>Check that Mnemosyne is running at <code>{config.mnemosyneUrl}</code>. If it is and this still fails, CORS may be blocking this origin — the frontend must be served on port 5173 or 4173.</>;
       case 'Knowledge Store':
-        return <>Kiểm tra KS đang chạy (<code>ks serve</code>) và <code>CHIRON_KS_URL</code> trỏ đúng cổng <code>KS_HTTP_PORT</code>.</>;
+        return <>Check that the Knowledge Store is running (<code>ks serve</code>) and that <code>CHIRON_KS_URL</code> points at its <code>KS_HTTP_PORT</code>.</>;
     }
   }
   if (err.kind === 'http' && err.status === 403 && err.service === 'Knowledge Store') {
-    return <><code>CHIRON_KS_TOKEN</code> không khớp <code>KS_HTTP_TOKEN</code> của KS.</>;
+    return <><code>CHIRON_KS_TOKEN</code> does not match the Knowledge Store's <code>KS_HTTP_TOKEN</code>.</>;
   }
   return null;
 }
@@ -115,26 +115,26 @@ export function ErrorNotice({ error, onRetry, compact }: { error: unknown; onRet
     hint = hintFor(error);
     switch (error.kind) {
       case 'unreachable':
-        title = `Không kết nối được ${error.service}`;
+        title = `Cannot reach ${error.service}`;
         break;
       case 'timeout':
-        title = `${error.service} không phản hồi kịp`;
+        title = `${error.service} did not respond in time`;
         detail = error.message;
         icon = 'ph-hourglass-medium';
         break;
       case 'not_configured':
-        title = `Chưa cấu hình ${error.service}`;
+        title = `${error.service} is not configured`;
         detail = error.message;
         tone = 'notice-warn';
         icon = 'ph-gear-six';
         break;
       default:
-        title = `${error.service} báo lỗi${error.status ? ` (HTTP ${error.status})` : ''}`;
+        title = `${error.service} returned an error${error.status ? ` (HTTP ${error.status})` : ''}`;
         detail = error.message;
         icon = 'ph-warning-circle';
     }
   } else {
-    title = 'Có lỗi không mong đợi';
+    title = 'Something unexpected went wrong';
     detail = error instanceof Error ? error.message : String(error);
     icon = 'ph-warning-circle';
   }
@@ -148,7 +148,7 @@ export function ErrorNotice({ error, onRetry, compact }: { error: unknown; onRet
         {hint && !compact && <div>{hint}</div>}
         {onRetry && (
           <button className="btn btn-soft" onClick={onRetry}>
-            <i className="ph ph-arrow-clockwise" />Thử lại
+            <i className="ph ph-arrow-clockwise" />Retry
           </button>
         )}
       </div>
@@ -159,7 +159,7 @@ export function ErrorNotice({ error, onRetry, compact }: { error: unknown; onRet
 export function ComingSoon({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="soon-hero">
-      <span className="tag tag-pur">Sắp có</span>
+      <span className="tag tag-pur">Coming soon</span>
       <h3>{title}</h3>
       {children}
     </div>
@@ -168,7 +168,7 @@ export function ComingSoon({ title, children }: { title: string; children: React
 
 /**
  * Shown wherever a learner's own data would go when this browser holds no
- * usable token. Separate from ErrorNotice on purpose: "chưa đăng nhập" is a
+ * usable token. Separate from ErrorNotice on purpose: "not signed in" is a
  * thing the learner can fix in ten seconds, not a failure report.
  */
 export function NeedToken() {
@@ -177,23 +177,23 @@ export function NeedToken() {
     return <ErrorNotice error={new ApiError({ kind: 'unreachable', service: 'Mnemosyne', message: '' })} />;
   }
   // A token in hand but /me still in flight is neither "logged in" nor
-  // "logged out" — saying "chưa đăng nhập" here would blame the learner for a
+  // "logged out" — saying "not signed in" here would blame the learner for a
   // request that has not finished.
-  if (token && userLoading) return <Loading label="Đang kiểm tra token…" />;
+  if (token && userLoading) return <Loading label="Checking token…" />;
   const rejected = userError instanceof ApiError && userError.kind === 'unauthenticated';
   return (
     <div className={`notice ${rejected ? 'notice-warn' : 'notice-info'}`}>
       <i className={`ph ${rejected ? 'ph-key' : 'ph-user-circle'}`} />
       <div>
-        <div className="notice-title">{rejected ? 'Token không được chấp nhận' : 'Chưa đăng nhập Mnemosyne'}</div>
+        <div className="notice-title">{rejected ? 'Token not accepted' : 'Not signed in to Mnemosyne'}</div>
         <div>
           {rejected
-            ? <>Mnemosyne từ chối token đang lưu — có thể nó đã bị thu hồi. Dán token khác trong Cài đặt.</>
-            : <>Dán token của bạn trong Cài đặt. Chưa có thì cấp bằng <code>cargo run -p backend -- create-user &lt;email&gt;</code> trong <code>mnemosyne/</code>.</>}
+            ? <>Mnemosyne rejected the saved token — it may have been revoked. Paste another one in Settings.</>
+            : <>Paste your token in Settings. No token yet? Create one with <code>cargo run -p backend -- create-user &lt;email&gt;</code> in <code>mnemosyne/</code>.</>}
         </div>
         {userError != null && !rejected && <div style={{ marginTop: 6 }}><ErrorNotice error={userError} compact /></div>}
         <button className="btn btn-soft" onClick={() => navigate({ view: 'settings' })}>
-          <i className="ph ph-gear-six" />{token ? 'Mở Cài đặt' : 'Dán token'}
+          <i className="ph ph-gear-six" />{token ? 'Open Settings' : 'Paste token'}
         </button>
       </div>
     </div>
@@ -228,10 +228,10 @@ export class AreaBoundary extends Component<{ children: ReactNode; area: string 
           <div className="notice notice-err" role="alert">
             <i className="ph ph-bug" />
             <div>
-              <div className="notice-title">Khu vực “{this.props.area}” gặp lỗi hiển thị</div>
+              <div className="notice-title">The “{this.props.area}” area failed to render</div>
               <div>{this.state.error.message}</div>
               <button className="btn btn-soft" onClick={() => this.setState({ error: null })}>
-                <i className="ph ph-arrow-clockwise" />Tải lại khu vực này
+                <i className="ph ph-arrow-clockwise" />Reload this area
               </button>
             </div>
           </div>

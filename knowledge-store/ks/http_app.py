@@ -1,7 +1,7 @@
-"""HTTP layer. Consumer duy nhất hiện tại là Mnemosyne (Rust/Actix) — runtime
-KHÁC, nên bắt buộc qua HTTP chứ không in-process được.
+"""HTTP layer. The only consumer today is Mnemosyne (Rust/Actix) — a DIFFERENT
+runtime, so it has to go over HTTP; in-process is not an option.
 
-Hai route ghi (/transcripts, /ingest) KHÔNG chạm LLM. Extraction là job riêng.
+The two write routes (/transcripts, /ingest) do NOT touch the LLM. Extraction is a separate job.
 """
 
 from __future__ import annotations
@@ -27,15 +27,15 @@ from ks.transcripts import save_transcript
 
 
 def _authorized(req) -> bool:
-    """So token trên BYTES.
+    """Compare tokens as BYTES.
 
-    BUG ĐÃ GẶP: hmac.compare_digest ném TypeError (không trả False) khi chuỗi
-    có ký tự non-ASCII → header dị dạng làm crash 500 thay vì 403. `.encode`
-    không bao giờ hỏng với str, nên so trên bytes là chặn tận gốc.
+    A BUG WE HIT: hmac.compare_digest raises TypeError (rather than returning False) when a string
+    has non-ASCII characters → a malformed header crashed with 500 instead of 403. `.encode`
+    never fails on a str, so comparing bytes stops it at the root.
     """
     expected = os.environ.get(settings.HTTP_TOKEN_ENV, "")
     if not expected:
-        return False  # chưa cấu hình token → từ chối hết, không mở toang
+        return False  # no token configured → reject everything, never wide open
 
     header = req.headers.get("Authorization", "")
     prefix = "Bearer "
@@ -46,21 +46,21 @@ def _authorized(req) -> bool:
 
 
 def validate_token_config(env: dict[str, str] | None = None) -> str:
-    """Kiểm tra KS_HTTP_TOKEN lúc khởi động. Sai → chết ngay, không âm thầm 403 mãi.
+    """Check KS_HTTP_TOKEN at startup. Wrong → die at once, not silently 403 forever.
 
-    ĐO ĐƯỢC BẰNG CURL: token non-ASCII KHÔNG BAO GIỜ xác thực được. WSGI giải mã
-    giá trị header bằng latin-1, nên byte UTF-8 của token tới tay ứng dụng dưới
-    dạng mojibake và không bao giờ khớp. Đây là lỗi cấu hình, không phải lỗi client.
+    MEASURED WITH CURL: a non-ASCII token can NEVER authenticate. WSGI decodes
+    header values as latin-1, so the token's UTF-8 bytes reach the application as
+    mojibake and never match. That is a configuration error, not a client error.
     """
     env = os.environ if env is None else env
     token = env.get(settings.HTTP_TOKEN_ENV, "")
     if not token:
-        raise RuntimeError(f"Thiếu biến môi trường {settings.HTTP_TOKEN_ENV}")
+        raise RuntimeError(f"Missing environment variable {settings.HTTP_TOKEN_ENV}")
     if not token.isascii():
         raise RuntimeError(
-            f"{settings.HTTP_TOKEN_ENV} phải là ASCII. Header HTTP được WSGI giải mã"
-            " bằng latin-1 nên token non-ASCII sẽ không bao giờ khớp — mọi request"
-            " sẽ 403 vĩnh viễn."
+            f"{settings.HTTP_TOKEN_ENV} must be ASCII. WSGI decodes HTTP headers"
+            " as latin-1, so a non-ASCII token will never match — every request"
+            " would be 403 forever."
         )
     return token
 
@@ -69,7 +69,7 @@ def require_token(view):
     @wraps(view)
     def wrapper(*args, **kwargs):
         if not _authorized(request):
-            return jsonify({"error": "forbidden", "detail": "token sai hoặc thiếu"}), 403
+            return jsonify({"error": "forbidden", "detail": "wrong or missing token"}), 403
         return view(*args, **kwargs)
 
     return wrapper
@@ -80,23 +80,23 @@ def create_app(
     ocr_factory: Callable[[], OcrClient] = client_from_env,
     provider_factory: Callable[[], LLMProvider] = provider_from_env,
 ) -> Flask:
-    """Hai factory để test thay OCR và LLM bằng bản giả; mặc định đọc env.
+    """Two factories so tests can swap OCR and the LLM for fakes; by default they read env.
 
-    Gọi factory mỗi request chứ không một lần lúc khởi động: thiếu cấu hình OCR
-    hay LLM chỉ làm hỏng đúng route cần nó, KS vẫn khởi động và phục vụ phần còn lại.
+    Called per request rather than once at startup: missing OCR or LLM configuration
+    only breaks the route that needs it; KS still starts and serves everything else.
     """
     app = Flask(__name__)
-    # Upload ghi chép đi qua đây trước khi tới service OCR.
+    # Note uploads pass through here before reaching the OCR service.
     app.config["MAX_CONTENT_LENGTH"] = settings.MAX_NOTE_UPLOAD_BYTES
 
     # ------------------------------------------------------------ health
 
     @app.get("/health")
     def health():
-        """Liveness thuần: KHÔNG cần auth, KHÔNG chạm DB.
+        """Pure liveness: NO auth, NO DB.
 
-        DB chết mà tiến trình sống thì /health vẫn 200 — đúng ý: trạng thái DB
-        được phản ánh ở ok=false của /transcripts và 503 của /ingest.
+        If the DB is down while the process is alive, /health still returns 200 — intended: DB state
+        shows up as ok=false from /transcripts and 503 from /ingest.
         """
         return jsonify({"status": "ok"}), 200
 
@@ -105,24 +105,24 @@ def create_app(
     @app.post("/transcripts")
     @require_token
     def post_transcripts():
-        """Chỉ ghi DB. KHÔNG tự trigger extraction, KHÔNG chạm LLM.
+        """DB write only. Does NOT trigger extraction, does NOT touch the LLM.
 
-        Idempotent thật theo session_ref — retry cùng session_ref an toàn tuyệt đối.
-        ok=false kèm HTTP 200 nghĩa là KS sống nhưng DB chết. Đúng thiết kế,
-        không phải bug: save_transcript không bao giờ raise.
+        Truly idempotent on session_ref — retrying the same session_ref is completely safe.
+        ok=false with HTTP 200 means KS is alive but the DB is down. By design,
+        not a bug: save_transcript never raises.
         """
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            return jsonify({"error": "invalid_body", "detail": "cần một JSON object"}), 400
+            return jsonify({"error": "invalid_body", "detail": "expected a JSON object"}), 400
 
         session_ref = body.get("session_ref")
         if not isinstance(session_ref, str) or not session_ref:
             return jsonify({
                 "error": "invalid_session_ref",
-                "detail": "session_ref phải là chuỗi không rỗng",
+                "detail": "session_ref must be a non-empty string",
             }), 400
         if "content" not in body:
-            return jsonify({"error": "missing_content", "detail": "thiếu content"}), 400
+            return jsonify({"error": "missing_content", "detail": "content is missing"}), 400
 
         result = save_transcript(session_ref, body["content"])
         return jsonify({
@@ -136,30 +136,30 @@ def create_app(
     @app.post("/ingest")
     @require_token
     def post_ingest():
-        """All-or-nothing: một draft lỗi → cả request 400, không ghi draft nào.
+        """All-or-nothing: one bad draft → the whole request is 400 and no draft is written.
 
-        Khớp transaction của core và tránh buộc client dò lỗi theo index.
+        Matches the core's transaction and spares clients from hunting errors by index.
 
-        CẢNH BÁO: idempotency ở đây là fuzzy match theo similarity, KHÔNG phải
-        khoá định danh. Retry an toàn chỉ khi giữ NGUYÊN VĂN title.
+        WARNING: idempotency here is a fuzzy similarity match, NOT an identity
+        key. Retrying is only safe with the title kept VERBATIM.
         """
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            return jsonify({"error": "invalid_body", "detail": "cần một JSON object"}), 400
+            return jsonify({"error": "invalid_body", "detail": "expected a JSON object"}), 400
         raw_drafts = body.get("drafts")
         if not isinstance(raw_drafts, list):
-            return jsonify({"error": "invalid_drafts", "detail": "drafts phải là mảng"}), 400
+            return jsonify({"error": "invalid_drafts", "detail": "drafts must be an array"}), 400
 
         drafts: list[ConceptDraft] = []
         for i, raw in enumerate(raw_drafts):
             if not isinstance(raw, dict):
                 return jsonify({
                     "error": "invalid_draft",
-                    "detail": f"draft[{i}] không phải object",
+                    "detail": f"draft[{i}] is not an object",
                 }), 400
             try:
-                # SourceModule(value) convert và validate cùng một thao tác —
-                # không tách bước validate riêng.
+                # SourceModule(value) converts and validates in one step —
+                # no separate validation step.
                 draft = ConceptDraft(
                     title=raw["title"],
                     subject=raw["subject"],
@@ -169,7 +169,7 @@ def create_app(
             except KeyError as exc:
                 return jsonify({
                     "error": "invalid_draft",
-                    "detail": f"draft[{i}] thiếu field {exc.args[0]}",
+                    "detail": f"draft[{i}] is missing field {exc.args[0]}",
                 }), 400
             except ValueError as exc:
                 return jsonify({"error": "invalid_draft", "detail": f"draft[{i}]: {exc}"}), 400
@@ -180,7 +180,7 @@ def create_app(
                 result = ingest_concepts(conn, drafts)
                 conn.commit()
         except psycopg.Error as exc:
-            # 503 chứ không phải 500 mù mờ: DB chết là tạm thời, client nên retry.
+            # 503 rather than an opaque 500: a down DB is temporary, the client should retry.
             return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
 
         return jsonify({
@@ -203,21 +203,21 @@ def create_app(
     @app.get("/nodes")
     @require_token
     def get_nodes():
-        """Thuần đọc DB, KHÔNG chạm LLM. Không trả edges."""
+        """Pure DB read, NO LLM. Does not return edges."""
         raw_limit = request.args.get("limit")
         limit = settings.DEFAULT_NODE_LIMIT
         if raw_limit is not None:
             try:
                 limit = int(raw_limit)
             except ValueError:
-                return jsonify({"error": "invalid_limit", "detail": "limit phải là số nguyên"}), 400
+                return jsonify({"error": "invalid_limit", "detail": "limit must be an integer"}), 400
             if limit < 1:
-                return jsonify({"error": "invalid_limit", "detail": "limit phải >= 1"}), 400
-            # Vượt trần → 400. KHÔNG âm thầm cắt: client phải biết mình nhận thiếu.
+                return jsonify({"error": "invalid_limit", "detail": "limit must be >= 1"}), 400
+            # Over the cap → 400. NOT silently truncated: the client must know it got less.
             if limit > settings.MAX_NODE_LIMIT:
                 return jsonify({
                     "error": "invalid_limit",
-                    "detail": f"limit tối đa là {settings.MAX_NODE_LIMIT}",
+                    "detail": f"limit is at most {settings.MAX_NODE_LIMIT}",
                 }), 400
 
         source_module = request.args.get("source_module")
@@ -254,11 +254,11 @@ def create_app(
     @app.get("/edges")
     @require_token
     def get_edges():
-        """Cạnh ĐÃ DUYỆT cho bản đồ khái niệm. Thuần đọc DB, KHÔNG chạm LLM.
+        """APPROVED edges for the concept map. Pure DB read, NO LLM.
 
-        Route riêng vì GET /nodes cố tình không trả edges. `symmetric` cho biết
-        quan hệ không có chiều (related, contrasts_with): lưu một chiều, đọc
-        như hai chiều.
+        A route of its own because GET /nodes deliberately returns no edges. `symmetric` says
+        the relation has no direction (related, contrasts_with): stored one way, read
+        as both ways.
         """
         raw_limit = request.args.get("limit")
         limit = settings.MAX_EDGE_LIMIT
@@ -266,11 +266,11 @@ def create_app(
             try:
                 limit = int(raw_limit)
             except ValueError:
-                return jsonify({"error": "invalid_limit", "detail": "limit phải là số nguyên"}), 400
+                return jsonify({"error": "invalid_limit", "detail": "limit must be an integer"}), 400
             if limit < 1 or limit > settings.MAX_EDGE_LIMIT:
                 return jsonify({
                     "error": "invalid_limit",
-                    "detail": f"limit phải trong khoảng 1–{settings.MAX_EDGE_LIMIT}",
+                    "detail": f"limit must be between 1 and {settings.MAX_EDGE_LIMIT}",
                 }), 400
 
         node_id = None
@@ -281,7 +281,7 @@ def create_app(
             except ValueError:
                 return jsonify({
                     "error": "invalid_node_id",
-                    "detail": f"'{raw_node}' không phải UUID hợp lệ",
+                    "detail": f"'{raw_node}' is not a valid UUID",
                 }), 400
 
         try:
@@ -307,18 +307,18 @@ def create_app(
     @app.get("/nodes/<node_id>")
     @require_token
     def get_node(node_id: str):
-        """Một node theo id. Thuần đọc DB, KHÔNG chạm LLM.
+        """One node by id. Pure DB read, NO LLM.
 
-        Node đã merge → trả node ĐÍCH với 200 (đúng một bước), giống hệt
-        GET /nodes. Hai route đọc cùng dữ liệu không được hành xử khác nhau.
-        Hệ quả cho client: `id` trả về có thể KHÁC id đã hỏi.
+        A merged node → returns the TARGET node with 200 (exactly one step), just like
+        GET /nodes. Two routes reading the same data must not behave differently.
+        Consequence for clients: the returned `id` may DIFFER from the id requested.
         """
         try:
             parsed = UUID(node_id)
         except ValueError:
             return jsonify({
                 "error": "invalid_node_id",
-                "detail": f"'{node_id}' không phải UUID hợp lệ",
+                "detail": f"'{node_id}' is not a valid UUID",
             }), 400
 
         try:
@@ -330,7 +330,7 @@ def create_app(
         if node is None:
             return jsonify({
                 "error": "node_not_found",
-                "detail": f"không có node {node_id}",
+                "detail": f"no node {node_id}",
             }), 404
 
         return jsonify({
@@ -346,26 +346,26 @@ def create_app(
         try:
             return UUID(raw), None
         except ValueError:
-            return None, (jsonify({"error": f"invalid_{what}_id", "detail": f"'{raw}' không phải UUID hợp lệ"}), 400)
+            return None, (jsonify({"error": f"invalid_{what}_id", "detail": f"'{raw}' is not a valid UUID"}), 400)
 
     @app.errorhandler(413)
     def _too_large(_exc):
         mb = settings.MAX_NOTE_UPLOAD_BYTES // (1024 * 1024)
-        return jsonify({"error": "too_large", "detail": f"Tổng dung lượng tối đa {mb} MB"}), 413
+        return jsonify({"error": "too_large", "detail": f"Total size is at most {mb} MB"}), 413
 
     @app.post("/notes")
     @require_token
     def post_note():
-        """multipart: files (ảnh/PDF, nhiều tệp) + title (tuỳ chọn). OCR xong trả note 'draft'.
+        """multipart: files (images/PDF, several files) + title (optional). After OCR, returns a 'draft' note.
 
-        Chưa rút khái niệm ở bước này: người học phải xem và sửa văn bản OCR trước.
+        No concepts are extracted at this step: the learner must review and correct the OCR text first.
         """
         uploads = [
-            Upload(f.filename or "tệp", f.mimetype or "application/octet-stream", f.read())
+            Upload(f.filename or "file", f.mimetype or "application/octet-stream", f.read())
             for f in request.files.getlist("files")
         ]
         if not uploads:
-            return jsonify({"error": "no_files", "detail": "Chưa có tệp nào"}), 400
+            return jsonify({"error": "no_files", "detail": "No files uploaded"}), 400
         try:
             ocr = ocr_factory()
             with connect() as conn:
@@ -383,7 +383,7 @@ def create_app(
         try:
             limit = min(int(request.args.get("limit", "50")), settings.MAX_NOTE_LIMIT)
         except ValueError:
-            return jsonify({"error": "invalid_limit", "detail": "limit phải là số nguyên"}), 400
+            return jsonify({"error": "invalid_limit", "detail": "limit must be an integer"}), 400
         try:
             with connect() as conn:
                 items = notes_mod.list_notes(conn, limit=max(1, limit))
@@ -415,10 +415,10 @@ def create_app(
             return err
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            return jsonify({"error": "invalid_body", "detail": "cần một JSON object"}), 400
+            return jsonify({"error": "invalid_body", "detail": "expected a JSON object"}), 400
         title, text = body.get("title"), body.get("text")
         if (title is not None and not isinstance(title, str)) or (text is not None and not isinstance(text, str)):
-            return jsonify({"error": "invalid_body", "detail": "title và text phải là chuỗi"}), 400
+            return jsonify({"error": "invalid_body", "detail": "title and text must be strings"}), 400
         try:
             with connect() as conn:
                 note = notes_mod.update(conn, parsed, title=title, text=text)
@@ -432,7 +432,7 @@ def create_app(
     @app.post("/notes/<note_id>/extract")
     @require_token
     def post_note_extract(note_id: str):
-        """Rút khái niệm từ văn bản đã sửa. Kết quả CHỜ DUYỆT, chưa vào ks.nodes."""
+        """Extract concepts from the corrected text. Results AWAIT REVIEW; nothing enters ks.nodes yet."""
         parsed, err = _uuid_or_400(note_id, "note")
         if err:
             return err
@@ -452,12 +452,12 @@ def create_app(
         except psycopg.Error as exc:
             return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
         if not result.ok:
-            # Lỗi LLM đã được ghi vào transcript (last_error); báo nguyên nhân để
-            # người học biết thử lại có ích hay không.
+            # The LLM error is already recorded on the transcript (last_error); report the cause so
+            # the learner knows whether retrying will help.
             return jsonify({"error": "extraction_failed", "detail": result.error, "concepts": concepts}), 502
         return jsonify({"extracted": len(result.concepts), "concepts": concepts}), 200
 
-    # ------------------------------------------------------------ duyệt khái niệm
+    # ------------------------------------------------------------ concept review
 
     def _concept_dict(c) -> dict:
         return {
@@ -474,7 +474,7 @@ def create_app(
     @app.get("/extracted")
     @require_token
     def get_extracted():
-        """Hàng chờ duyệt — cả khái niệm từ phiên học lẫn từ ghi chép scan."""
+        """The review queue — concepts from study sessions and from scanned notes alike."""
         status = request.args.get("status", "pending_review")
         if status not in ("pending_review", "accepted", "discarded"):
             return jsonify({"error": "invalid_status", "detail": status}), 400
@@ -493,10 +493,10 @@ def create_app(
             return err
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
-            return jsonify({"error": "invalid_body", "detail": "cần một JSON object"}), 400
+            return jsonify({"error": "invalid_body", "detail": "expected a JSON object"}), 400
         fields = {k: body.get(k) for k in ("title", "subject", "summary")}
         if any(v is not None and not isinstance(v, str) for v in fields.values()):
-            return jsonify({"error": "invalid_body", "detail": "title, subject, summary phải là chuỗi"}), 400
+            return jsonify({"error": "invalid_body", "detail": "title, subject and summary must be strings"}), 400
         try:
             with connect() as conn:
                 concept = confirm_mod.edit_pending(conn, parsed, **fields)
@@ -514,9 +514,9 @@ def create_app(
     @app.get("/extracted/<concept_id>/candidates")
     @require_token
     def get_candidates(concept_id: str):
-        """Node gần giống của một khái niệm, và node mà quy tắc 0.6 SẼ gộp vào.
+        """Near-duplicate nodes for a concept, and the node the 0.6 rule WOULD merge into.
 
-        Để màn duyệt hỏi người học trước khi ghi, thay vì báo "đã gộp" sau đó.
+        So the review screen asks the learner before writing, instead of reporting "merged" afterwards.
         """
         parsed, err = _uuid_or_400(concept_id, "concept")
         if err:
@@ -552,11 +552,11 @@ def create_app(
     @app.post("/extracted/<concept_id>/accept")
     @require_token
     def post_accept(concept_id: str):
-        """Ghi vào đồ thị.
+        """Write into the graph.
 
-        Không có body: quy tắc tự động (ngưỡng 0.6), như trước. Có body
-        `{"decision": "create"}` hoặc `{"decision": "merge", "node_id": …}`:
-        người học đã chọn, ngưỡng không quyết nữa.
+        No body: the automatic rule (threshold 0.6), as before. A body of
+        `{"decision": "create"}` or `{"decision": "merge", "node_id": …}`:
+        the learner has chosen, and the threshold no longer decides.
         """
         parsed, err = _uuid_or_400(concept_id, "concept")
         if err:
@@ -566,7 +566,7 @@ def create_app(
         merge_into = None
         if decision is not None:
             if decision not in ("create", "merge"):
-                return jsonify({"error": "invalid_decision", "detail": "decision phải là create hoặc merge"}), 400
+                return jsonify({"error": "invalid_decision", "detail": "decision must be create or merge"}), 400
             if decision == "merge":
                 merge_into, err = _uuid_or_400(str(body.get("node_id") or ""), "node")
                 if err:
@@ -585,8 +585,8 @@ def create_app(
             return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
         return jsonify({
             "node_id": str(item.node_id),
-            # created=False: khớp một khái niệm đã có — người học cần biết là
-            # nó đã được gộp chứ không thêm mới.
+            # created=False: matched an existing concept — the learner needs to know
+            # it was merged rather than added.
             "created": item.created,
             "candidates": [{"node_id": str(c.node_id), "title": c.title, "score": c.score} for c in item.candidates],
         }), 200
@@ -613,10 +613,10 @@ def create_app(
 
 
 def serve() -> None:
-    """Chạy server. Block vô hạn — systemd Type=simple, KHÔNG phải cron job.
+    """Run the server. Blocks forever — systemd Type=simple, NOT a cron job.
 
-    Flask dev server in cảnh báo "not for production": chấp nhận được ở quy mô
-    một người dùng, đã ghi làm nợ kỹ thuật (gunicorn/waitress nếu sau này cần).
+    Flask's dev server prints a "not for production" warning: acceptable at single-user
+    scale, recorded as technical debt (gunicorn/waitress if ever needed).
     """
     validate_token_config()
     port = int(os.environ.get(settings.HTTP_PORT_ENV, settings.DEFAULT_HTTP_PORT))

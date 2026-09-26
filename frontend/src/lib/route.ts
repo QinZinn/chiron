@@ -16,7 +16,7 @@ export function parseHash(hash: string): Route {
   switch (parts[0]) {
     case 'chat':
       // #/chat/new/<setId> opens the composer with that study set chosen —
-      // what "Học bài" on a weak point needs in order to mean something.
+      // what "Study" on a weak point needs in order to mean something.
       if (parts[1] === 'new') return { view: 'chat', newSetId: parts[2] };
       // Socratic sessions and ask/solve conversations live in different
       // tables and have different endpoints, so the URL says which it is

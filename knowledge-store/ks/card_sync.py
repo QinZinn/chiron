@@ -1,9 +1,9 @@
-"""Job đẩy node đã duyệt sang Mnemosyne thành card.
+"""Job that pushes reviewed nodes to Mnemosyne as cards.
 
-Quét node chưa có card, gọi POST /cards/from_node cho từng node, ghi kết quả
-vào ks.card_sync_log. Scheduler là việc của systemd timer, không nằm trong đây.
+Scans nodes without a card, calls POST /cards/from_node for each, and records the
+result in ks.card_sync_log. Scheduling is the systemd timer's job, not this module's.
 
-XỬ LÝ LỖI THEO `reason`, KHÔNG RETRY MÙ — xem _decide().
+ERRORS ARE HANDLED BY `reason`, NO BLIND RETRIES — see _decide().
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from ks import settings
 
 
 class CardClientError(Exception):
-    """Không gọi được Mnemosyne (mạng/cấu hình). Khác với lỗi Mnemosyne TRẢ VỀ."""
+    """Could not call Mnemosyne (network/config). Distinct from an error Mnemosyne RETURNS."""
 
 
 @dataclass(frozen=True)
@@ -47,16 +47,16 @@ class CardSyncResult:
 
 
 class CardClient(Protocol):
-    """Gọi POST /cards/from_node. Trả (http_status, body_json). Fake thay được."""
+    """Call POST /cards/from_node. Returns (http_status, body_json). Replaceable with a fake."""
 
     def create_card(self, node_id: UUID, study_set_id: UUID) -> tuple[int, Any]: ...
 
 
-# ---------------------------------------------------------------- client thật
+# ---------------------------------------------------------------- real client
 
 
 class HttpCardClient:
-    """Client HTTP thật tới Mnemosyne."""
+    """The real HTTP client for Mnemosyne."""
 
     def __init__(
         self,
@@ -71,13 +71,13 @@ class HttpCardClient:
 
     def create_card(self, node_id: UUID, study_set_id: UUID) -> tuple[int, Any]:
         url = f"{self._base_url}/cards/from_node"
-        # Cả hai field bắt buộc và đều là UUID. Gửi tên set thay cho id sẽ bị
-        # serde phía Mnemosyne từ chối bằng 400.
+        # Both fields are required and both are UUIDs. Sending the set's name instead
+        # of its id is rejected by Mnemosyne's serde with a 400.
         body = json.dumps({"study_set_id": str(study_set_id), "node_id": str(node_id)})
-        # Mnemosyne CHƯA có auth layer (simplification có chủ ý, ghi trong README
-        # của họ) — /cards/from_node không có extractor auth nào. Gửi header khi
-        # có token để sẵn sàng cho lúc họ thêm auth, còn thiếu token thì vẫn gọi
-        # được chứ không tự chặn mình.
+        # Mnemosyne has NO auth layer on this route yet (a deliberate simplification
+        # noted in its README) — /cards/from_node has no auth extractor. The header is
+        # sent when a token exists, ready for when auth is added; without a token the
+        # call still goes out rather than blocking itself.
         headers = {"content-type": "application/json"}
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
@@ -90,10 +90,10 @@ class HttpCardClient:
         except urllib.error.HTTPError as exc:
             return (exc.code, _read_json(exc.read()))
         except urllib.error.URLError as exc:
-            # Không tới được Mnemosyne — hạ tầng, không phải quyết định của node.
-            raise CardClientError(f"không gọi được Mnemosyne: {exc.reason}") from exc
+            # Mnemosyne unreachable — infrastructure, not a decision about the node.
+            raise CardClientError(f"could not reach Mnemosyne: {exc.reason}") from exc
         except TimeoutError as exc:
-            raise CardClientError("timeout khi gọi Mnemosyne") from exc
+            raise CardClientError("timed out calling Mnemosyne") from exc
 
 
 def _read_json(raw: bytes) -> Any:
@@ -108,42 +108,42 @@ def client_from_env(env: dict[str, str] | None = None) -> HttpCardClient:
     env = os.environ if env is None else env
     url = env.get(settings.MNEMOSYNE_URL_ENV, "")
     if not url:
-        raise CardClientError(f"Thiếu biến môi trường {settings.MNEMOSYNE_URL_ENV}")
+        raise CardClientError(f"Missing environment variable {settings.MNEMOSYNE_URL_ENV}")
     raw_timeout = env.get(settings.MNEMOSYNE_TIMEOUT_ENV, "")
     try:
         timeout = int(raw_timeout) if raw_timeout else settings.DEFAULT_MNEMOSYNE_TIMEOUT
     except ValueError as exc:
         raise CardClientError(
-            f"{settings.MNEMOSYNE_TIMEOUT_ENV}='{raw_timeout}' không phải số nguyên"
+            f"{settings.MNEMOSYNE_TIMEOUT_ENV}='{raw_timeout}' is not an integer"
         ) from exc
-    # Token KHÔNG bắt buộc: Mnemosyne chưa có auth layer.
+    # The token is NOT required: Mnemosyne has no auth layer here yet.
     return HttpCardClient(url, env.get(settings.MNEMOSYNE_TOKEN_ENV, ""), timeout=timeout)
 
 
 def study_set_id_from_env(env: dict[str, str] | None = None) -> UUID:
-    """Id của study set đích. Set được tạo MỘT LẦN ngoài job, id nằm trong .env.
+    """Id of the target study set. The set is created ONCE outside the job; its id lives in .env.
 
-    Không tự tạo set trong job: Mnemosyne không có unique constraint trên tên
-    set, nên mỗi lần chạy sẽ đẻ thêm một set "KS review" mới.
+    The job does not create the set itself: Mnemosyne has no unique constraint on
+    set names, so every run would add yet another "KS review" set.
     """
     env = os.environ if env is None else env
     raw = env.get(settings.CARD_SYNC_STUDY_SET_ID_ENV, "")
     if not raw:
         raise CardClientError(
-            f"Thiếu biến môi trường {settings.CARD_SYNC_STUDY_SET_ID_ENV}."
-            f" Tạo set '{settings.CARD_SYNC_STUDY_SET_NAME}' bên Mnemosyne một lần"
-            f" (POST /study_sets) rồi điền id trả về vào .env."
+            f"Missing environment variable {settings.CARD_SYNC_STUDY_SET_ID_ENV}."
+            f" Create the '{settings.CARD_SYNC_STUDY_SET_NAME}' set in Mnemosyne once"
+            f" (POST /study_sets) and put the returned id in .env."
         )
     try:
         return UUID(raw)
     except ValueError as exc:
         raise CardClientError(
-            f"{settings.CARD_SYNC_STUDY_SET_ID_ENV}='{raw}' không phải UUID."
-            f" Mnemosyne nhận study_set_id là UUID, không phải tên set."
+            f"{settings.CARD_SYNC_STUDY_SET_ID_ENV}='{raw}' is not a UUID."
+            f" Mnemosyne takes study_set_id as a UUID, not a set name."
         ) from exc
 
 
-# ---------------------------------------------------------------- bảng quyết định
+# ---------------------------------------------------------------- decision table
 
 
 def _extract_reason(body: Any) -> str | None:
@@ -155,21 +155,21 @@ def _extract_reason(body: Any) -> str | None:
 
 
 def _decide(http_status: int, body: Any, attempts: int, max_attempts: int) -> tuple[str, str | None]:
-    """(status mới, mô tả lỗi). Bảng quyết định — KHÔNG retry mù.
+    """(new status, error description). A decision table — NO blind retries.
 
-    | mã / reason              | quyết định                                    |
-    |--------------------------|-----------------------------------------------|
-    | 2xx                      | sent                                          |
-    | 409                      | sent — đã có card, không tốn LLM bên Mnemosyne |
-    | 404                      | skipped — set/node sai, retry không giúp gì    |
-    | 503                      | pending — Mnemosyne chưa nối được KS, thử lại  |
-    | 502 truncated            | failed NGAY, KHÔNG retry cùng input            |
-    | 502 provider_error       | pending tới khi cạn lượt, rồi failed           |
-    | 502 knowledge_store_error| pending — lỗi tạm thời, retry an toàn          |
+    | code / reason            | decision                                          |
+    |--------------------------|---------------------------------------------------|
+    | 2xx                      | sent                                              |
+    | 409                      | sent — card already exists, no LLM spent in Mnemosyne |
+    | 404                      | skipped — wrong set/node, retrying will not help  |
+    | 503                      | pending — Mnemosyne cannot reach KS yet, retry    |
+    | 502 truncated            | failed AT ONCE, NO retry with the same input      |
+    | 502 provider_error       | pending until attempts run out, then failed       |
+    | 502 knowledge_store_error| pending — transient error, safe to retry          |
     """
     reason = _extract_reason(body)
     detail = json.dumps(body, ensure_ascii=False) if not isinstance(body, str) else body
-    # KHÔNG rút gọn: xem COMMENT trên cột last_error trong 0004.
+    # NOT shortened: see the COMMENT on the last_error column in 0004.
     raw = f"http={http_status} reason={reason!r} body={detail}"
 
     if 200 <= http_status < 300:
@@ -182,19 +182,19 @@ def _decide(http_status: int, body: Any, attempts: int, max_attempts: int) -> tu
         return ("pending", raw)
 
     if reason == "truncated":
-        # LLM bị cắt giữa chừng — gọi lại cùng input gần như chắc chắn lặp lại y
-        # hệt. Nhánh này CHƯA từng verify qua API thật (xem NOTES.md).
+        # The LLM was cut off mid-answer — calling again with the same input almost
+        # certainly repeats it exactly. This branch has NEVER been verified against the real API (see NOTES.md).
         return ("failed", raw)
     if reason == "knowledge_store_error":
         return ("pending", raw)
     if reason == "provider_error":
         return ("failed" if attempts >= max_attempts else "pending", raw)
 
-    # reason lạ hoặc thiếu → coi như provider_error, có giới hạn.
+    # Unknown or missing reason → treated as provider_error, with a limit.
     return ("failed" if attempts >= max_attempts else "pending", raw)
 
 
-# ---------------------------------------------------------------- quét & chạy
+# ---------------------------------------------------------------- scan & run
 
 
 _PENDING_SQL = """
@@ -211,13 +211,13 @@ LIMIT %s
 def pending_nodes(
     conn: psycopg.Connection, *, limit: int = settings.CARD_SYNC_BATCH_LIMIT
 ) -> tuple[UUID, ...]:
-    """Node đã duyệt, chưa gửi xong.
+    """Reviewed nodes that have not been sent yet.
 
-    Node chỉ tồn tại trong ks.nodes SAU khi `ks.cli accept` chạy, nên có mặt ở
-    đây đã đồng nghĩa "đã duyệt". Bỏ qua node đã merge — card thuộc về node đích.
+    A node only exists in ks.nodes AFTER `ks.cli accept` runs, so being here already
+    means "reviewed". Merged nodes are skipped — the card belongs to the target node.
 
-    'failed' và 'skipped' KHÔNG được chọn lại: đó là quyết định cuối, retry
-    không giúp gì và sẽ đốt LLM bên Mnemosyne vô ích.
+    'failed' and 'skipped' are NOT picked again: those are final decisions; retrying
+    does not help and would burn Mnemosyne's LLM for nothing.
     """
     with conn.cursor() as cur:
         cur.execute(_PENDING_SQL, (limit,))
@@ -253,14 +253,14 @@ def sync_cards(
     limit: int = settings.CARD_SYNC_BATCH_LIMIT,
     max_attempts: int = settings.MAX_CARD_SYNC_ATTEMPTS,
 ) -> CardSyncResult:
-    """Đẩy từng node chưa có card sang Mnemosyne.
+    """Push each node without a card to Mnemosyne.
 
-    KHÔNG raise vì một node lỗi: mỗi node ghi kết quả riêng rồi đi tiếp. Nhưng
-    CardClientError (không gọi nổi Mnemosyne) thì dừng cả lô — gọi tiếp 99 node
-    nữa để nhận cùng một lỗi mạng là vô nghĩa, và sẽ đốt hết lượt retry của
-    chúng vì lý do không liên quan gì tới node.
+    Does NOT raise because one node failed: each node records its own result and the
+    run moves on. But CardClientError (Mnemosyne unreachable) stops the whole batch —
+    calling 99 more nodes to get the same network error is pointless, and would burn
+    their retry attempts for a reason that has nothing to do with the nodes.
 
-    Không commit — transaction thuộc về caller.
+    No commit — the transaction belongs to the caller.
     """
     if study_set_id is None:
         study_set_id = study_set_id_from_env()
@@ -271,7 +271,7 @@ def sync_cards(
         try:
             http_status, body = client.create_card(node_id, study_set_id)
         except CardClientError as exc:
-            # Hạ tầng hỏng: giữ nguyên lượt đã dùng, để tick sau thử lại.
+            # Infrastructure is down: keep the attempts already used, so the next tick retries.
             _record(conn, node_id, "pending", attempts - 1, f"CardClientError: {exc}")
             outcomes.append(
                 CardSyncOutcome(node_id, "pending", None, None, str(exc), attempts - 1)

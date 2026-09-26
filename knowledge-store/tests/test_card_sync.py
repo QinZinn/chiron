@@ -1,4 +1,4 @@
-"""card_sync: quét node, gọi Mnemosyne, xử lý lỗi THEO `reason` — không retry mù."""
+"""card_sync: scan nodes, call Mnemosyne, handle errors BY `reason` — no blind retries."""
 
 from __future__ import annotations
 
@@ -18,12 +18,12 @@ from ks.card_sync import (
 from ks.ingest import ingest_concepts
 from ks.models import ConceptDraft, SourceModule
 
-# Mnemosyne nhận study_set_id là UUID, không phải tên set.
+# Mnemosyne takes study_set_id as a UUID, not a set name.
 SET_ID = UUID("ae2c0db6-4a7e-4956-9bb9-ffe25eeaf151")
 
-# NGUYÊN VĂN body 502 Mnemosyne trả trên dây thật (họ ép được truncation qua API
-# thật bằng cách vá tạm max_tokens=200). Lưu ý KHÔNG có field "message" — bản
-# test cũ ở đây bịa ra field đó. Anchor test vào wire thật, đừng vào tưởng tượng.
+# The VERBATIM 502 body Mnemosyne returns on the real wire (they forced truncation through
+# the real API by temporarily patching max_tokens=200). Note there is NO "message" field — the
+# old test here made that field up. Anchor tests on the real wire, not on imagination.
 TRUNCATED_BODY = {
     "error": (
         "DeepSeek stopped mid-answer at its token limit (length); nothing was "
@@ -34,7 +34,7 @@ TRUNCATED_BODY = {
 
 
 class FakeCardClient:
-    """Trả sẵn (status, body) theo kịch bản. Ghi lại mọi lệnh gọi."""
+    """Returns scripted (status, body) pairs. Records every call."""
 
     def __init__(self, *responses, error: Exception | None = None):
         self._responses = list(responses)
@@ -70,42 +70,42 @@ def node(conn):
     return conn, _mk(conn, "Quang hợp", "Sinh học", "Cây dùng ánh sáng.")
 
 
-# ---------------------------------------------------------------- quét
+# ---------------------------------------------------------------- scan
 
 
-def test_node_chua_tung_gui_thi_duoc_chon(node):
+def test_never_sent_node_is_picked(node):
     conn, nid = node
     assert pending_nodes(conn) == (nid,)
 
 
-def test_node_da_sent_khong_duoc_chon_lai(node):
+def test_sent_node_is_not_picked_again(node):
     conn, nid = node
     sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((201, {"card_id": "c1"})))
     assert pending_nodes(conn) == ()
 
 
-def test_node_da_failed_KHONG_duoc_chon_lai(node):
-    """failed là quyết định cuối — retry sẽ đốt LLM bên Mnemosyne vô ích."""
+def test_failed_node_is_NOT_picked_again(node):
+    """failed is final — a retry would burn Mnemosyne's LLM for nothing."""
     conn, nid = node
     sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((502, TRUNCATED_BODY)))
     assert _log(conn, nid)[0] == "failed"
     assert pending_nodes(conn) == ()
 
 
-def test_node_da_skipped_KHONG_duoc_chon_lai(node):
+def test_skipped_node_is_NOT_picked_again(node):
     conn, nid = node
     sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((404, {"error": "set not found"})))
     assert pending_nodes(conn) == ()
 
 
-def test_node_pending_ĐUOC_chon_lai(node):
+def test_pending_node_IS_picked_again(node):
     conn, nid = node
-    sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((503, {"error": "KS chưa cấu hình"})))
+    sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((503, {"error": "KS not configured"})))
     assert pending_nodes(conn) == (nid,)
 
 
-def test_node_da_merge_bi_bo_qua(conn):
-    """Card thuộc về node đích, không phải node đã chết."""
+def test_merged_node_is_skipped(conn):
+    """The card belongs to the target node, not to the node that is gone."""
     a = _mk(conn, "Quang hợp", "Sinh học")
     b = _mk(conn, "Chiến tranh Lạnh", "Lịch sử")
     with conn.cursor() as cur:
@@ -113,43 +113,43 @@ def test_node_da_merge_bi_bo_qua(conn):
     assert pending_nodes(conn) == (b,)
 
 
-def test_ton_trong_limit(conn):
+def test_respects_limit(conn):
     for t in ("Quang hợp", "Chiến tranh Lạnh", "Phương trình bậc hai"):
         _mk(conn, t, t)
     assert len(pending_nodes(conn, limit=2)) == 2
 
 
-# ---------------------------------------------------------------- bảng quyết định
+# ---------------------------------------------------------------- decision table
 
 
 @pytest.mark.parametrize(
-    "http_status, body, mong_doi",
+    "http_status, body, expected",
     [
         (200, {"card_id": "c1"}, "sent"),
         (201, {"card_id": "c1"}, "sent"),
-        # 409 KHÔNG phải lỗi: đã có card, Mnemosyne xác nhận không tốn LLM.
-        (409, {"error": "card đã tồn tại"}, "sent"),
-        # 404: set hoặc node sai — dữ liệu hỏng, retry không giúp gì.
+        # 409 is NOT an error: the card exists; Mnemosyne confirms no LLM was spent.
+        (409, {"error": "card already exists"}, "sent"),
+        # 404: wrong set or node — bad data, retrying will not help.
         (404, {"error": "study set not found"}, "skipped"),
-        # 503: Mnemosyne chưa nối được KS — lỗi phía họ, thử lại sau.
+        # 503: Mnemosyne cannot reach KS yet — their side's error, try again later.
         (503, {"error": "knowledge store not configured"}, "pending"),
-        # 502 + truncated: KHÔNG retry cùng input.
+        # 502 + truncated: NO retry with the same input.
         (502, TRUNCATED_BODY, "failed"),
-        # 502 + knowledge_store_error: an toàn để retry.
-        (502, {"reason": "knowledge_store_error", "message": "GET /nodes lỗi"}, "pending"),
-        # 502 + provider_error: retry có giới hạn, lần đầu vẫn pending.
+        # 502 + knowledge_store_error: safe to retry.
+        (502, {"reason": "knowledge_store_error", "message": "GET /nodes failed"}, "pending"),
+        # 502 + provider_error: limited retries; the first time it is still pending.
         (502, {"reason": "provider_error", "message": "network"}, "pending"),
     ],
 )
-def test_bang_quyet_dinh_theo_reason(node, http_status, body, mong_doi):
+def test_decision_table_by_reason(node, http_status, body, expected):
     conn, nid = node
     result = sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((http_status, body)))
-    assert result.outcomes[0].status == mong_doi
-    assert _log(conn, nid)[0] == mong_doi
+    assert result.outcomes[0].status == expected
+    assert _log(conn, nid)[0] == expected
 
 
-def test_provider_error_can_luot_thi_thanh_failed(node):
-    """Retry CÓ GIỚI HẠN — không phải retry lũy tiến mù."""
+def test_provider_error_out_of_attempts_becomes_failed(node):
+    """LIMITED retries — not blind escalating retries."""
     conn, nid = node
     body = (502, {"reason": "provider_error", "message": "network"})
     for _ in range(settings.MAX_CARD_SYNC_ATTEMPTS):
@@ -159,17 +159,17 @@ def test_provider_error_can_luot_thi_thanh_failed(node):
     assert pending_nodes(conn) == ()
 
 
-def test_truncated_failed_NGAY_o_lan_dau_khong_dung_het_luot(node):
-    """Khác provider_error: truncated không được hưởng lượt retry nào."""
+def test_truncated_fails_AT_ONCE_on_the_first_try_without_using_up_attempts(node):
+    """Unlike provider_error: truncated gets no retries at all."""
     conn, nid = node
     sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((502, TRUNCATED_BODY)))
     status, attempts, _, _ = _log(conn, nid)
     assert status == "failed"
-    assert attempts == 1, "truncated phải chết ở lần thử ĐẦU TIÊN"
+    assert attempts == 1, "truncated must fail on the FIRST attempt"
 
 
-def test_knowledge_store_error_retry_khong_bi_gioi_han_boi_provider_budget(node):
-    """Lỗi hạ tầng tạm thời — timer sẽ thử lại, không cạn lượt như provider_error."""
+def test_knowledge_store_error_retries_are_not_limited_by_the_provider_budget(node):
+    """A transient infrastructure error — the timer retries; attempts do not run out as with provider_error."""
     conn, nid = node
     body = (502, {"reason": "knowledge_store_error", "message": "KS timeout"})
     for _ in range(settings.MAX_CARD_SYNC_ATTEMPTS + 2):
@@ -178,40 +178,40 @@ def test_knowledge_store_error_retry_khong_bi_gioi_han_boi_provider_budget(node)
     assert pending_nodes(conn) == (nid,)
 
 
-def test_reason_la_thi_xu_ly_nhu_provider_error(node):
+def test_unknown_reason_is_handled_like_provider_error(node):
     conn, nid = node
-    sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((502, {"reason": "chưa từng thấy"})))
+    sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((502, {"reason": "never seen before"})))
     assert _log(conn, nid)[0] == "pending"
 
 
-def test_502_khong_co_reason_van_khong_crash(node):
+def test_502_without_reason_does_not_crash(node):
     conn, nid = node
-    result = sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((502, "lỗi dạng text thuần")))
+    result = sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((502, "a plain-text error")))
     assert result.outcomes[0].status == "pending"
 
 
 # ---------------------------------------------------------------- log
 
 
-def test_last_error_luu_NGUYEN_VAN_reason_va_message(node):
-    """YÊU CẦU BẮT BUỘC: nhánh truncated chưa từng verify qua API thật, nên dòng
-    log này là bằng chứng duy nhất để kiểm hành vi lần đầu gặp ngoài đời."""
+def test_last_error_stores_reason_and_message_VERBATIM(node):
+    """REQUIRED: the truncated branch has never been verified against the real API, so this
+    log row is the only evidence for checking the behaviour the first time it happens for real."""
     conn, nid = node
     sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((502, TRUNCATED_BODY)))
     _, _, last_error, _ = _log(conn, nid)
     assert "truncated" in last_error
-    # Nguyên văn message của Mnemosyne phải còn nguyên trong log, không rút gọn.
+    # Mnemosyne's message must survive verbatim in the log, not shortened.
     assert "stopped mid-answer at its token limit" in last_error
     assert "502" in last_error
 
 
-def test_ghi_attempted_at(node):
+def test_records_attempted_at(node):
     conn, nid = node
     sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((201, {})))
     assert _log(conn, nid)[3] is True
 
 
-def test_sent_thi_last_error_la_None(node):
+def test_sent_leaves_last_error_None(node):
     conn, nid = node
     sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((201, {})))
     assert _log(conn, nid)[2] is None
@@ -220,35 +220,35 @@ def test_sent_thi_last_error_la_None(node):
 # ---------------------------------------------------------------- study_set_id
 
 
-def test_dung_MOT_study_set_co_dinh_KHONG_map_theo_subject(conn):
-    """subject là TEXT tự do, chưa có bằng chứng phân bố để thiết kế mapping."""
+def test_uses_ONE_fixed_study_set_NOT_mapped_by_subject(conn):
+    """subject is free TEXT; there is no evidence about its distribution to design a mapping."""
     _mk(conn, "Quang hợp", "Sinh học")
     _mk(conn, "Chiến tranh Lạnh", "Lịch sử")
     client = FakeCardClient((201, {}), (201, {}))
     sync_cards(conn, client, study_set_id=SET_ID)
-    assert {s for _, s in client.calls} == {SET_ID}, "mọi node vào cùng một set"
+    assert {s for _, s in client.calls} == {SET_ID}, "every node goes into the same set"
 
 
-def test_study_set_id_thieu_thi_bao_loi_kem_cach_sua():
+def test_missing_study_set_id_reports_how_to_fix_it():
     with pytest.raises(CardClientError, match="POST /study_sets"):
         study_set_id_from_env({})
 
 
-def test_study_set_id_la_ten_set_thi_bao_loi_ro(conn):
-    """Giả định ban đầu của KS là gửi tên "KS review" — Mnemosyne trả 400 vì
-    serde không parse được thành Uuid. Chặn ngay ở KS với thông báo rõ."""
-    with pytest.raises(CardClientError, match="không phải UUID"):
+def test_study_set_id_given_as_a_name_reports_a_clear_error(conn):
+    """KS originally assumed it should send the name "KS review" — Mnemosyne returns 400 because
+    serde cannot parse it as a Uuid. Stop it in KS with a clear message."""
+    with pytest.raises(CardClientError, match="is not a UUID"):
         study_set_id_from_env({"KS_CARD_SYNC_STUDY_SET_ID": "KS review"})
 
 
-def test_study_set_id_hop_le_parse_duoc():
+def test_valid_study_set_id_parses():
     got = study_set_id_from_env(
         {"KS_CARD_SYNC_STUDY_SET_ID": "ae2c0db6-4a7e-4956-9bb9-ffe25eeaf151"})
     assert got == SET_ID
 
 
-def test_body_gui_di_dung_hai_field_uuid(conn):
-    """Cả hai field bắt buộc, đều là UUID, không có path/query param."""
+def test_request_body_has_exactly_two_uuid_fields(conn):
+    """Both fields are required, both are UUIDs, no path/query parameters."""
     import json
     nid = _mk(conn, "Quang hợp", "Sinh học")
     sent = {}
@@ -265,21 +265,21 @@ def test_body_gui_di_dung_hai_field_uuid(conn):
     }
 
 
-# ---------------------------------------------------------------- lỗi hạ tầng
+# ---------------------------------------------------------------- infrastructure errors
 
 
-def test_khong_goi_noi_mnemosyne_thi_DUNG_ca_lo(conn):
-    """Gọi tiếp 99 node nữa để nhận cùng lỗi mạng là vô nghĩa, và sẽ đốt hết
-    lượt retry của chúng vì lý do không liên quan gì tới node."""
+def test_unreachable_mnemosyne_STOPS_the_batch(conn):
+    """Calling 99 more nodes to get the same network error is pointless, and would burn
+    their retry attempts for a reason unrelated to the nodes."""
     for t in ("Quang hợp", "Chiến tranh Lạnh", "Phương trình bậc hai"):
         _mk(conn, t, t)
     client = FakeCardClient(error=CardClientError("connection refused"))
     result = sync_cards(conn, client, study_set_id=SET_ID)
-    assert len(client.calls) == 1, "phải dừng sau node đầu tiên"
+    assert len(client.calls) == 1, "must stop after the first node"
     assert result.outcomes[0].status == "pending"
 
 
-def test_loi_ha_tang_KHONG_dot_luot_retry(node):
+def test_infrastructure_errors_do_NOT_burn_retry_attempts(node):
     conn, nid = node
     sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient(error=CardClientError("connection refused")))
     status, attempts, last_error, _ = _log(conn, nid)
@@ -287,7 +287,7 @@ def test_loi_ha_tang_KHONG_dot_luot_retry(node):
     assert "connection refused" in last_error
 
 
-def test_mot_node_loi_khong_chan_node_sau(conn):
+def test_one_failing_node_does_not_block_the_next(conn):
     a = _mk(conn, "Quang hợp", "Sinh học")
     b = _mk(conn, "Chiến tranh Lạnh", "Lịch sử")
     client = FakeCardClient((404, {"error": "x"}), (201, {"card_id": "c"}))
@@ -295,24 +295,24 @@ def test_mot_node_loi_khong_chan_node_sau(conn):
     assert [o.status for o in result.outcomes] == ["skipped", "sent"]
 
 
-def test_khong_tu_commit(node):
+def test_does_not_commit(node):
     conn, nid = node
     sync_cards(conn, study_set_id=SET_ID, client=FakeCardClient((201, {})))
     conn.rollback()
     assert _log(conn, nid) is None
 
 
-# ---------------------------------------------------------------- cấu hình
+# ---------------------------------------------------------------- configuration
 
 
-def test_thieu_url_thi_bao_loi_ro():
+def test_missing_url_reports_a_clear_error():
     with pytest.raises(CardClientError, match="KS_MNEMOSYNE_URL"):
         client_from_env({})
 
 
-def test_token_KHONG_bat_buoc(monkeypatch):
-    """Mnemosyne chưa có auth layer — /cards/from_node không có extractor auth.
-    Bắt buộc token ở phía KS sẽ tự chặn mình mà không được gì."""
+def test_token_is_NOT_required(monkeypatch):
+    """Mnemosyne has no auth layer here — /cards/from_node has no auth extractor.
+    Requiring a token on the KS side would block ourselves for nothing."""
     client = client_from_env({"KS_MNEMOSYNE_URL": "http://127.0.0.1:8081"})
     assert client is not None
 
@@ -320,17 +320,17 @@ def test_token_KHONG_bat_buoc(monkeypatch):
 # ---------------------------------------------------------------- timeout
 
 
-def test_timeout_mac_dinh_du_rong_cho_model_reasoning():
-    """ĐO ĐƯỢC THẬT: node summary ~1900 ký tự mất 11s; node ~2900 ký tự vượt 30s.
+def test_default_timeout_is_wide_enough_for_a_reasoning_model():
+    """MEASURED: a node with a ~1900-character summary took 11 s; a ~2900-character node took over 30 s.
 
-    Timeout ngắn quá TỆ HƠN là chậm — KS bỏ cuộc trước khi Mnemosyne trả lời thì
-    mất luôn phân loại thật (truncated / provider_error / knowledge_store_error),
-    tất cả bị ghi đè thành CardClientError. Đã che mất đúng một ca cần quan sát.
+    A timeout that is too short is WORSE than slow — if KS gives up before Mnemosyne answers,
+    the real classification is lost (truncated / provider_error / knowledge_store_error),
+    all overwritten as CardClientError. It hid exactly one case we needed to see.
     """
     assert settings.DEFAULT_MNEMOSYNE_TIMEOUT >= 120
 
 
-def test_timeout_doc_duoc_tu_env():
+def test_timeout_is_read_from_env():
     client = client_from_env({
         "KS_MNEMOSYNE_URL": "http://127.0.0.1:8081",
         "KS_MNEMOSYNE_TIMEOUT": "240",
@@ -338,48 +338,48 @@ def test_timeout_doc_duoc_tu_env():
     assert client._timeout == 240
 
 
-def test_timeout_khong_phai_so_thi_bao_loi_ro():
+def test_non_numeric_timeout_reports_a_clear_error():
     with pytest.raises(CardClientError, match="KS_MNEMOSYNE_TIMEOUT"):
         client_from_env({
             "KS_MNEMOSYNE_URL": "http://127.0.0.1:8081",
-            "KS_MNEMOSYNE_TIMEOUT": "lâu",
+            "KS_MNEMOSYNE_TIMEOUT": "long",
         })
 
 
-# ---------------------------------------------------------------- kết quả mồ côi
+# ---------------------------------------------------------------- orphaned results
 
 
-def test_timeout_roi_409_tu_hoa_giai_ket_qua_mo_coi(node):
-    """BẤT BIẾN QUAN TRỌNG: timeout phía KS KHÔNG huỷ việc phía Mnemosyne.
+def test_timeout_then_409_reconciles_an_orphaned_result(node):
+    """KEY INVARIANT: a timeout on the KS side does NOT cancel the work on Mnemosyne's side.
 
-    Mnemosyne xác nhận bằng thí nghiệm: giết client sau 2 giây, handler của họ
-    vẫn chạy tới cùng và TẠO CARD BÌNH THƯỜNG 3 giây sau đó. Nghĩa là timeout
-    sinh ra **kết quả mồ côi** — họ có card, KS tưởng hỏng, hai bên tin hai
-    chuyện khác nhau về cùng một node.
+    Mnemosyne confirmed by experiment: kill the client after 2 seconds and their handler
+    still runs to completion and CREATES THE CARD NORMALLY 3 seconds later. So a timeout
+    produces an **orphaned result** — they have a card, KS thinks it failed, the two sides
+    believe different things about the same node.
 
-    Thứ hoà giải nó là chuỗi hai bước dưới đây, và cả hai bước đều bắt buộc:
-      1. timeout ghi `pending` (KHÔNG phải `failed`) → node còn được chọn lại
-      2. lần sau nhận 409 → ghi `sent` (409 KHÔNG phải lỗi)
+    What reconciles it is the two-step chain below, and both steps are required:
+      1. a timeout records `pending` (NOT `failed`) → the node can be picked again
+      2. the next run gets 409 → records `sent` (409 is NOT an error)
 
-    Đổi bất kỳ bước nào cũng làm ca mồ côi mắc kẹt vĩnh viễn.
+    Changing either step leaves the orphan stuck forever.
     """
     conn, nid = node
 
-    # Lần 1: KS timeout. Mnemosyne (không thấy được từ đây) vẫn tạo card xong.
-    sync_cards(conn, FakeCardClient(error=CardClientError("timeout khi gọi Mnemosyne")),
+    # Run 1: KS times out. Mnemosyne (invisible from here) still creates the card.
+    sync_cards(conn, FakeCardClient(error=CardClientError("timed out calling Mnemosyne")),
                study_set_id=SET_ID)
     status, attempts, last_error, _ = _log(conn, nid)
-    assert status == "pending", "timeout phải để node lại cho lần sau"
-    assert attempts == 0, "lỗi hạ tầng không được đốt lượt retry"
+    assert status == "pending", "a timeout must leave the node for next time"
+    assert attempts == 0, "infrastructure errors must not burn retry attempts"
     assert pending_nodes(conn) == (nid,)
 
-    # Lần 2: card đã tồn tại bên kia → 409 kèm existing_card_id.
+    # Run 2: the card exists on the other side → 409 with existing_card_id.
     result = sync_cards(
         conn,
-        FakeCardClient((409, {"error": "card đã tồn tại",
+        FakeCardClient((409, {"error": "card already exists",
                               "existing_card_id": "c0ffee00-0000-4000-8000-000000000000"})),
         study_set_id=SET_ID,
     )
     assert result.outcomes[0].status == "sent"
     assert _log(conn, nid)[0] == "sent"
-    assert pending_nodes(conn) == (), "đã hoà giải, không lặp lại nữa"
+    assert pending_nodes(conn) == (), "reconciled, not repeated"

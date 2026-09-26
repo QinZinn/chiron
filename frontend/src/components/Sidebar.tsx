@@ -19,28 +19,28 @@ export function Sidebar({ route }: { route: Route }) {
     {
       view: 'todos',
       icon: 'ph-list-checks',
-      label: 'Việc cần ôn',
-      badge: todoOpenCount ? { text: String(todoOpenCount), color: 'var(--frost2)', title: 'Việc chưa xong' } : undefined,
+      label: 'To-do',
+      badge: todoOpenCount ? { text: String(todoOpenCount), color: 'var(--frost2)', title: 'Open items' } : undefined,
     },
     {
       view: 'flashcards',
       icon: 'ph-cards-three',
-      label: 'Thẻ ghi nhớ',
+      label: 'Flashcards',
       badge: dueCount
-        ? { text: dueCount >= 100 ? '100+' : String(dueCount), color: 'var(--yel)', title: 'Thẻ đến hạn ôn' }
+        ? { text: dueCount >= 100 ? '100+' : String(dueCount), color: 'var(--yel)', title: 'Cards due for review' }
         : undefined,
     },
     { view: 'quiz', icon: 'ph-check-square-offset', label: 'Quiz' },
-    { view: 'feynman', icon: 'ph-chalkboard-teacher', label: 'Giảng lại' },
-    { view: 'knowledge', icon: 'ph-graph', label: 'Kiến thức' },
-    { view: 'notes', icon: 'ph-scan', label: 'Scan ghi chép' },
+    { view: 'feynman', icon: 'ph-chalkboard-teacher', label: 'Teach back' },
+    { view: 'knowledge', icon: 'ph-graph', label: 'Knowledge' },
+    { view: 'notes', icon: 'ph-scan', label: 'Note scan' },
     {
       view: 'weak',
       icon: 'ph-warning-diamond',
-      label: 'Điểm yếu',
-      badge: weakCount ? { text: String(weakCount), color: 'var(--red)', title: 'Thẻ đang yếu' } : undefined,
+      label: 'Weak spots',
+      badge: weakCount ? { text: String(weakCount), color: 'var(--red)', title: 'Cards still weak' } : undefined,
     },
-    { view: 'settings', icon: 'ph-gear-six', label: 'Cài đặt' },
+    { view: 'settings', icon: 'ph-gear-six', label: 'Settings' },
   ];
 
   const q = query.trim().toLowerCase();
@@ -55,16 +55,16 @@ export function Sidebar({ route }: { route: Route }) {
         <Logo />
         <span>Chiron</span>
       </div>
-      <a className="btn btn-primary btn-block sb-new" href={href({ view: 'chat' })} title="Cuộc trò chuyện mới">
+      <a className="btn btn-primary btn-block sb-new" href={href({ view: 'chat' })} title="New conversation">
         <i className="ph ph-plus" style={{ fontSize: 16 }} />
-        <span>Cuộc trò chuyện mới</span>
+        <span>New conversation</span>
       </a>
-      <label className="sb-search" title="Tìm trong các phiên gần đây">
+      <label className="sb-search" title="Search recent sessions">
         <i className="ph ph-magnifying-glass" />
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm kiếm" />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" />
       </label>
 
-      <div className="sb-section">Không gian học</div>
+      <div className="sb-section">Study space</div>
       <nav className="sb-nav">
         {items.map((it) => (
           <a
@@ -80,39 +80,39 @@ export function Sidebar({ route }: { route: Route }) {
                 {it.badge.text}
               </span>
             )}
-            {it.soon && <span className="nv-soon">Sắp có</span>}
+            {it.soon && <span className="nv-soon">Soon</span>}
           </a>
         ))}
       </nav>
 
       <div className="sb-bottom">
-        <div className="sb-section" style={{ paddingTop: 16 }}>Gần đây</div>
+        <div className="sb-section" style={{ paddingTop: 16 }}>Recent</div>
         <div className="sb-recent">
           {shown.map((r) => (
             <a
               key={`${r.kind}:${r.id}`}
               className={`nv nv-recent${activeSession === r.id ? ' nv-on' : ''}`}
               href={href({ view: 'chat', kind: r.kind, sessionId: r.id })}
-              title={`${r.subtitle} · ${r.title} · ${new Date(r.updatedAt).toLocaleString('vi-VN')}`}
+              title={`${r.subtitle} · ${r.title} · ${new Date(r.updatedAt).toLocaleString('en-GB')}`}
             >
-              <i className={`ph ${r.kind === 'socratic' ? 'ph-student' : r.subtitle === 'Giải bài' ? 'ph-function' : 'ph-chat-circle-dots'}`} />
+              <i className={`ph ${r.kind === 'socratic' ? 'ph-student' : r.subtitle === 'Solve' ? 'ph-function' : 'ph-chat-circle-dots'}`} />
               <span className="nvl">{r.title}</span>
-              {r.ended && <span className="nv-ended">đã kết thúc</span>}
+              {r.ended && <span className="nv-ended">ended</span>}
             </a>
           ))}
           {shown.length === 0 && (
-            <div className="sb-recent-empty">{q ? 'Không có phiên nào khớp.' : user ? 'Chưa có phiên Học bài nào.' : ''}</div>
+            <div className="sb-recent-empty">{q ? 'No matching sessions.' : user ? 'No study sessions yet.' : ''}</div>
           )}
         </div>
         <hr className="rule" style={{ margin: '0 0 10px' }} />
-        <a className="sb-user" href={href({ view: 'settings' })} title="Cài đặt người học">
+        <a className="sb-user" href={href({ view: 'settings' })} title="Learner settings">
           <div className="avatar">{initials}</div>
           <div className="sb-user-text">
             <div className="sb-user-name">
-              {user ? user.email : health.mnemosyne === 'down' ? 'Không tải được người học' : token ? 'Đang tải…' : 'Chưa đăng nhập'}
+              {user ? user.email : health.mnemosyne === 'down' ? 'Could not load learner' : token ? 'Loading…' : 'Not signed in'}
             </div>
             <div className="sb-user-sub">
-              {user ? user.learning_style || 'Người học · Mnemosyne' : health.mnemosyne === 'down' ? 'Mnemosyne mất kết nối' : 'Dán token trong Cài đặt'}
+              {user ? user.learning_style || 'Learner · Mnemosyne' : health.mnemosyne === 'down' ? 'Mnemosyne unreachable' : 'Paste a token in Settings'}
             </div>
           </div>
           <i className="ph ph-gear" style={{ fontSize: 15, color: 'var(--dim)', marginLeft: 'auto', display: 'var(--lbl)' }} />

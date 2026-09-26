@@ -1,7 +1,7 @@
-"""Đọc node và cạnh cho consumer HTTP. Thuần đọc DB, KHÔNG chạm LLM.
+"""Reading nodes and edges for HTTP consumers. Pure DB reads, NO LLM.
 
-`list_nodes` / `get_node` không trả edges (quyết định đã chốt); cạnh có route
-riêng, `list_edges`.
+`list_nodes` / `get_node` do not return edges (a settled decision); edges have
+their own route, `list_edges`.
 """
 
 from __future__ import annotations
@@ -13,13 +13,13 @@ import psycopg
 from ks import settings
 from ks.models import EdgeSummary, NodeSummary
 
-# merged_into_id khác NULL → trả node ĐÍCH, đúng MỘT BƯỚC (không walk chain).
-# DISTINCT ON gộp nhiều node cùng đích về một dòng. LEFT JOIN + DISTINCT ON làm
-# tất cả trong MỘT round-trip.
+# merged_into_id not NULL → return the TARGET node, exactly ONE STEP (no chain walk).
+# DISTINCT ON collapses several nodes with the same target into one row. LEFT JOIN +
+# DISTINCT ON does it all in ONE round-trip.
 #
-# Bộ lọc áp lên node ĐÃ RESOLVE, không phải node gốc: kết quả trả về luôn khớp
-# điều kiện người gọi hỏi, không có chuyện lọc subject='Vật lý' mà nhận về node
-# môn Sinh học.
+# Filters apply to the RESOLVED node, not the original: the result always matches
+# what the caller asked for — filtering subject='Physics' never returns a Biology
+# node.
 _LIST_SQL = """
 SELECT id, title, subject, summary
 FROM (
@@ -31,9 +31,9 @@ FROM (
          COALESCE(t.created_at, n.created_at)       AS created_at
   FROM ks.nodes n
   LEFT JOIN ks.nodes t ON t.id = n.merged_into_id
-  -- ::text / ::ks.source_module là bắt buộc: không có cast, Postgres không suy
-  -- ra được kiểu của tham số trần trong mệnh đề IS NULL và báo AmbiguousParameter.
-  -- (Đừng viết placeholder mẫu vào comment: psycopg vẫn parse comment.)
+  -- ::text / ::ks.source_module are required: without the cast Postgres cannot infer
+  -- the type of a bare parameter in an IS NULL clause and raises AmbiguousParameter.
+  -- (Do not write a sample placeholder in a comment: psycopg still parses comments.)
   WHERE (%(subject)s::text IS NULL OR COALESCE(t.subject, n.subject) = %(subject)s::text)
     AND (%(source_module)s::ks.source_module IS NULL
          OR COALESCE(t.source_module, n.source_module) = %(source_module)s::ks.source_module)
@@ -51,7 +51,7 @@ def list_nodes(
     source_module: str | None = None,
     limit: int = settings.DEFAULT_NODE_LIMIT,
 ) -> tuple[NodeSummary, ...]:
-    """Danh sách node đã resolve merge. Không có edges — đó là chủ đích."""
+    """Nodes with merges resolved. No edges — deliberately."""
     with conn.cursor() as cur:
         cur.execute(
             _LIST_SQL,
@@ -63,11 +63,11 @@ def list_nodes(
     )
 
 
-# Cùng luật resolve merge như _LIST_SQL: trả node ĐÍCH, đúng MỘT BƯỚC. Hai route
-# đọc cùng dữ liệu thì không được hành xử khác nhau.
+# Same merge-resolution rule as _LIST_SQL: return the TARGET node, exactly ONE STEP.
+# Two routes reading the same data must not behave differently.
 #
-# Lưu ý cho caller: node A đã merge vào B thì hàm này trả về B — `id` trong kết
-# quả KHÁC `node_id` truyền vào. Đó là chủ đích, không phải bug.
+# Note for callers: if node A was merged into B, this returns B — the `id` in the
+# result DIFFERS from the `node_id` passed in. That is intended, not a bug.
 _GET_SQL = """
 SELECT COALESCE(t.id, n.id)             AS id,
        COALESCE(t.title, n.title)       AS title,
@@ -80,11 +80,11 @@ WHERE n.id = %(node_id)s
 
 
 def get_node(conn: psycopg.Connection, node_id: UUID) -> NodeSummary | None:
-    """Một node theo id, đã resolve merge. None nếu không có.
+    """One node by id, merges resolved. None if there is none.
 
-    KHÔNG có khái niệm "node chưa duyệt": `ks.nodes` không mang cột status, node
-    chỉ tồn tại SAU khi `ks.cli accept` chạy (xem ks/confirm.py). Id của một
-    extracted_concept chưa accept đơn giản là không phải node id → None.
+    There is NO such thing as an "unreviewed node": `ks.nodes` has no status column;
+    a node only exists AFTER `ks.cli accept` runs (see ks/confirm.py). The id of an
+    extracted_concept that was never accepted is simply not a node id → None.
     """
     with conn.cursor() as cur:
         cur.execute(_GET_SQL, {"node_id": node_id})
@@ -94,15 +94,15 @@ def get_node(conn: psycopg.Connection, node_id: UUID) -> NodeSummary | None:
     return NodeSummary(id=row[0], title=row[1], subject=row[2], summary=row[3])
 
 
-# GET /edges: chỉ cạnh `approved` — `pending` là gợi ý của LLM chưa ai duyệt,
-# `rejected` là câu trả lời "không" của người duyệt; vẽ cả hai lên bản đồ là nói
-# sai điều người học đã quyết.
+# GET /edges: `approved` edges only — `pending` is an LLM suggestion nobody has
+# reviewed, `rejected` is the reviewer's "no"; drawing either on the map would
+# misstate what the learner decided.
 #
-# Hai đầu resolve merge ĐÚNG MỘT BƯỚC, cùng luật với _LIST_SQL, để mọi id trong
-# kết quả đều là id mà GET /nodes trả về. Sau khi resolve:
-# - cạnh thành vòng về chính nó (A→B khi A đã merge vào B) bị bỏ;
-# - nhiều cạnh trùng (from, to, relation) gộp thành một, giữ id nhỏ nhất.
-# Bộ lọc node_id cũng áp lên id ĐÃ RESOLVE.
+# Both ends are resolved through merges EXACTLY ONE STEP, same rule as _LIST_SQL, so
+# every id in the result is an id GET /nodes returns. After resolving:
+# - an edge that loops back to itself (A→B once A is merged into B) is dropped;
+# - duplicate edges (from, to, relation) collapse into one, keeping the smallest id.
+# The node_id filter also applies to the RESOLVED ids.
 _EDGES_SQL = """
 SELECT DISTINCT ON (from_id, to_id, relation_type)
        id, from_id, to_id, relation_type
@@ -131,7 +131,7 @@ def list_edges(
     node_id: UUID | None = None,
     limit: int = settings.MAX_EDGE_LIMIT,
 ) -> tuple[EdgeSummary, ...]:
-    """Cạnh đã duyệt, hai đầu đã resolve merge. Không bao giờ có pending/rejected."""
+    """Approved edges, both ends resolved through merges. Never pending/rejected."""
     with conn.cursor() as cur:
         cur.execute(_EDGES_SQL, {"node_id": node_id, "limit": limit})
         rows = cur.fetchall()

@@ -1,158 +1,171 @@
-# OCR — số đo độ chính xác
+# OCR — accuracy measurements
 
-Độ tin cậy (`mean_confidence`) là con số mô hình tự báo, **không phải độ
-chính xác**. File này ghi độ chính xác đo được, so với văn bản gốc do người gõ.
-Cách chạy lại: [`bench/README.md`](bench/README.md).
+Confidence (`mean_confidence`) is the number the model reports about itself; it is
+**not accuracy**. This file records measured accuracy against ground-truth text
+typed by a person. How to re-run: [`bench/README.md`](bench/README.md).
 
-## 2026-09-25 — Chữ in tiếng Việt, ảnh dựng từ font
+The first three sections were measured while Chiron still targeted Vietnamese
+notes with the VietOCR recogniser; they are kept as the record that led to the
+English-only recogniser chosen in the fourth.
 
-**Dữ liệu.** 6 trang, 2119 ký tự, 415 ký tự mang dấu. Văn bản gốc nằm trong
-`bench/ground_truth.json`; ảnh do `bench/gen.py` dựng. Nội dung kiểu sách giáo
-khoa (Sinh, Lý, Sử, Văn), có công thức (`6CO2 + 6H2O → …`, `Φ = B·S·cosα`,
+## 2026-09-25 — Printed Vietnamese, images rendered from fonts
+
+**Data.** 6 pages, 2119 characters, 415 of them with diacritics. The ground truth
+was in `bench/ground_truth.json` and the images were rendered by `bench/gen.py`
+(both have since been replaced with English). Textbook-style content (Biology,
+Physics, History, Literature), with formulas (`6CO2 + 6H2O → …`, `Φ = B·S·cosα`,
 `e = −ΔΦ/Δt`).
 
-- 4 trang sạch: Noto Serif 34 px, Roboto 30 px, Liberation Serif 32 px,
+- 4 clean pages: Noto Serif 34 px, Roboto 30 px, Liberation Serif 32 px,
   DejaVu Sans 26 px.
-- 2 trang giả ảnh chụp: nền giấy ngả vàng, sáng không đều, nghiêng 1,8°, mờ
-  Gaussian 1,1 px, JPEG chất lượng 70.
+- 2 fake phone photos: yellowed paper, uneven lighting, 1.8° tilt, 1.1 px
+  Gaussian blur, JPEG quality 70.
 
-Engine: `PP-OCRv6_medium_det + vietocr/vgg_transformer` (image `chiron-ocr`
-build 2026-09-17).
+Engine: `PP-OCRv6_medium_det + vietocr/vgg_transformer` (the `chiron-ocr` image
+built 2026-09-17).
 
-**Số đo.** CER là khoảng cách Levenshtein ở mức ký tự chia cho độ dài văn bản
-gốc, sau khi gộp mọi khoảng trắng thành một. "Lỗi dấu" là phép thay thế giữ
-nguyên chữ gốc, chỉ sai dấu (ví dụ `ề`→`ể`).
+**Metrics.** CER is the character-level Levenshtein distance divided by the length
+of the ground truth, after collapsing all whitespace to one space. A "diacritic
+error" is a substitution that keeps the base letter and only gets the mark wrong
+(e.g. `ề`→`ể`).
 
-| Trang | Ký tự | Lỗi | CER | Lỗi dấu | Confidence |
+| Page | Chars | Errors | CER | Diacritic errors | Confidence |
 |---|---:|---:|---:|---:|---:|
-| sinh-serif | 393 | 7 | 1,78 % | 0 | 0,916 |
-| ly-sans | 359 | 10 | 2,79 % | 0 | 0,922 |
-| su-times | 305 | 0 | 0,00 % | 0 | 0,923 |
-| van-dejavu | 310 | 4 | 1,29 % | 3 | 0,917 |
-| sinh-serif-photo | 393 | 8 | 2,04 % | 0 | 0,920 |
-| ly-sans-photo | 359 | 16 | 4,46 % | 0 | 0,922 |
-| **Tổng** | **2119** | **45** | **2,12 %** | **3 / 415 ký tự có dấu** | |
+| sinh-serif | 393 | 7 | 1.78 % | 0 | 0.916 |
+| ly-sans | 359 | 10 | 2.79 % | 0 | 0.922 |
+| su-times | 305 | 0 | 0.00 % | 0 | 0.923 |
+| van-dejavu | 310 | 4 | 1.29 % | 3 | 0.917 |
+| sinh-serif-photo | 393 | 8 | 2.04 % | 0 | 0.920 |
+| ly-sans-photo | 359 | 16 | 4.46 % | 0 | 0.922 |
+| **Total** | **2119** | **45** | **2.12 %** | **3 / 415 marked chars** | |
 
-45 lỗi chia theo loại ký tự gốc:
+The 45 errors by kind of original character:
 
-- **26 lỗi ký hiệu/công thức (58 %).** `+`→`%`, `→`→`ở`, `=`→`-`, `·`→`-`,
-  `Φ`→`Đ`/`D`/`0`/`P`, `Δ`→`A`, `α`→`a`, dấu trừ `−` bị bỏ.
-- **9 lỗi dấu câu.** Chủ yếu là mất dấu chấm cuối dòng, hay gặp ở ảnh chụp.
-- **10 lỗi chữ cái/chữ số (CER 0,64 % trên 1570 chữ).** 6 lỗi là `O`→`0`
-  trong công thức hoá học (`CO2`, `O2`), 1 lỗi `V`→`v`, và 3 lỗi dấu thanh ở
-  cùng trang DejaVu: `chiều`→`chiểu`, `cõi`→`cối`, `bể`→`bế`.
+- **26 symbol/formula errors (58 %).** `+`→`%`, `→`→`ở`, `=`→`-`, `·`→`-`,
+  `Φ`→`Đ`/`D`/`0`/`P`, `Δ`→`A`, `α`→`a`, the minus sign `−` dropped.
+- **9 punctuation errors.** Mostly a lost full stop at the end of a line, more
+  often on the fake photos.
+- **10 letter/digit errors (0.64 % CER over 1570 letters).** 6 were `O`→`0` in
+  chemical formulas (`CO2`, `O2`), 1 was `V`→`v`, and 3 were tone-mark errors on
+  the same DejaVu page: `chiều`→`chiểu`, `cõi`→`cối`, `bể`→`bế`.
 
-Thời gian: 4,3–5,6 giây mỗi trang trên CPU.
+Time: 4.3–5.6 seconds per page on CPU.
 
-**Kết luận.**
+**Conclusions.**
 
-1. Chữ in tiếng Việt thường đọc rất tốt: trên chữ cái, 0,64 % lỗi và 3/415 ký
-   tự có dấu bị sai. Ảnh giả chụp chỉ tăng CER nhẹ (1,78 % → 2,04 %), trừ trang
-   có công thức.
-2. **Công thức và ký hiệu là điểm yếu chính.** VietOCR không có `Φ`, `Δ`, `→`,
-   `·` trong bảng ký tự nên luôn đọc sai chúng. Với ghi chép Lý/Hoá, người học
-   phải sửa tay các công thức ở bước duyệt văn bản.
-3. **Confidence không phản ánh lỗi.** Trang không lỗi nào (0,923) và trang lỗi
-   4,46 % (0,922) có confidence gần như bằng nhau. Không có dòng nào dưới
-   ngưỡng 0,80, nên "Dòng nên kiểm tra" trên giao diện bỏ sót toàn bộ 45 lỗi.
-   Không nên dựa vào đó để báo người học rằng văn bản đã ổn.
-4. Đây là ảnh dựng từ font, sạch hơn ảnh chụp vở thật. Số đo này là **cận
-   trên** cho chữ in, **chưa nói gì về chữ viết tay**.
+1. Printed Vietnamese read very well: 0.64 % errors on letters, and 3/415 marked
+   characters wrong. The fake photos raised CER only slightly (1.78 % → 2.04 %),
+   except on the page with formulas.
+2. **Formulas and symbols were the main weakness.** VietOCR has no `Φ`, `Δ`, `→`,
+   `·` in its character set, so it always misread them. For Physics/Chemistry
+   notes the learner had to fix formulas by hand at the text-review step.
+3. **Confidence does not reflect errors.** A page with no errors (0.923) and a page
+   with 4.46 % errors (0.922) had almost the same confidence. No line fell below
+   the 0.80 threshold, so "Lines to check" in the UI missed all 45 errors. It
+   should not be used to tell the learner the text is fine.
+4. These images were rendered from fonts and are cleaner than real notebook photos.
+   The numbers are an **upper bound** for printed text and **say nothing about
+   handwriting**.
 
-## 2026-09-25 — Chữ viết tay thật (vở của người học)
+## 2026-09-25 — Real handwriting (the learner's notebooks)
 
-**Dữ liệu.** 3 ảnh chụp điện thoại vở thật, 3046 ký tự, 604 ký tự mang dấu:
+**Data.** 3 phone photos of real notebooks, 3046 characters, 604 with diacritics:
 
-- 1 trang Hoá (phân bón), vở kẻ ngang, ảnh nhỏ 525×1280, mép trái bị cắt.
-- 2 trang Sinh (trao đổi chất) viết kiểu **Cornell**: cột gợi ý bên trái, cột
-  ghi chép bên phải, phần tóm tắt ở cuối trang 2. Ảnh 846×1280 và 1440×2228.
+- 1 Chemistry page (fertilisers), ruled notebook, a small 525×1280 image with the
+  left edge cut off.
+- 2 Biology pages (metabolism) in **Cornell** style: a cue column on the left, a
+  notes column on the right, a summary at the bottom of page 2. 846×1280 and
+  1440×2228 images.
 
-Văn bản gốc do Claude gõ lại từ ảnh, theo đúng chữ viết (giữ chữ viết tắt
-`nl`, `sv`, `qtrình`), và **chưa được người học xác nhận**. Ảnh và văn bản
-gốc **không** commit vì đây là vở cá nhân. OCR chạy qua đúng đường của ứng dụng
-(`POST /notes` → service OCR), image `ghcr.io/qinzinn/chiron-ocr:0.1.0`.
+The ground truth was typed by Claude from the photos, following the handwriting
+exactly (keeping abbreviations such as `nl`, `sv`, `qtrình`), and **has not been
+confirmed by the learner**. The images and ground truth are **not** committed
+because they are personal notebooks. OCR ran through the application's own path
+(`POST /notes` → OCR service), image `ghcr.io/qinzinn/chiron-ocr:0.1.0`.
 
-Dòng của cột gợi ý được đặt cạnh dòng ghi chép nằm cùng độ cao, đúng thứ tự
-OCR đọc, để CER không phạt thứ tự. Cả hai phía chuẩn hoá cách đặt dấu cũ/mới
-(`hoá`/`hóa`, `luỹ`/`lũy`) trước khi so.
+Cue-column lines were placed next to the note line at the same height, in the
+order OCR reads them, so CER does not penalise ordering. Both sides were
+normalised for old/new tone-mark placement (`hoá`/`hóa`, `luỹ`/`lũy`) before comparing.
 
-**Số đo.**
+**Measurements.**
 
-| Trang | Ký tự | CER | Ký tự có dấu sai | Từ đúng hẳn | Từ chỉ sai dấu | Confidence |
+| Page | Chars | CER | Marked chars wrong | Words exactly right | Words wrong only in marks | Confidence |
 |---|---:|---:|---:|---:|---:|---:|
-| Hoá · phân bón | 914 | 26,3 % | 59 / 162 | 60,8 % | 23 | 0,799 |
-| Sinh · trang 1 (Cornell) | 922 | 15,2 % | 53 / 177 | 69,2 % | 27 | 0,822 |
-| Sinh · trang 2 (Cornell + tóm tắt) | 1210 | 23,2 % | 110 / 265 | 52,7 % | 54 | 0,811 |
-| **Tổng** | **3046** | **21,7 %** | **222 / 604** | **60,2 %** | **104 (16,0 %)** | |
+| Chemistry · fertilisers | 914 | 26.3 % | 59 / 162 | 60.8 % | 23 | 0.799 |
+| Biology · page 1 (Cornell) | 922 | 15.2 % | 53 / 177 | 69.2 % | 27 | 0.822 |
+| Biology · page 2 (Cornell + summary) | 1210 | 23.2 % | 110 / 265 | 52.7 % | 54 | 0.811 |
+| **Total** | **3046** | **21.7 %** | **222 / 604** | **60.2 %** | **104 (16.0 %)** | |
 
-- Chỉ tính chữ cái/chữ số: CER 19,4 %. Không phân biệt hoa thường: 20,8 %.
-- "Từ đúng hẳn" so các từ như một tập hợp, không tính thứ tự và không phân
-  biệt hoa thường. 23,8 % số từ sai chữ hoặc mất hẳn.
-- Lỗi điển hình:
-  - Dấu thanh: `lượng`→`lường`, `dưỡng`→`dương`/`đường`, `tự`→`từ`.
-  - Nhầm chữ: `Chiếm`→`Thiêm`, `lũy`→`lấy`, `hữu cơ`→`hiểu ả`.
-  - Ký hiệu: `&`→`b`/`k`/`8`, `⇄`→`2`, `+`→`t`/`4`.
-  - Chỉ số dưới: `H2S`, `NO2-` và các đơn vị như `mg/kg` ra rác.
-  - Dòng mép phải bị cắt trên ảnh Hoá thì mất chữ.
-- **Cornell:** vì dòng được nhóm theo độ cao, câu của cột gợi ý bị dính vào
-  đầu dòng ghi chép cùng độ cao (`Duy trì sự sống. Giúp sinh vật tồn tại…`,
-  `Tự dưỡng: tự sống, tự hấp Dùng chất vô cơ…`). Chữ vẫn đọc được, nhưng văn
-  bản trộn hai cột; người học phải tách lại ở bước sửa.
+- Letters/digits only: 19.4 % CER. Case-insensitive: 20.8 %.
+- "Words exactly right" compares words as a set, ignoring order and case. 23.8 %
+  of words were misspelled or missing entirely.
+- Typical errors:
+  - Tone marks: `lượng`→`lường`, `dưỡng`→`dương`/`đường`, `tự`→`từ`.
+  - Confused letters: `Chiếm`→`Thiêm`, `lũy`→`lấy`, `hữu cơ`→`hiểu ả`.
+  - Symbols: `&`→`b`/`k`/`8`, `⇄`→`2`, `+`→`t`/`4`.
+  - Subscripts: `H2S`, `NO2-` and units such as `mg/kg` came out as garbage.
+  - Lines cut off at the right edge of the Chemistry photo lost their text.
+- **Cornell:** because lines are grouped by height, a cue-column sentence was glued
+  to the start of the note line at the same height (`Duy trì sự sống. Giúp sinh vật
+  tồn tại…`, `Tự dưỡng: tự sống, tự hấp Dùng chất vô cơ…`). The text is still
+  readable, but the two columns are interleaved; the learner has to separate them
+  at the correction step.
 
-**Confidence và "Dòng nên kiểm tra".** Confidence có tụt so với chữ in
-(0,80–0,82 so với 0,92), nhưng chỉ tương quan vừa với lỗi của dòng (r = −0,46).
-Có 29/91 dòng bị đánh dấu (dưới 0,80), với CER dòng trung vị 27 %; dòng không
-bị đánh dấu có trung vị 18 %. Trong 46 dòng có CER > 20 %, **chỉ 21 dòng được
-đánh dấu**.
+**Confidence and "Lines to check".** Confidence did drop compared with print
+(0.80–0.82 vs 0.92), but correlated only moderately with a line's errors
+(r = −0.46). 29/91 lines were flagged (below 0.80), with a median line CER of
+27 %; unflagged lines had a median of 18 %. Of the 46 lines with CER > 20 %,
+**only 21 were flagged**.
 
-**Kết luận.**
+**Conclusions.**
 
-1. Với chữ viết tay, OCR chỉ là **bản nháp**: khoảng 4/10 từ phải sửa, và 1/3
-   số ký tự có dấu bị sai. Bước sửa văn bản trước khi rút khái niệm là bắt buộc,
-   không phải tuỳ chọn.
-2. "Dòng nên kiểm tra" bỏ sót hơn một nửa số dòng sai nặng. Giao diện không
-   được ngụ ý rằng các dòng không bị đánh dấu là đúng.
-3. Bố cục Cornell cần được tách cột trước khi nhóm dòng; hiện tại hai cột bị
-   trộn. Chưa sửa.
-4. Ảnh độ phân giải thấp (trang Hoá, 525 px ngang) cho CER cao nhất. Chụp gần
-   hơn, hoặc gửi ảnh gốc thay vì ảnh đã nén qua ứng dụng chat, có thể giúp;
-   chưa đo.
+1. For handwriting, OCR is only a **draft**: about 4 in 10 words need fixing, and
+   1/3 of marked characters are wrong. Correcting the text before extracting
+   concepts is mandatory, not optional.
+2. "Lines to check" misses more than half of the badly wrong lines. The UI must
+   not imply that unflagged lines are correct.
+3. Cornell layouts need column separation before lines are grouped; today the two
+   columns are interleaved. Not fixed yet.
+4. The low-resolution image (the Chemistry page, 525 px wide) had the highest CER.
+   Shooting closer, or sending the original photo instead of one compressed by a
+   chat app, may help; not measured.
 
-## 2026-09-26 — Vở viết tay tiếng Anh, bố cục thường (không Cornell)
+## 2026-09-26 — Handwritten English notebook, ordinary layout (not Cornell)
 
-**Dữ liệu.** 19 ảnh vở ghi một khoá kỹ năng học (tiếng Anh, lẫn vài từ tiếng
-Việt), 960×1280, khoảng 110–150 KB mỗi ảnh (nhiều khả năng đã nén qua app chat).
-Đo trên 5 trang chọn theo quy tắc cố định **trước khi** xem kết quả: trang 1, 5,
-9, 13, 17 theo thứ tự tên file. 3123 ký tự. Văn bản gốc do Claude gõ lại, chưa
-được người học xác nhận; không commit.
+**Data.** 19 notebook photos from a study-skills course (English, with a few
+Vietnamese words), 960×1280, about 110–150 KB each (probably compressed by a chat
+app). Measured on 5 pages picked by a fixed rule **before** looking at any output:
+pages 1, 5, 9, 13, 17 in file-name order. 3123 characters. Ground truth typed by
+Claude, not confirmed by the learner; not committed.
 
-**Số đo** (không phân biệt hoa thường). Cùng bộ phát hiện dòng và cùng cách cắt;
-chỉ đổi bộ đọc chữ:
+**Measurements** (case-insensitive). Same line detector and same crops; only the
+recogniser changes:
 
-| Bộ đọc chữ | CER | CER chỉ chữ cái | Từ đúng hẳn | Confidence |
+| Recogniser | CER | Letters-only CER | Words exactly right | Confidence |
 |---|---:|---:|---:|---:|
-| VietOCR vgg_transformer (đang dùng) | 42,0 % | 36,7 % | 30,1 % | 0,71–0,79 |
-| PaddleOCR PP-OCRv6_medium_rec | **32,5 %** | **29,0 %** | **51,1 %** | 0,79–0,91 |
+| VietOCR vgg_transformer (in use at the time) | 42.0 % | 36.7 % | 30.1 % | 0.71–0.79 |
+| PaddleOCR PP-OCRv6_medium_rec | **32.5 %** | **29.0 %** | **51.1 %** | 0.79–0.91 |
 
-Theo trang, VietOCR → Paddle: 27,4 → 16,0 %; 34,5 → 24,9 %; 53,1 → 34,4 %;
-53,1 → 50,7 %; 33,3 → 30,8 %.
+Per page, VietOCR → Paddle: 27.4 → 16.0 %; 34.5 → 24.9 %; 53.1 → 34.4 %;
+53.1 → 50.7 %; 33.3 → 30.8 %.
 
-**Quan sát.**
+**Observations.**
 
-- VietOCR bịa ra tiếng Việt khi đọc chữ viết tay tiếng Anh:
-  `L: "I don't believe it"` → "Nên có thứ tropersitional", một dòng khác →
+- VietOCR invented Vietnamese when reading English handwriting:
+  `L: "I don't believe it"` → "Nên có thứ tropersitional", another line →
   "Thời tổ chị yên giái thị thị".
-- PaddleOCR không có nguyên âm mang dấu thanh: "quý ông" ra 2/2 ký tự có dấu
-  sai (đúng với phát hiện ngày 25/09 trên chữ in).
-- Trang 13 tệ với cả hai bộ đọc (khoảng 51 %). Lỗi nằm ở bố cục: một hộp chữ
-  bên phải bị nối vào dòng bên trái (giống cột Cornell), cộng với số mũ
-  `1.10^999` và chữ bị gạch.
-- So với vở Sinh tiếng Việt (CER 21,7 %), vở này tệ hơn gấp đôi với bộ đọc
-  đang dùng. Nguyên nhân chính là ngôn ngữ, không phải bố cục Cornell.
+- PaddleOCR has no vowels with tone marks: "quý ông" came out with 2/2 marked
+  characters wrong (consistent with the 25/09 finding on print).
+- Page 13 was bad with both recognisers (about 51 %). The fault is the layout: a
+  text box on the right was joined onto the line to its left (as with Cornell
+  columns), plus the exponent `1.10^999` and crossed-out words.
+- Compared with the Vietnamese Biology notes (21.7 % CER), this notebook was twice
+  as bad with the recogniser in use. The main cause is the language, not the
+  Cornell layout.
 
-**Kết luận.** Không bộ đọc nào tốt cho cả hai ngôn ngữ: VietOCR cho tiếng Việt,
-Paddle cho tiếng Anh. Chọn bộ đọc theo ngôn ngữ của ghi chép là quyết định
-chưa chốt.
+**Conclusion.** No recogniser was good for both languages: VietOCR for Vietnamese,
+Paddle for English. Choosing the recogniser by the notes' language was left open —
+and then settled by the English-only switch below.
 
 ## 2026-09-26 — English only: choosing the recogniser
 
@@ -197,7 +210,7 @@ recogniser differs.
    layouts (a box beside the notes) are merged line by line whatever the
    recogniser — page 13 stays around 50 % CER with every model.
 
-## Chưa đo
+## Not measured yet
 
-- Chữ viết tay của người khác, và chữ viết tay ở độ phân giải gốc (chưa nén).
-- Hiệu quả của việc tách cột Cornell (chưa làm).
+- Other people's handwriting, and handwriting at full (uncompressed) resolution.
+- The effect of separating Cornell columns (not implemented yet).

@@ -4,9 +4,9 @@ export type Mode = 'giai' | 'hoc' | 'hoi';
 
 /** The three modes, in the design's order. All three now have a backend. */
 const MODES: { id: Mode; icon: string; label: string; hint: string }[] = [
-  { id: 'giai', icon: 'ph-function', label: 'Giải bài', hint: 'Giải từng bước, rồi hỏi thêm về bước bất kỳ' },
-  { id: 'hoc', icon: 'ph-student', label: 'Học bài', hint: 'Socratic: Chiron hỏi gợi mở, không đưa đáp án' },
-  { id: 'hoi', icon: 'ph-chat-circle-dots', label: 'Hỏi bài', hint: 'Hỏi đáp nhanh, trả lời thẳng' },
+  { id: 'giai', icon: 'ph-function', label: 'Solve', hint: 'Step-by-step solution, then ask about any step' },
+  { id: 'hoc', icon: 'ph-student', label: 'Study', hint: 'Socratic: Chiron asks guiding questions instead of giving the answer' },
+  { id: 'hoi', icon: 'ph-chat-circle-dots', label: 'Ask', hint: 'Quick questions, direct answers' },
 ];
 
 interface Props {
@@ -62,9 +62,9 @@ export function Composer(p: Props) {
           {/* The design's model picker. Mnemosyne exposes no model choice, so
               this names the engine that actually answers instead of offering
               a dropdown that would do nothing. */}
-          <div className="engine-chip" title="Cả ba chế độ đều chạy trên Mnemosyne">
+          <div className="engine-chip" title="All three modes run on Mnemosyne">
             <i className="ph ph-sparkle" />
-            {p.mode === 'hoc' ? 'Socratic' : p.mode === 'giai' ? 'Giải từng bước' : 'Hỏi đáp'} · Mnemosyne
+            {p.mode === 'hoc' ? 'Socratic' : p.mode === 'giai' ? 'Step by step' : 'Q&A'} · Mnemosyne
           </div>
         </div>
         <textarea
@@ -75,11 +75,11 @@ export function Composer(p: Props) {
           onKeyDown={onKey}
           placeholder={p.placeholder}
           disabled={p.disabled}
-          lang="vi"
+          lang="en"
         />
         {p.status && <div className="composer-status">{p.status}</div>}
         <div className="composer-bottom">
-          <div className="modes" role="radiogroup" aria-label="Chế độ">
+          <div className="modes" role="radiogroup" aria-label="Mode">
             {MODES.map((m) => (
               <button
                 key={m.id}
@@ -101,7 +101,7 @@ export function Composer(p: Props) {
               className="btn send-btn"
               onClick={p.onSubmit}
               disabled={!canSend}
-              title={p.sending ? 'Đang gửi…' : 'Gửi (Enter)'}
+              title={p.sending ? 'Sending…' : 'Send (Enter)'}
             >
               {p.sending ? <span className="spin" /> : <i className="ph ph-paper-plane-right" />}
             </button>

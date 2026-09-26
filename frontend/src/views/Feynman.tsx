@@ -1,5 +1,5 @@
 /**
- * Giảng lại (phương pháp Feynman) — Mnemosyne
+ * Teach back (the Feynman technique) — Mnemosyne
  * `POST /study_sets/{id}/feynman_evaluate` and its `/history`.
  *
  * The fourth methodology Mnemosyne implements, and the one that had a working
@@ -18,9 +18,9 @@ import { ErrorNotice, Loading, NeedToken, PageHeader } from '../components/ui';
 import { Blurting } from './Blurting';
 
 const SCORES: { key: 'clarity_score' | 'completeness_score' | 'correctness_score'; label: string; hint: string }[] = [
-  { key: 'clarity_score', label: 'Rõ ràng', hint: 'Người chưa biết có hiểu được không' },
-  { key: 'completeness_score', label: 'Đầy đủ', hint: 'Có bỏ sót ý chính nào không' },
-  { key: 'correctness_score', label: 'Chính xác', hint: 'Có chỗ nào sai kiến thức không' },
+  { key: 'clarity_score', label: 'Clarity', hint: 'Would someone new to it understand?' },
+  { key: 'completeness_score', label: 'Completeness', hint: 'Are any key ideas missing?' },
+  { key: 'correctness_score', label: 'Correctness', hint: 'Is anything factually wrong?' },
 ];
 
 function scoreColor(n: number): string {
@@ -33,7 +33,7 @@ export function FeynmanView() {
   const { user } = useApp();
   return (
     <main className="main">
-      <PageHeader title="Giảng lại" />
+      <PageHeader title="Teach back" />
       <div className="page">
         <div className="page-inner">{user ? <Methods /> : <NeedToken />}</div>
       </div>
@@ -54,16 +54,16 @@ function loadMode(): Mode {
 
 const MODE_TEXT: Record<Mode, { tab: string; title: string; lead: string }> = {
   feynman: {
-    tab: 'Giảng lại (Feynman)',
-    title: 'Giảng lại bằng lời của bạn',
+    tab: 'Teach back (Feynman)',
+    title: 'Explain it in your own words',
     lead:
-      'Phương pháp Feynman: giải thích chủ đề như đang dạy cho người chưa biết. Chiron chấm ba mặt — rõ ràng, đầy đủ, chính xác — dựa trên các thẻ trong bộ thẻ bạn chọn.',
+      'The Feynman technique: explain the topic as if teaching someone who has never seen it. Chiron scores clarity, completeness and correctness against the cards in the set you pick.',
   },
   blurting: {
-    tab: 'Viết ra trí nhớ (Blurting)',
-    title: 'Viết ra mọi thứ bạn nhớ',
+    tab: 'Brain dump (Blurting)',
+    title: 'Write down everything you remember',
     lead:
-      'Blurting: không nhìn tài liệu, viết hết những gì nhớ được về bộ thẻ. Chiron đối chiếu với từng thẻ và chỉ ra thẻ nào bạn đã nhớ, thẻ nào bị thiếu, thẻ nào hiểu sai.',
+      'Blurting: without looking at your notes, write down everything you remember about the set. Chiron checks it against every card and shows which you remembered, which you missed and which you got wrong.',
   },
 };
 
@@ -73,12 +73,12 @@ function Methods() {
   const [mode, setMode] = useState<Mode>(loadMode);
 
   if (studySetsError) return <ErrorNotice error={studySetsError} onRetry={reloadSets} />;
-  if (!studySets) return <Loading label="Đang tải bộ thẻ…" />;
+  if (!studySets) return <Loading label="Loading study sets…" />;
   if (studySets.length === 0) {
     return (
       <div className="notice notice-info">
         <i className="ph ph-info" />
-        <div>Giảng lại và Blurting đối chiếu với thẻ của một bộ thẻ. Người học này chưa có bộ thẻ nào.</div>
+        <div>Teach back and Blurting compare against the cards of a study set. This learner has none yet.</div>
       </div>
     );
   }
@@ -102,14 +102,14 @@ function Methods() {
       </div>
 
       <div className="toolbar" style={{ marginTop: 10, marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
-        <div className="pomo-tabs method-tabs" role="tablist" aria-label="Phương pháp">
+        <div className="pomo-tabs method-tabs" role="tablist" aria-label="Method">
           {(['feynman', 'blurting'] as Mode[]).map((m) => (
             <button key={m} role="tab" aria-selected={mode === m} className={`pomo-tab${mode === m ? ' pomo-tab-on' : ''}`} onClick={() => switchMode(m)}>
               {MODE_TEXT[m].tab}
             </button>
           ))}
         </div>
-        <select className="input" aria-label="Bộ thẻ" style={{ width: 'auto', minWidth: 240 }} value={effectiveSet} onChange={(e) => setSetId(e.target.value)}>
+        <select className="input" aria-label="Study set" style={{ width: 'auto', minWidth: 240 }} value={effectiveSet} onChange={(e) => setSetId(e.target.value)}>
           {studySets.map((s) => (
             <option key={s.id} value={s.id}>{s.name}{s.topic ? ` · ${s.topic}` : ''}</option>
           ))}
@@ -149,28 +149,28 @@ function Feynman({ setId: effectiveSet }: { setId: string }) {
     <>
       <div className="gen" style={{ maxWidth: 760 }}>
         <div className="field">
-          <label>Bài giảng của bạn</label>
+          <label>Your explanation</label>
           <textarea
             className="input"
-            lang="vi"
+            lang="en"
             style={{ minHeight: 160 }}
-            placeholder="Giải thích chủ đề này như thể người nghe chưa biết gì: định nghĩa, vì sao đúng, ví dụ…"
+            placeholder="Explain this topic as if your listener knows nothing about it: definitions, why it holds, examples…"
             value={text}
             onChange={(e) => setText(e.target.value)}
           />
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button className="btn btn-primary btn-main" onClick={submit} disabled={sending || !text.trim()}>
-            {sending ? <><span className="spin" />Chiron đang đọc…</> : <><i className="ph ph-chalkboard-teacher" />Chấm bài giảng</>}
+            {sending ? <><span className="spin" />Chiron is reading…</> : <><i className="ph ph-chalkboard-teacher" />Score my explanation</>}
           </button>
-          <span className="wk-meta">{text.trim().length} ký tự</span>
+          <span className="wk-meta">{text.trim().length} characters</span>
         </div>
         {error != null && <ErrorNotice error={error} compact />}
       </div>
 
       {result && (
         <>
-          <div className="section-label">Kết quả</div>
+          <div className="section-label">Result</div>
           <div className="fc" style={{ maxWidth: 760 }}>
             <div className="stats" style={{ padding: 0 }}>
               {SCORES.map((s) => (
@@ -182,22 +182,22 @@ function Feynman({ setId: effectiveSet }: { setId: string }) {
             </div>
             <hr className="rule" />
             <div>
-              <div className="section-label" style={{ margin: '0 0 6px' }}>Nhận xét</div>
+              <div className="section-label" style={{ margin: '0 0 6px' }}>Feedback</div>
               <div className="msg-ai-text">{result.feedback}</div>
             </div>
             <div>
-              <div className="section-label" style={{ margin: '10px 0 6px' }}>Gợi ý cải thiện</div>
+              <div className="section-label" style={{ margin: '10px 0 6px' }}>How to improve</div>
               <div className="msg-ai-text">{result.suggestions}</div>
             </div>
           </div>
         </>
       )}
 
-      <div className="section-label">Lần giảng trước · {history.length}</div>
+      <div className="section-label">Earlier explanations · {history.length}</div>
       {historyQ.loading && !historyQ.data && <Loading />}
       {historyQ.error != null && <ErrorNotice error={historyQ.error} onRetry={historyQ.reload} compact />}
       {!historyQ.loading && history.length === 0 && (
-        <div className="wk-desc">Chưa có lần giảng nào cho bộ thẻ này.</div>
+        <div className="wk-desc">No explanations for this set yet.</div>
       )}
       <div className="list" style={{ maxWidth: 760 }}>
         {[...history].reverse().map((h) => (

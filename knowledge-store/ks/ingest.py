@@ -1,7 +1,7 @@
-"""Ghi khái niệm vào KS + dò trùng bằng full-text trigram.
+"""Writing concepts into KS + duplicate detection with trigram full-text.
 
-FAIL-LOUD: lỗi DB văng thẳng ra dạng psycopg.Error. Đối lập có chủ đích với
-save_transcript (không bao giờ raise). Wrapper HTTP tự bắt → 503.
+FAIL-LOUD: DB errors propagate as psycopg.Error. Deliberately the opposite of
+save_transcript (which never raises). The HTTP wrapper catches them → 503.
 """
 
 from __future__ import annotations
@@ -19,9 +19,9 @@ from ks.models import (
     IngestResult,
 )
 
-# similarity() thay vì toán tử `%` để ngưỡng không phụ thuộc GUC
-# pg_trgm.similarity_threshold của session. Đổi lại là không dùng GIN index —
-# chấp nhận được ở quy mô một người dùng, ghi làm nợ kỹ thuật.
+# similarity() rather than the `%` operator, so the threshold does not depend on
+# the session's pg_trgm.similarity_threshold GUC. The price is no GIN index —
+# acceptable at single-user scale, recorded as technical debt.
 _CANDIDATE_SQL = """
 SELECT id, title, similarity(title, %(title)s) AS score
 FROM ks.nodes
@@ -37,8 +37,8 @@ VALUES (%s, %s, %s, %s)
 RETURNING id
 """
 
-# Log nằm TRONG hàm nghiệp vụ, cùng transaction — không phải bảng phụ caller
-# tự nhớ gọi. Rollback phải mất cả log lẫn data.
+# The log is written INSIDE the business function, in the same transaction — not
+# a side table the caller has to remember. A rollback must lose both log and data.
 _LOG_SQL = """
 INSERT INTO ks.ingest_log
   (node_id, draft_title, draft_subject, source_module, decision, threshold, top_score, candidates, chosen_by)
@@ -84,10 +84,10 @@ def find_candidates(
     floor: float = settings.CANDIDATE_FLOOR,
     limit: int = settings.CANDIDATE_LIMIT,
 ) -> tuple[DuplicateCandidate, ...]:
-    """Node có sẵn giống `title`, sắp giảm dần theo similarity.
+    """Existing nodes similar to `title`, sorted by similarity, highest first.
 
-    Bỏ qua node đã merge (merged_into_id khác NULL) — không gợi ý gộp vào một
-    node đã chết.
+    Skips merged nodes (merged_into_id not NULL) — never suggest merging into a
+    node that is gone.
     """
     with conn.cursor() as cur:
         cur.execute(_CANDIDATE_SQL, {"title": title, "floor": floor, "limit": limit})
@@ -108,14 +108,14 @@ def _insert_node(conn: psycopg.Connection, draft: ConceptDraft) -> UUID:
 
 
 class MergeTargetInvalid(ValueError):
-    """Node đích để gộp không tồn tại, hoặc chính nó đã bị gộp vào node khác."""
+    """The merge target does not exist, or has itself been merged into another node."""
 
 
 def pick_duplicate(
     candidates: tuple[DuplicateCandidate, ...],
     threshold: float = settings.DUPLICATE_THRESHOLD,
 ) -> DuplicateCandidate | None:
-    """Node mà quy tắc tự động sẽ gộp vào — dùng để màn duyệt nói trước."""
+    """The node the automatic rule would merge into — so the review screen can say so up front."""
     return _pick_duplicate(candidates, threshold)
 
 
@@ -126,12 +126,12 @@ def ingest_decided(
     merge_into: UUID | None,
     threshold: float = settings.DUPLICATE_THRESHOLD,
 ) -> IngestedConcept:
-    """Ghi một draft theo lựa chọn của NGƯỜI HỌC, không theo ngưỡng.
+    """Write one draft by the LEARNER's choice, not by the threshold.
 
-    `merge_into=None` → tạo node mới, kể cả khi có candidate vượt ngưỡng.
-    Ngược lại → khớp vào node đó; node phải tồn tại và chưa bị gộp. Candidate
-    vẫn được tìm và log như ingest_concepts, với `chosen_by='learner'`, để so
-    được quyết định của người với quyết định mà ngưỡng lẽ ra đưa ra.
+    `merge_into=None` → create a new node, even when a candidate is over the threshold.
+    Otherwise → match that node; it must exist and not be merged. Candidates are
+    still looked up and logged as in ingest_concepts, with `chosen_by='learner'`,
+    so the learner's decision can be compared with what the threshold would have done.
     """
     candidates = find_candidates(conn, draft.title)
     if merge_into is None:
@@ -142,9 +142,9 @@ def ingest_decided(
             cur.execute("SELECT merged_into_id FROM ks.nodes WHERE id = %s", (merge_into,))
             row = cur.fetchone()
         if row is None:
-            raise MergeTargetInvalid(f"node {merge_into} không tồn tại")
+            raise MergeTargetInvalid(f"node {merge_into} does not exist")
         if row[0] is not None:
-            raise MergeTargetInvalid(f"node {merge_into} đã được gộp vào {row[0]}; chọn node đó")
+            raise MergeTargetInvalid(f"node {merge_into} was merged into {row[0]}; choose that node")
         node_id = merge_into
         created = False
     item = IngestedConcept(draft=draft, node_id=node_id, created=created, candidates=candidates)
@@ -156,7 +156,7 @@ def _pick_duplicate(
     candidates: tuple[DuplicateCandidate, ...],
     threshold: float,
 ) -> DuplicateCandidate | None:
-    """Candidate đầu tiên đạt ngưỡng gộp, hoặc None."""
+    """The first candidate at or over the merge threshold, or None."""
     for cand in candidates:
         if cand.score >= threshold:
             return cand
@@ -169,10 +169,10 @@ def ingest_concepts(
     *,
     threshold: float = settings.DUPLICATE_THRESHOLD,
 ) -> IngestResult:
-    """Ghi từng draft: khớp node có sẵn nếu similarity >= ngưỡng, không thì tạo mới.
+    """Write each draft: match an existing node if similarity >= threshold, otherwise create one.
 
-    Không commit — transaction thuộc về caller. Draft trong cùng lô nhìn thấy
-    nhau: draft thứ hai trùng draft thứ nhất sẽ khớp vào node vừa tạo.
+    No commit — the transaction belongs to the caller. Drafts in the same batch see
+    each other: a second draft duplicating the first matches the node just created.
     """
     ingested: list[IngestedConcept] = []
     for draft in drafts:

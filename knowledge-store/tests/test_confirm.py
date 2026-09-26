@@ -1,4 +1,4 @@
-"""list / accept / discard khái niệm đã rút."""
+"""list / accept / discard of extracted concepts."""
 
 from __future__ import annotations
 
@@ -30,14 +30,14 @@ def extracted(conn):
     return conn, concepts
 
 
-def test_list_chi_tra_pending_review(extracted):
+def test_list_returns_only_pending_review(extracted):
     conn, concepts = extracted
     assert len(list_extracted(conn)) == 2
     discard(conn, concepts[0].id)
     assert [c.id for c in list_extracted(conn)] == [concepts[1].id]
 
 
-def test_accept_tao_node_qua_ingest_concepts(extracted):
+def test_accept_creates_a_node_through_ingest_concepts(extracted):
     conn, concepts = extracted
     item = accept(conn, concepts[0].id)
     assert item.created is True
@@ -46,8 +46,8 @@ def test_accept_tao_node_qua_ingest_concepts(extracted):
         assert cur.fetchone()[0] == "Định luật Newton 2"
 
 
-def test_accept_di_qua_dung_luat_do_trung(extracted):
-    """Không có cửa sau: accept dùng chung ingest_concepts nên cũng bị gộp."""
+def test_accept_goes_through_the_same_duplicate_rule(extracted):
+    """No back door: accept shares ingest_concepts, so it gets merged too."""
     conn, concepts = extracted
     first = accept(conn, concepts[0].id)
     with conn.cursor() as cur:
@@ -62,7 +62,7 @@ def test_accept_di_qua_dung_luat_do_trung(extracted):
     assert second.node_id == first.node_id
 
 
-def test_accept_ghi_lai_node_id_va_doi_status(extracted):
+def test_accept_records_node_id_and_changes_status(extracted):
     conn, concepts = extracted
     item = accept(conn, concepts[0].id)
     with conn.cursor() as cur:
@@ -71,8 +71,8 @@ def test_accept_ghi_lai_node_id_va_doi_status(extracted):
         assert cur.fetchone() == ("accepted", item.node_id)
 
 
-def test_accept_cung_de_lai_ingest_log(extracted):
-    """Instrumentation không có ngoại lệ cho đường accept."""
+def test_accept_also_leaves_an_ingest_log(extracted):
+    """Instrumentation has no exception for the accept path."""
     conn, concepts = extracted
     accept(conn, concepts[0].id)
     with conn.cursor() as cur:
@@ -80,7 +80,7 @@ def test_accept_cung_de_lai_ingest_log(extracted):
         assert cur.fetchone()[0] == 1
 
 
-def test_discard_giu_row_KHONG_xoa(extracted):
+def test_discard_keeps_the_row_does_NOT_delete(extracted):
     conn, concepts = extracted
     discard(conn, concepts[0].id)
     with conn.cursor() as cur:
@@ -88,7 +88,7 @@ def test_discard_giu_row_KHONG_xoa(extracted):
         assert cur.fetchone()[0] == "discarded"
 
 
-def test_discard_khong_tao_node(extracted):
+def test_discard_creates_no_node(extracted):
     conn, concepts = extracted
     discard(conn, concepts[0].id)
     with conn.cursor() as cur:
@@ -96,26 +96,26 @@ def test_discard_khong_tao_node(extracted):
         assert cur.fetchone()[0] == 0
 
 
-def test_accept_lai_thu_da_quyet_thi_raise(extracted):
+def test_accepting_an_already_decided_concept_raises(extracted):
     conn, concepts = extracted
     accept(conn, concepts[0].id)
     with pytest.raises(AlreadyDecided):
         accept(conn, concepts[0].id)
 
 
-def test_discard_lai_thu_da_quyet_thi_raise(extracted):
+def test_discarding_an_already_decided_concept_raises(extracted):
     conn, concepts = extracted
     discard(conn, concepts[0].id)
     with pytest.raises(AlreadyDecided):
         discard(conn, concepts[0].id)
 
 
-def test_id_khong_ton_tai_thi_raise(conn):
+def test_unknown_id_raises(conn):
     with pytest.raises(ExtractedConceptNotFound):
         accept(conn, uuid.uuid4())
 
 
-def test_list_loc_theo_status(extracted):
+def test_list_filters_by_status(extracted):
     conn, concepts = extracted
     accept(conn, concepts[0].id)
     assert [c.id for c in list_extracted(conn, status="accepted")] == [concepts[0].id]

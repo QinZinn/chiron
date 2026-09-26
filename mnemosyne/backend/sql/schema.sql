@@ -299,7 +299,7 @@ CREATE INDEX idx_todo_items_user_done ON todo_items (user_id, done, created_at D
 
 -- ---------------------------------------------------------------------------
 -- Table: todo_item_cards
--- Which cards a weak-card todo item lists — the evidence the Điểm yếu screen
+-- Which cards a weak-card todo item lists — the evidence the Weak spots screen
 -- shows. Append-only while the item is open: a card that recovers stays
 -- listed until the learner ticks the item off. Added by migration 0010.
 -- ---------------------------------------------------------------------------
@@ -334,7 +334,7 @@ CREATE INDEX idx_user_tokens_user_id ON user_tokens (user_id);
 
 -- ---------------------------------------------------------------------------
 -- Tables: chat_sessions, chat_messages
--- "Hỏi bài" (direct answers) and "Giải bài" (worked step by step) — the two
+-- "Ask" (direct answers) and "Solve" (worked step by step) — the two
 -- modes that are the opposite of Socratic, which refuses to answer. One pair
 -- of tables with a `mode` column, because the storage is identical; kept apart
 -- from socratic_sessions because the lifecycle is not (no study-set
@@ -376,7 +376,7 @@ CREATE TABLE blurting_attempts (
     user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     set_id            UUID NOT NULL REFERENCES study_sets(id) ON DELETE CASCADE,
     recall_text       TEXT NOT NULL,          -- what the learner wrote, unaided
-    feedback          TEXT NOT NULL,          -- short overall comment, Vietnamese
+    feedback          TEXT NOT NULL,          -- short overall comment, in English
     -- Cards the AI was shown. The prompt caps card context, so a large set is
     -- judged on its first cards only; recorded so the result never implies more.
     cards_considered  INTEGER NOT NULL CHECK (cards_considered >= 0),
