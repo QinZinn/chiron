@@ -15,7 +15,7 @@ export interface KsNode {
 }
 
 /** ks/models.py SourceModule. */
-export const KS_SOURCE_MODULES = ['mnemosyne', 'lexiflash'] as const;
+export const KS_SOURCE_MODULES = ['mnemosyne', 'lexiflash', 'note_scan'] as const;
 export type KsSourceModule = (typeof KS_SOURCE_MODULES)[number];
 
 /** ks/settings.py MAX_NODE_LIMIT — above this KS answers 400, it does not truncate. */
@@ -74,7 +74,19 @@ export interface ProxyStatus {
   ks: { url: string; tokenConfigured: boolean };
 }
 
+/** An approved edge between two concepts (KS `GET /edges`), both ends already merge-resolved. */
+export interface KsEdge {
+  id: string;
+  from: string;
+  to: string;
+  relation_type: 'prerequisite' | 'related' | 'contrasts_with';
+  /** related / contrasts_with have no direction. */
+  symmetric: boolean;
+}
+
 export const ks = {
+  listEdges: () => request<{ edges: KsEdge[] }>(S, '/api/ks/edges'),
+
   health: () => request<{ status: string }>(S, '/api/ks/health', { timeoutMs: 5_000 }),
 
   listNodes: (opts: { subject?: string; sourceModule?: KsSourceModule; limit?: number } = {}) => {

@@ -1,16 +1,41 @@
 /**
  * Kiến thức — Knowledge Store GET /nodes and GET /nodes/{id}, via the proxy.
  * Nodes are concepts the learner has studied ("Định luật Newton 2"), not sessions.
+ *
+ * Two views of the same filtered nodes: a list grouped by subject, and a
+ * concept map that adds KS GET /edges (approved edges only).
  */
 import { useMemo, useState } from 'react';
 import { ks, KS_MAX_NODE_LIMIT, KS_SOURCE_MODULES, type KsNode, type KsSourceModule } from '../api/ks';
 import { useAsync } from '../lib/useAsync';
 import { href, navigate } from '../lib/route';
 import { ErrorNotice, Loading, PageHeader } from '../components/ui';
+import { ConceptMap } from '../components/ConceptMap';
 
-const SOURCE_LABEL: Record<KsSourceModule, string> = { mnemosyne: 'Mnemosyne', lexiflash: 'LexiFlash' };
+const SOURCE_LABEL: Record<KsSourceModule, string> = { mnemosyne: 'Mnemosyne', lexiflash: 'LexiFlash', note_scan: 'Scan ghi chép' };
+
+type ViewMode = 'list' | 'map';
+const VIEW_KEY = 'chiron.knowledgeView';
+
+function loadView(): ViewMode {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'map' ? 'map' : 'list';
+  } catch {
+    return 'list';
+  }
+}
 
 export function KnowledgeView({ nodeId }: { nodeId?: string }) {
+  const [view, setView] = useState<ViewMode>(loadView);
+  const edgesQ = useAsync(() => ks.listEdges(), [view], view === 'map');
+  const switchView = (v: ViewMode) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      // Storage blocked: the choice lasts until the page reloads.
+    }
+  };
   const [subject, setSubject] = useState('');
   const [appliedSubject, setAppliedSubject] = useState('');
   const [sourceModule, setSourceModule] = useState<KsSourceModule | ''>('');
@@ -45,7 +70,7 @@ export function KnowledgeView({ nodeId }: { nodeId?: string }) {
         <div className="page-head">
           <div>
             <h2>{nodes ? `${nodes.length} khái niệm${truncated ? '+' : ''}` : 'Khái niệm đã học'}</h2>
-            <p>Từ Knowledge Store — “second brain” lưu khái niệm đã học, rút ra từ các phiên Học bài.</p>
+            <p>Từ Knowledge Store — “second brain” lưu khái niệm đã học, rút ra từ các phiên Học bài và ghi chép scan.</p>
           </div>
         </div>
         <div className="stats">
@@ -53,6 +78,14 @@ export function KnowledgeView({ nodeId }: { nodeId?: string }) {
           <div><div className="stat-k">Môn học</div><div className="stat-v">{nodes ? subjects : '—'}</div></div>
         </div>
         <div className="toolbar" style={{ marginBottom: 16 }}>
+          <div className="pomo-tabs" role="tablist" aria-label="Cách xem" style={{ minWidth: 220 }}>
+            <button role="tab" aria-selected={view === 'list'} className={`pomo-tab${view === 'list' ? ' pomo-tab-on' : ''}`} onClick={() => switchView('list')}>
+              <i className="ph ph-list-bullets" /> Danh sách
+            </button>
+            <button role="tab" aria-selected={view === 'map'} className={`pomo-tab${view === 'map' ? ' pomo-tab-on' : ''}`} onClick={() => switchView('map')}>
+              <i className="ph ph-graph" /> Bản đồ
+            </button>
+          </div>
           <input className="input input-sm" style={{ width: 220 }} lang="vi" placeholder="Tìm trong kết quả…" value={search} onChange={(e) => setSearch(e.target.value)} />
           <form
             style={{ display: 'flex', gap: 6 }}
@@ -89,7 +122,36 @@ export function KnowledgeView({ nodeId }: { nodeId?: string }) {
           </div>
         )}
 
-        {nodes && nodes.length > 0 && (
+        {nodes && nodes.length > 0 && view === 'map' && (
+          <div className="kn">
+            <div style={{ minWidth: 0 }}>
+              {edgesQ.loading && !edgesQ.data && <Loading label="Đang tải liên kết…" />}
+              {edgesQ.error != null && <ErrorNotice error={edgesQ.error} onRetry={edgesQ.reload} />}
+              {edgesQ.data && (
+                <>
+                  {edgesQ.data.edges.length === 0 && (
+                    <div className="notice notice-info" style={{ marginBottom: 12 }}>
+                      <i className="ph ph-info" />
+                      <div>
+                        <div className="notice-title">Chưa có liên kết nào được duyệt</div>
+                        <div>
+                          Bản đồ chỉ vẽ liên kết đã được người duyệt. Chạy <code>ks suggest-edges</code> để LLM gợi ý, rồi
+                          duyệt bằng <code>ks list-pending</code> / <code>ks approve</code>. Hiện mỗi khái niệm là một điểm rời.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <ConceptMap nodes={filtered} edges={edgesQ.data.edges} selectedId={nodeId} />
+                </>
+              )}
+            </div>
+            <div className="kn-detail">
+              {nodeId ? <NodeDetail key={nodeId} id={nodeId} /> : <div className="wk-desc">Chọn một khái niệm trên bản đồ để xem đầy đủ.</div>}
+            </div>
+          </div>
+        )}
+
+        {nodes && nodes.length > 0 && view === 'list' && (
           <div className="kn">
             <div>
               {groups.map(([subj, list]) => (
