@@ -75,7 +75,7 @@ export function Composer(p: Props) {
           onKeyDown={onKey}
           placeholder={p.placeholder}
           disabled={p.disabled}
-          lang="vi"
+          lang="en"
         />
         {p.status && <div className="composer-status">{p.status}</div>}
         <div className="composer-bottom">

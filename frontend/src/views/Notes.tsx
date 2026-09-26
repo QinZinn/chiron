@@ -199,7 +199,7 @@ function NoteList() {
                 <label>Title (optional)</label>
                 <input
                   className="input input-sm"
-                  lang="vi"
+                  lang="en"
                   placeholder="e.g. Physics · Chapter 5 · Electromagnetic induction"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
@@ -246,7 +246,7 @@ function NoteList() {
               <p className="wk-desc clamp2">{n.text || '(no text was recognised)'}</p>
             </div>
             <div className="wk-side">
-              <span className="wk-meta">{n.page_count} trang</span>
+              <span className="wk-meta">{n.page_count} page{n.page_count === 1 ? '' : 's'}</span>
               <span className="wk-meta">{dateTime(n.created_at)}</span>
             </div>
           </a>
@@ -320,13 +320,13 @@ function NoteDetail({ noteId }: { noteId: string }) {
         <div style={{ flex: 1, minWidth: 260 }}>
           <input
             className="title-input"
-            lang="vi"
+            lang="en"
             value={title ?? ''}
             onChange={(e) => setTitle(e.target.value)}
             aria-label="Note title"
           />
           <p>
-            {note.page_count} trang · {note.filenames.join(', ')} · scan {dateTime(note.created_at)}
+            {note.page_count} page{note.page_count === 1 ? '' : 's'} · {note.filenames.join(', ')} · scan {dateTime(note.created_at)}
           </p>
         </div>
       </div>
@@ -343,7 +343,7 @@ function NoteDetail({ noteId }: { noteId: string }) {
           <div className="section-label" style={{ marginTop: 0 }}>Text · fix recognition errors before extracting concepts</div>
           <textarea
             className="input note-text"
-            lang="vi"
+            lang="en"
             spellCheck={false}
             value={text ?? ''}
             onChange={(e) => setText(e.target.value)}
@@ -410,7 +410,7 @@ function OcrQuality({ pages }: { pages: OcrPage[] }) {
   const flagged = useMemo(
     () =>
       pages.flatMap((p) =>
-        p.lines.filter((l) => l.confidence < 0.8).map((l) => ({ page: `${p.source} · tr.${p.number}`, ...l })),
+        p.lines.filter((l) => l.confidence < 0.8).map((l) => ({ page: `${p.source} · p.${p.number}`, ...l })),
       ),
     [pages],
   );
@@ -420,7 +420,7 @@ function OcrQuality({ pages }: { pages: OcrPage[] }) {
       <div className="list" style={{ gap: 6 }}>
         {pages.map((p) => (
           <div key={`${p.source}-${p.number}`} className="ocr-page">
-            <span className="wk-meta" style={{ flex: 1 }}>{p.source} · trang {p.number}</span>
+            <span className="wk-meta" style={{ flex: 1 }}>{p.source} · page {p.number}</span>
             {p.mean_confidence === null ? (
               <span className="tag tag-dim tag-sm">no text</span>
             ) : (
@@ -517,9 +517,9 @@ function ConceptCard({ concept, onChange }: { concept: ReviewConcept; onChange: 
       <div style={{ minWidth: 0 }}>
         {edit ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <input className="input input-sm" lang="vi" value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} aria-label="Concept name" />
-            <input className="input input-sm" lang="vi" value={edit.subject} onChange={(e) => setEdit({ ...edit, subject: e.target.value })} aria-label="Subject" />
-            <textarea className="input" lang="vi" style={{ minHeight: 70 }} value={edit.summary} onChange={(e) => setEdit({ ...edit, summary: e.target.value })} aria-label="Summary" />
+            <input className="input input-sm" lang="en" value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} aria-label="Concept name" />
+            <input className="input input-sm" lang="en" value={edit.subject} onChange={(e) => setEdit({ ...edit, subject: e.target.value })} aria-label="Subject" />
+            <textarea className="input" lang="en" style={{ minHeight: 70 }} value={edit.summary} onChange={(e) => setEdit({ ...edit, summary: e.target.value })} aria-label="Summary" />
           </div>
         ) : (
           <>

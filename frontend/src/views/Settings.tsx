@@ -148,7 +148,7 @@ export function SettingsView() {
                 id="style"
                 className="input"
                 style={{ width: 'auto', minWidth: 300 }}
-                lang="vi"
+                lang="en"
                 placeholder="e.g. Grade 11 · likes real-world examples"
                 value={style ?? user.learning_style ?? ''}
                 onChange={(e) => setStyle(e.target.value)}
@@ -309,7 +309,7 @@ function StudySetRow({
         ) : (
           <input
             className="input"
-            lang="vi"
+            lang="en"
             value={draft}
             autoFocus
             onChange={(e) => setDraft(e.target.value)}

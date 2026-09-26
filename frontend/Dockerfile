@@ -13,7 +13,7 @@ COPY . .
 #
 # `vite preview` rather than a static server: the proxy that holds the KS
 # secret is a Vite plugin (server/chironProxy.ts), and preview runs it. A plain
-# static server would ship a UI whose Kiến thức and Scan ghi chép areas have
+# static server would ship a UI whose Knowledge and Note scan areas have
 # nothing to call.
 ENV CHIRON_BIND_HOST=0.0.0.0
 EXPOSE 4173

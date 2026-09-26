@@ -153,7 +153,7 @@ function QuizBody() {
         {source === 'topic' ? (
           <div className="field">
             <label>Topic or a passage of material</label>
-            <textarea className="input" lang="vi" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. Faraday's law of electromagnetic induction and Lenz's law" maxLength={8000} />
+            <textarea className="input" lang="en" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. Faraday's law of electromagnetic induction and Lenz's law" maxLength={8000} />
           </div>
         ) : (
           <p className="wk-desc">
@@ -164,7 +164,7 @@ function QuizBody() {
           {source === 'knowledge_store' && (
             <div className="field">
               <label>Filter by subject (optional)</label>
-              <input className="input input-sm" lang="vi" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Physics" />
+              <input className="input input-sm" lang="en" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Physics" />
             </div>
           )}
           <div className="field" style={{ flex: 'none', minWidth: 0, width: 120 }}>

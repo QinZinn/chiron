@@ -108,7 +108,7 @@ function Todos() {
                 <input
                   id="todo-title"
                   className="input input-sm"
-                  lang="vi"
+                  lang="en"
                   placeholder="e.g. Redo the chapter 3 outline"
                   value={title}
                   maxLength={MAX_TITLE}

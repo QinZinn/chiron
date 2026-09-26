@@ -28,7 +28,7 @@ export function layout(nodes: LayoutNode[], edges: LayoutEdge[], size = 1000): M
   if (n === 0) return pos;
 
   // Start: groups spread on a big circle, each group's nodes on a small one.
-  const groups = [...new Set(nodes.map((d) => d.group))].sort((a, b) => a.localeCompare(b, 'vi'));
+  const groups = [...new Set(nodes.map((d) => d.group))].sort((a, b) => a.localeCompare(b, 'en'));
   const members = new Map(groups.map((g) => [g, nodes.filter((d) => d.group === g)]));
   groups.forEach((g, gi) => {
     const ga = (2 * Math.PI * gi) / groups.length;
@@ -190,7 +190,7 @@ export function pack(
   }
 
   // Isolated concepts: a grid, grouped by subject so colours stay together.
-  singles.sort((a, b) => a.group.localeCompare(b.group, 'vi'));
+  singles.sort((a, b) => a.group.localeCompare(b.group, 'en'));
   const perRow = Math.max(1, Math.floor((width + gap) / cell));
   if (singles.length > 0) {
     const local = new Map<string, Point>();

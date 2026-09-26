@@ -93,7 +93,7 @@ export function Sidebar({ route }: { route: Route }) {
               key={`${r.kind}:${r.id}`}
               className={`nv nv-recent${activeSession === r.id ? ' nv-on' : ''}`}
               href={href({ view: 'chat', kind: r.kind, sessionId: r.id })}
-              title={`${r.subtitle} · ${r.title} · ${new Date(r.updatedAt).toLocaleString('vi-VN')}`}
+              title={`${r.subtitle} · ${r.title} · ${new Date(r.updatedAt).toLocaleString('en-GB')}`}
             >
               <i className={`ph ${r.kind === 'socratic' ? 'ph-student' : r.subtitle === 'Solve' ? 'ph-function' : 'ph-chat-circle-dots'}`} />
               <span className="nvl">{r.title}</span>

@@ -152,7 +152,7 @@ function Feynman({ setId: effectiveSet }: { setId: string }) {
           <label>Your explanation</label>
           <textarea
             className="input"
-            lang="vi"
+            lang="en"
             style={{ minHeight: 160 }}
             placeholder="Explain this topic as if your listener knows nothing about it: definitions, why it holds, examples…"
             value={text}

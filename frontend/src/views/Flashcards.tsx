@@ -213,11 +213,11 @@ function Review() {
           </div>
           <div className="field">
             <label>Question</label>
-            <textarea className="input" lang="vi" value={edit.question} onChange={(e) => setEdit({ ...edit, question: e.target.value })} />
+            <textarea className="input" lang="en" value={edit.question} onChange={(e) => setEdit({ ...edit, question: e.target.value })} />
           </div>
           <div className="field">
             <label>Answer</label>
-            <textarea className="input" lang="vi" value={edit.answer} onChange={(e) => setEdit({ ...edit, answer: e.target.value })} />
+            <textarea className="input" lang="en" value={edit.answer} onChange={(e) => setEdit({ ...edit, answer: e.target.value })} />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-primary btn-main" onClick={saveEdit} disabled={saving || !edit.question.trim() || !edit.answer.trim()}>

@@ -1,10 +1,10 @@
 /**
  * Main chat, all three modes:
  *
- *   Học bài   Socratic — POST /socratic/start → /reply → /end. Refuses to
+ *   Study   Socratic — POST /socratic/start → /reply → /end. Refuses to
  *             hand over answers; that is the method.
- *   Hỏi bài   direct answers — POST /chat/start (mode "ask") → /reply
- *   Giải bài  worked step by step — POST /chat/start (mode "solve") → /reply
+ *   Ask     direct answers — POST /chat/start (mode "ask") → /reply
+ *   Solve   worked step by step — POST /chat/start (mode "solve") → /reply
  *
  * A session id alone does not say which table it lives in, so the URL does:
  * #/chat/s/<id> for Socratic, #/chat/c/<id> for the other two.
@@ -39,17 +39,17 @@ function friendly(err: unknown): string {
   if (!(err instanceof ApiError)) return err instanceof Error ? err.message : String(err);
   if (err.kind !== 'http') return err.message;
   const m = err.message;
-  if (m.includes('has no cards')) return 'Bộ thẻ này chưa có thẻ nào — cần tạo thẻ trước khi học.';
-  if (m.includes('turn limit')) return 'Phiên đã đạt giới hạn 20 lượt. Hãy kết thúc và mở phiên mới.';
-  if (m.includes('not found')) return `Mnemosyne không tìm thấy dữ liệu (${m}).`;
-  return `Mnemosyne báo lỗi (HTTP ${err.status}): ${m}`;
+  if (m.includes('has no cards')) return 'This study set has no cards yet — add cards before studying.';
+  if (m.includes('turn limit')) return 'This session has reached the 20-turn limit. End it and start a new one.';
+  if (m.includes('not found')) return `Mnemosyne could not find it (${m}).`;
+  return `Mnemosyne returned an error (HTTP ${err.status}): ${m}`;
 }
 
 function StatusTag() {
   const { health } = useApp();
-  if (health.mnemosyne === 'ok') return <span className="tag tag-green tag-sm">Mnemosyne sẵn sàng</span>;
-  if (health.mnemosyne === 'down') return <span className="tag tag-red tag-sm">Mnemosyne mất kết nối</span>;
-  return <span className="tag tag-dim tag-sm">Đang kiểm tra kết nối…</span>;
+  if (health.mnemosyne === 'ok') return <span className="tag tag-green tag-sm">Mnemosyne ready</span>;
+  if (health.mnemosyne === 'down') return <span className="tag tag-red tag-sm">Mnemosyne unreachable</span>;
+  return <span className="tag tag-dim tag-sm">Checking connection…</span>;
 }
 
 export function ChatView({
@@ -91,13 +91,13 @@ function NewChat({ preselect }: { preselect?: string }) {
 
   const down = health.mnemosyne === 'down';
   let blocked: string | undefined;
-  if (down) blocked = 'Không kết nối được Mnemosyne — Học bài tạm thời không dùng được.';
+  if (down) blocked = 'Cannot reach Mnemosyne — Study is unavailable for now.';
   else if (health.mnemosyne === 'checking') blocked = undefined;
-  else if (!user) blocked = 'Chưa đăng nhập Mnemosyne — dán token trong Cài đặt.';
+  else if (!user) blocked = 'Not signed in to Mnemosyne — paste a token in Settings.';
   else if (studySetsError) blocked = friendly(studySetsError);
   // Only Socratic needs a study set; the other two work on anything typed.
   else if (mode === 'hoc' && studySets && studySets.length === 0)
-    blocked = 'Học bài cần một bộ thẻ. Người học này chưa có bộ thẻ nào trong Mnemosyne.';
+    blocked = 'Study needs a study set. This learner has no study sets in Mnemosyne yet.';
 
   const start = async () => {
     if (!user) return;
@@ -116,7 +116,7 @@ function NewChat({ preselect }: { preselect?: string }) {
         navigate({ view: 'chat', kind: 'socratic', sessionId: res.session_id });
         return;
       }
-      // Hỏi bài / Giải bài: the typed message IS the opening move, and the
+      // Ask / Solve: the typed message IS the opening move, and the
       // study set is optional context rather than the subject.
       const res = await mnemosyne.chatStart(mode === 'giai' ? 'solve' : 'ask', text, setId || undefined);
       const now = new Date().toISOString();
@@ -139,13 +139,13 @@ function NewChat({ preselect }: { preselect?: string }) {
   return (
     <main className="main main-stars">
       <Constellation />
-      <PageHeader title={<span style={{ color: 'var(--mut)', fontSize: 13 }}>Cuộc trò chuyện mới</span>} line={false}>
+      <PageHeader title={<span style={{ color: 'var(--mut)', fontSize: 13 }}>New conversation</span>} line={false}>
         <StatusTag />
       </PageHeader>
       <div className="chat-empty">
         <HeroMark />
         <h1>Chiron</h1>
-        <p>Người đồng hành trong việc học. Giải bài từng bước, ôn lại bằng câu hỏi, và theo dõi những gì bạn chưa vững.</p>
+        <p>A companion for learning. Solve problems step by step, review through questions, and keep track of what you haven't mastered yet.</p>
       </div>
       <Composer
         float
@@ -163,24 +163,24 @@ function NewChat({ preselect }: { preselect?: string }) {
         autoFocus
         placeholder={
           starting
-            ? 'Chiron đang trả lời…'
+            ? 'Chiron is replying…'
             : mode === 'hoc'
-              ? 'Chọn bộ thẻ rồi bấm gửi — Chiron sẽ mở đầu bằng một câu hỏi. Có thể gõ sẵn điều bạn muốn hỏi trước.'
+              ? 'Pick a study set and press send — Chiron opens with a question. You can type what you want to ask first.'
               : mode === 'giai'
-                ? 'Dán đề bài. Chiron giải từng bước, rồi bạn hỏi tiếp về bước nào chưa rõ.'
-                : 'Hỏi một câu. Chiron trả lời thẳng, không vòng vo.'
+                ? 'Paste a problem. Chiron solves it step by step; then ask about any step that is unclear.'
+                : 'Ask a question. Chiron answers directly, no beating around the bush.'
         }
         topLeft={
           <div className="set-picker">
             <i className="ph ph-cards-three" style={{ fontSize: 14, color: 'var(--frost2)' }} />
-            {mode === 'hoc' ? 'Bộ thẻ' : 'Ngữ cảnh'}
+            {mode === 'hoc' ? 'Study set' : 'Context'}
             <select
               className="input"
               value={setId}
               onChange={(e) => setSetId(e.target.value)}
               disabled={!studySets || studySets.length === 0 || starting}
             >
-              {mode !== 'hoc' && <option value="">— Không dùng bộ thẻ —</option>}
+              {mode !== 'hoc' && <option value="">— No study set —</option>}
               {!studySets && <option value="">—</option>}
               {studySets?.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -190,7 +190,7 @@ function NewChat({ preselect }: { preselect?: string }) {
               ))}
             </select>
             {studySetsError != null && (
-              <button className="icon-btn" title="Tải lại" onClick={reloadSets}>
+              <button className="icon-btn" title="Reload" onClick={reloadSets}>
                 <i className="ph ph-arrow-clockwise" />
               </button>
             )}
@@ -265,7 +265,7 @@ function SessionChat({ sessionId }: { sessionId: string }) {
       setPending(undefined);
     } catch (e) {
       // Mnemosyne stores the learner's message before calling DeepSeek, so
-      // after a 502 the message is already in the transcript; "Gửi lại"
+      // after a 502 the message is already in the transcript; "Resend"
       // stores it a second time. Harmless for the dialogue, and still better
       // than silently dropping what the learner wrote.
       setPending({ text: msg, failed: friendly(e) });
@@ -304,32 +304,32 @@ function SessionChat({ sessionId }: { sessionId: string }) {
   const busy = Boolean(pending && !pending.failed);
 
   let composerBlock: string | undefined;
-  if (health.mnemosyne === 'down') composerBlock = 'Không kết nối được Mnemosyne — không gửi được câu trả lời lúc này.';
-  else if (atCap) composerBlock = 'Phiên đã đạt giới hạn 20 lượt. Kết thúc phiên để lưu lại, rồi mở phiên mới.';
+  if (health.mnemosyne === 'down') composerBlock = 'Cannot reach Mnemosyne — your answer cannot be sent right now.';
+  else if (atCap) composerBlock = 'This session has reached the 20-turn limit. End it to save it, then start a new one.';
 
   return (
     <main className="main">
-      <PageHeader title={meta?.title ?? 'Phiên Học bài'} after={<span className="tag tag-frost tag-sm">Học bài</span>}>
+      <PageHeader title={meta?.title ?? 'Study session'} after={<span className="tag tag-frost tag-sm">Study</span>}>
         {messages && (
           <span className="hdr-meta">
-            Phiên {elapsed} phút · {turns}/{SOCRATIC_TURN_CAP_MESSAGES / 2} lượt
+            {elapsed} min · {turns}/{SOCRATIC_TURN_CAP_MESSAGES / 2} turns
           </span>
         )}
         <div className="menu-wrap">
-          <button className="icon-btn" title="Tuỳ chọn phiên" onClick={() => setMenuOpen((o) => !o)}>
+          <button className="icon-btn" title="Session options" onClick={() => setMenuOpen((o) => !o)}>
             <i className="ph ph-dots-three" />
           </button>
           {menuOpen && (
             <div className="menu" onMouseLeave={() => setMenuOpen(false)}>
               <button onClick={end} disabled={ending || ended || health.mnemosyne !== 'ok'}>
                 <i className="ph ph-flag-checkered" />
-                {ended ? 'Phiên đã kết thúc' : 'Kết thúc phiên & lưu vào KS'}
+                {ended ? 'Session ended' : 'End session & save to KS'}
               </button>
               <button onClick={() => { setMenuOpen(false); setLoadTick((t) => t + 1); }}>
-                <i className="ph ph-arrow-clockwise" />Tải lại lịch sử
+                <i className="ph ph-arrow-clockwise" />Reload history
               </button>
               <button onClick={() => navigate({ view: 'chat' })}>
-                <i className="ph ph-plus" />Phiên mới
+                <i className="ph ph-plus" />New session
               </button>
               <button
                 onClick={async () => {
@@ -337,7 +337,7 @@ function SessionChat({ sessionId }: { sessionId: string }) {
                   // Deleting removes the transcript from Mnemosyne. Anything
                   // already shipped to the Knowledge Store stays there — KS
                   // owns its own records.
-                  if (!window.confirm('Xoá hẳn phiên này khỏi Mnemosyne? Transcript đã gửi sang Knowledge Store vẫn được giữ ở đó.')) return;
+                  if (!window.confirm('Permanently delete this session from Mnemosyne? A transcript already sent to the Knowledge Store stays there.')) return;
                   try {
                     await mnemosyne.deleteSocratic(sessionId);
                     refreshSessions();
@@ -347,7 +347,7 @@ function SessionChat({ sessionId }: { sessionId: string }) {
                   }
                 }}
               >
-                <i className="ph ph-trash" />Xoá phiên này
+                <i className="ph ph-trash" />Delete this session
               </button>
             </div>
           )}
@@ -357,10 +357,10 @@ function SessionChat({ sessionId }: { sessionId: string }) {
       <div className="chat-scroll" ref={scroller}>
         <div className="chat-col">
           <div className="chip-center">
-            <span>Học bài từ bộ thẻ “{meta?.title ?? '…'}” · Chiron hỏi gợi mở, không đưa đáp án</span>
+            <span>Studying “{meta?.title ?? '…'}” · Chiron asks guiding questions, never hands over the answer</span>
           </div>
 
-          {!messages && !loadError && <Loading label="Đang tải lịch sử phiên…" />}
+          {!messages && !loadError && <Loading label="Loading session history…" />}
           {loadError != null && <ErrorNotice error={loadError} onRetry={() => setLoadTick((t) => t + 1)} />}
 
           {messages?.map((m, i) =>
@@ -373,13 +373,13 @@ function SessionChat({ sessionId }: { sessionId: string }) {
                     <div className="callout-yel">
                       <i className="ph ph-lightbulb" />
                       <div>
-                        <b>Chiron nhận thấy một hiểu lầm —</b> {m.flagged_misconception}
+                        <b>Chiron spotted a misconception —</b> {m.flagged_misconception}
                       </div>
                     </div>
                   )}
                   {i === messages.length - 1 && !pending && !ended && !atCap && health.mnemosyne === 'ok' && (
                     <div className="quick">
-                      {['Mình chưa rõ chỗ này', 'Cho mình xem ví dụ'].map((q) => (
+                      {["I don't get this part", 'Show me an example'].map((q) => (
                         <button key={q} className="btn btn-secondary btn-soft" onClick={() => send(q)}>
                           {q}
                         </button>
@@ -404,14 +404,14 @@ function SessionChat({ sessionId }: { sessionId: string }) {
                 <div className="notice notice-err">
                   <i className="ph ph-warning-circle" />
                   <div>
-                    <div className="notice-title">Chưa gửi được câu trả lời</div>
+                    <div className="notice-title">Your answer was not sent</div>
                     <div>{pending.failed}</div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-soft" onClick={() => send(pending.text)}>
-                        <i className="ph ph-arrow-clockwise" />Gửi lại
+                        <i className="ph ph-arrow-clockwise" />Resend
                       </button>
                       <button className="btn btn-soft" onClick={() => { setText(pending.text); setPending(undefined); }}>
-                        Sửa lại
+                        Edit
                       </button>
                     </div>
                   </div>
@@ -421,18 +421,18 @@ function SessionChat({ sessionId }: { sessionId: string }) {
                   <AiAvatar />
                   <div className="thinking">
                     <span className="pulse" /><span className="pulse" /><span className="pulse" />
-                    Chiron đang suy nghĩ…
+                    Chiron is thinking…
                   </div>
                 </div>
               )}
             </>
           )}
 
-          {ending && <Loading label="Đang kết thúc phiên và gửi transcript sang Knowledge Store…" />}
+          {ending && <Loading label="Ending the session and sending the transcript to the Knowledge Store…" />}
           {endError && <ErrorNotice error={new Error(endError)} onRetry={end} compact />}
           {endRes && <EndSummary res={endRes} onRetry={end} />}
           {!endRes && meta?.ended && (
-            <div className="chip-center"><span>Phiên này đã kết thúc.</span></div>
+            <div className="chip-center"><span>This session has ended.</span></div>
           )}
         </div>
       </div>
@@ -440,7 +440,7 @@ function SessionChat({ sessionId }: { sessionId: string }) {
       {ended ? (
         <div className="composer-wrap">
           <button className="btn btn-primary btn-main" onClick={() => navigate({ view: 'chat' })}>
-            <i className="ph ph-plus" />Bắt đầu phiên mới
+            <i className="ph ph-plus" />Start a new session
           </button>
         </div>
       ) : (
@@ -451,8 +451,8 @@ function SessionChat({ sessionId }: { sessionId: string }) {
           sending={busy}
           disabled={Boolean(composerBlock) || !messages}
           autoFocus
-          placeholder="Trả lời câu hỏi của Chiron…"
-          topLeft={<span className="composer-hint">Chiron sẽ hỏi lại thay vì đưa đáp án</span>}
+          placeholder="Answer Chiron's question…"
+          topLeft={<span className="composer-hint">Chiron asks back instead of giving the answer</span>}
           status={composerBlock}
         />
       )}
@@ -464,32 +464,32 @@ function EndSummary({ res, onRetry }: { res: EndResponse; onRetry: () => void })
   const ks: KsSyncStatus = res.knowledge_store;
   let tone = 'notice-info';
   let icon = 'ph-check-circle';
-  let title = 'Đã kết thúc phiên';
+  let title = 'Session ended';
   let body: ReactNode;
   let retry = false;
   switch (ks.state) {
     case 'saved':
       tone = 'notice-info';
-      body = <>Transcript ({res.message_count} tin nhắn) đã được lưu vào Knowledge Store. Job extract của KS sẽ rút khái niệm từ đó sau.</>;
+      body = <>The transcript ({res.message_count} messages) was saved to the Knowledge Store. The KS extract job will pull concepts from it later.</>;
       break;
     case 'disabled':
       icon = 'ph-info';
-      body = <>Đồng bộ sang Knowledge Store đang tắt phía Mnemosyne (thiếu <code>KS_HTTP_TOKEN</code> trong <code>Mnemosyne/.env</code>), nên transcript chưa được gửi.</>;
+      body = <>Syncing to the Knowledge Store is turned off on the Mnemosyne side (<code>KS_HTTP_TOKEN</code> is missing from <code>Mnemosyne/.env</code>), so the transcript was not sent.</>;
       break;
     case 'nothing_to_send':
       icon = 'ph-info';
-      body = 'Phiên chưa có tin nhắn nào nên không có gì để lưu.';
+      body = 'The session has no messages, so there is nothing to save.';
       break;
     case 'ks_db_unavailable':
       tone = 'notice-warn';
       icon = 'ph-warning';
-      body = <>Knowledge Store đang chạy nhưng database của nó lỗi: {ks.error}. Thử lại sau — gửi lại an toàn, KS không lưu trùng.</>;
+      body = <>The Knowledge Store is running but its database failed: {ks.error}. Try again later — resending is safe, KS does not store duplicates.</>;
       retry = true;
       break;
     case 'failed':
       tone = 'notice-warn';
       icon = 'ph-warning';
-      body = <>Không gửi được transcript sang Knowledge Store: {ks.error}. Phiên học vẫn được giữ trong Mnemosyne; có thể thử gửi lại.</>;
+      body = <>Could not send the transcript to the Knowledge Store: {ks.error}. The session is still kept in Mnemosyne; you can try again.</>;
       retry = true;
       break;
   }
@@ -501,7 +501,7 @@ function EndSummary({ res, onRetry }: { res: EndResponse; onRetry: () => void })
         <div>{body}</div>
         {retry && (
           <button className="btn btn-soft" onClick={onRetry}>
-            <i className="ph ph-arrow-clockwise" />Gửi lại transcript
+            <i className="ph ph-arrow-clockwise" />Resend transcript
           </button>
         )}
       </div>
@@ -509,7 +509,7 @@ function EndSummary({ res, onRetry }: { res: EndResponse; onRetry: () => void })
   );
 }
 
-// ───────────────────────────────────────────────── Hỏi bài / Giải bài session
+// ───────────────────────────────────────────────────────── Ask / Solve session
 
 function AskSolveSession({ sessionId }: { sessionId: string }) {
   const { health, refreshSessions } = useApp();
@@ -570,25 +570,25 @@ function AskSolveSession({ sessionId }: { sessionId: string }) {
   };
 
   const busy = Boolean(pending && !pending.failed);
-  const label = mode === 'solve' ? 'Giải bài' : 'Hỏi bài';
+  const label = mode === 'solve' ? 'Solve' : 'Ask';
   const composerBlock =
-    health.mnemosyne === 'down' ? 'Không kết nối được Mnemosyne — không gửi được câu hỏi lúc này.' : undefined;
+    health.mnemosyne === 'down' ? 'Cannot reach Mnemosyne — your question cannot be sent right now.' : undefined;
 
   return (
     <main className="main">
-      <PageHeader title={title || 'Cuộc trò chuyện'} after={<span className="tag tag-frost tag-sm">{label}</span>}>
-        <span className="hdr-meta">{messages ? `${Math.ceil(messages.length / 2)} lượt` : ''}</span>
-        <button className="icon-btn" title="Tải lại" onClick={() => setLoadTick((t) => t + 1)}>
+      <PageHeader title={title || 'Conversation'} after={<span className="tag tag-frost tag-sm">{label}</span>}>
+        <span className="hdr-meta">{messages ? `${Math.ceil(messages.length / 2)} turns` : ''}</span>
+        <button className="icon-btn" title="Reload" onClick={() => setLoadTick((t) => t + 1)}>
           <i className="ph ph-arrow-clockwise" />
         </button>
-        <button className="icon-btn" title="Cuộc trò chuyện mới" onClick={() => navigate({ view: 'chat' })}>
+        <button className="icon-btn" title="New conversation" onClick={() => navigate({ view: 'chat' })}>
           <i className="ph ph-plus" />
         </button>
         <button
           className="icon-btn"
-          title="Xoá cuộc trò chuyện này"
+          title="Delete this conversation"
           onClick={async () => {
-            if (!window.confirm('Xoá hẳn cuộc trò chuyện này?')) return;
+            if (!window.confirm('Permanently delete this conversation?')) return;
             try {
               await mnemosyne.deleteChat(sessionId);
               refreshSessions();
@@ -607,12 +607,12 @@ function AskSolveSession({ sessionId }: { sessionId: string }) {
           <div className="chip-center">
             <span>
               {mode === 'solve'
-                ? 'Giải từng bước · hỏi tiếp về bước nào chưa rõ'
-                : 'Hỏi đáp nhanh · Chiron trả lời thẳng'}
+                ? 'Step-by-step solution · ask about any step that is unclear'
+                : 'Quick Q&A · Chiron answers directly'}
             </span>
           </div>
 
-          {!messages && !loadError && <Loading label="Đang tải cuộc trò chuyện…" />}
+          {!messages && !loadError && <Loading label="Loading conversation…" />}
           {loadError != null && <ErrorNotice error={loadError} onRetry={() => setLoadTick((t) => t + 1)} />}
 
           {messages?.map((m, i) =>
@@ -639,11 +639,11 @@ function AskSolveSession({ sessionId }: { sessionId: string }) {
                 <div className="notice notice-err">
                   <i className="ph ph-warning-circle" />
                   <div>
-                    <div className="notice-title">Chưa gửi được</div>
+                    <div className="notice-title">Not sent</div>
                     <div>{pending.failed}</div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-soft" onClick={() => send(pending.text)}>
-                        <i className="ph ph-arrow-clockwise" />Gửi lại
+                        <i className="ph ph-arrow-clockwise" />Resend
                       </button>
                       <button
                         className="btn btn-soft"
@@ -652,7 +652,7 @@ function AskSolveSession({ sessionId }: { sessionId: string }) {
                           setPending(undefined);
                         }}
                       >
-                        Sửa lại
+                        Edit
                       </button>
                     </div>
                   </div>
@@ -662,7 +662,7 @@ function AskSolveSession({ sessionId }: { sessionId: string }) {
                   <AiAvatar />
                   <div className="thinking">
                     <span className="pulse" /><span className="pulse" /><span className="pulse" />
-                    {mode === 'solve' ? 'Chiron đang giải…' : 'Chiron đang trả lời…'}
+                    {mode === 'solve' ? 'Chiron is solving…' : 'Chiron is replying…'}
                   </div>
                 </div>
               )}
@@ -678,10 +678,10 @@ function AskSolveSession({ sessionId }: { sessionId: string }) {
         sending={busy}
         disabled={Boolean(composerBlock) || !messages}
         autoFocus
-        placeholder={mode === 'solve' ? 'Hỏi về một bước, hoặc đưa bài tiếp theo…' : 'Hỏi tiếp…'}
+        placeholder={mode === 'solve' ? 'Ask about a step, or give the next problem…' : 'Ask a follow-up…'}
         topLeft={
           <span className="composer-hint">
-            {mode === 'solve' ? 'Chiron giải từng bước và nói rõ vì sao' : 'Chiron trả lời thẳng, nói rõ khi không chắc'}
+            {mode === 'solve' ? 'Chiron solves step by step and explains why' : 'Chiron answers directly and says when it is unsure'}
           </span>
         }
         status={composerBlock}

@@ -48,7 +48,7 @@ export function Blurting({ setId }: { setId: string }) {
             <textarea
               id="blurt-text"
               className="input"
-              lang="vi"
+              lang="en"
               style={{ minHeight: 200 }}
               placeholder="Concepts, definitions, formulas, examples… Write what comes to mind, in any order, no need for full sentences."
               value={text}

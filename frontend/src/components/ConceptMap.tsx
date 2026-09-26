@@ -35,7 +35,7 @@ export function ConceptMap({ nodes, edges, selectedId }: { nodes: KsNode[]; edge
     () => pack(nodes.map((n) => ({ id: n.id, group: n.subject })), shown, BOX_W),
     [nodes, shown],
   );
-  const subjects = useMemo(() => [...new Set(nodes.map((n) => n.subject))].sort((a, b) => a.localeCompare(b, 'vi')), [nodes]);
+  const subjects = useMemo(() => [...new Set(nodes.map((n) => n.subject))].sort((a, b) => a.localeCompare(b, 'en')), [nodes]);
   const colour = (subject: string) => SUBJECT_COLOURS[subjects.indexOf(subject) % SUBJECT_COLOURS.length];
 
   const focus = hover ?? selectedId;

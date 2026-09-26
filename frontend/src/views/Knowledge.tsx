@@ -54,7 +54,7 @@ export function KnowledgeView({ nodeId }: { nodeId?: string }) {
   const groups = useMemo(() => {
     const m = new Map<string, KsNode[]>();
     for (const n of filtered) m.set(n.subject, [...(m.get(n.subject) ?? []), n]);
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'vi'));
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en'));
   }, [filtered]);
   const subjects = useMemo(() => new Set((nodes ?? []).map((n) => n.subject)).size, [nodes]);
   const truncated = nodes?.length === KS_MAX_NODE_LIMIT;
@@ -86,7 +86,7 @@ export function KnowledgeView({ nodeId }: { nodeId?: string }) {
               <i className="ph ph-graph" /> Map
             </button>
           </div>
-          <input className="input input-sm" style={{ width: 220 }} lang="vi" placeholder="Search the results…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="input input-sm" style={{ width: 220 }} lang="en" placeholder="Search the results…" value={search} onChange={(e) => setSearch(e.target.value)} />
           <form
             style={{ display: 'flex', gap: 6 }}
             onSubmit={(e) => {
@@ -94,7 +94,7 @@ export function KnowledgeView({ nodeId }: { nodeId?: string }) {
               setAppliedSubject(subject.trim());
             }}
           >
-            <input className="input input-sm" style={{ width: 180 }} lang="vi" placeholder="Subject (exact match)" value={subject} onChange={(e) => setSubject(e.target.value)} />
+            <input className="input input-sm" style={{ width: 180 }} lang="en" placeholder="Subject (exact match)" value={subject} onChange={(e) => setSubject(e.target.value)} />
             <button className="btn btn-secondary btn-soft" type="submit"><i className="ph ph-funnel" />Filter</button>
           </form>
           <select className="input" style={{ width: 'auto' }} value={sourceModule} onChange={(e) => setSourceModule(e.target.value as KsSourceModule | '')}>
