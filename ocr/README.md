@@ -1,88 +1,94 @@
 # Chiron OCR
 
-PaddleOCR + VietOCR (CPU) sau một HTTP API nhỏ, dùng cho màn **Scan ghi chép**: ảnh chụp vở
-hoặc PDF → văn bản để người học sửa rồi rút khái niệm vào Knowledge Store.
+PaddleOCR on CPU behind a small HTTP API, used by the **Note scan** screen: a
+photo of a notebook page or a PDF becomes text the learner corrects, from which
+concepts are extracted into the Knowledge Store.
 
-Service nội bộ: không mở cổng ra host, người gọi duy nhất là Knowledge Store. Nó
-không lưu gì — tệp tải lên nằm trong thư mục tạm suốt request rồi bị xoá.
+Internal service: no host port, and its only caller is the Knowledge Store. It
+stores nothing — uploads live in a temporary directory for the length of the
+request.
 
 ## API
 
-| Route | Việc |
+| Route | Does |
 |---|---|
-| `GET /health` | `{"status":"ok","ready":bool,"engine":…,"error":…}` — `ready` chỉ `true` khi mô hình đã nạp xong |
-| `POST /ocr` | multipart, một hoặc nhiều trường `files` (ảnh hoặc PDF) → `{"pages":[…], "page_count", "elapsed_ms"}` |
+| `GET /health` | `{"status":"ok","ready":bool,"engine":…,"error":…}` — `ready` is `true` only once the models are loaded |
+| `POST /ocr` | multipart, one or more `files` fields (images or PDFs) → `{"pages":[…], "page_count", "elapsed_ms"}` |
 
-Mỗi trang: `text` (các dòng đã sắp theo thứ tự đọc), `lines` (từng dòng kèm
-`confidence`), `mean_confidence` (`null` nếu trang không có chữ) và
+Each page has `text` (lines in reading order), `lines` (each with a
+`confidence`), `mean_confidence` (`null` for a page with no text) and
 `low_confidence_count`.
 
-Lỗi: `400 invalid_document` (không phải ảnh/PDF, PDF hỏng/có mật khẩu),
-`413 too_many_pages` / `too_large`, `503 not_ready` (mô hình đang nạp),
-`500 ocr_failed` (mô hình lỗi khi chạy).
+Errors: `400 invalid_document` (not an image/PDF, damaged or password-protected
+PDF), `413 too_many_pages` / `too_large`, `503 not_ready` (models loading),
+`500 ocr_failed` (a model failed at run time).
 
-## Mô hình
+## Models
 
-Hai mô hình, mỗi cái làm một việc:
+1. **`PP-LCNet_x1_0_doc_ori`** turns pages photographed sideways or upside down
+   (90/180/270°) upright.
+2. **`PP-OCRv6_medium_det`** finds the text lines. Each line is cut out along
+   the detector's quadrilateral and straightened (`chiron_ocr/geometry.py`).
+3. **`PP-OCRv6_small_rec`** reads each line.
 
-1. **PaddleOCR `PP-OCRv6_medium_det`** tìm các dòng chữ trên trang, sau khi
-   `PP-LCNet_x1_0_doc_ori` xoay lại ảnh chụp bị lệch 90/180/270°.
-2. **VietOCR `vgg_transformer`** đọc từng dòng (cắt và nắn thẳng theo tứ giác
-   bộ phát hiện trả về).
+The recogniser was chosen by measurement, not by name: six PaddleOCR
+recognisers were run on the same line crops, and `PP-OCRv6_small_rec` had the
+lowest character error rate on both printed English (0.35 %) and real
+handwritten English notes (28 %), and was the fastest (1.3 s/page). Numbers and
+method: [`NOTES.md`](NOTES.md). Override with `OCR_REC_MODEL`.
 
-Không dùng bộ nhận dạng của PaddleOCR vì không mô hình chính thức nào viết
-được tiếng Việt: từ điển ký tự của PP-OCRv6 (thứ `lang="vi"` chọn) và latin
-PP-OCRv5 có "ư", "đ" nhưng không có nguyên âm mang dấu thanh (ợ, ạ, ệ…), nên
-"Quang hợp ở thực vật" ra "Quang hp  thc vt". VietOCR được huấn luyện trên cả
-chữ in lẫn chữ viết tay tiếng Việt.
+All models are downloaded **at build time** and baked into the image, so the
+container starts with no network access.
 
-Mọi mô hình được tải **lúc build** và nằm sẵn trong image (VietOCR ở
-`/app/models/vietocr`), nên container khởi động không cần mạng. PyTorch là bản
-CPU-only.
+What to expect: printed and typed English reads almost perfectly; handwriting
+is a draft — roughly one word in two needs fixing — and text laid out in two
+columns (a box beside the notes, a Cornell cue column) gets merged line by line.
+That is why low-confidence lines are **flagged, never dropped**, and the learner
+always corrects the text before an LLM reads it.
 
-Kỳ vọng thực tế: chữ in/đánh máy tiếng Việt đọc khá tốt; chữ viết tay — nhất là
-dấu và công thức — sai nhiều hơn. Vì vậy dòng độ tin cậy thấp được **đánh dấu,
-không bị xoá**, và người học luôn sửa văn bản trước khi LLM đọc.
+## Environment variables
 
-## Biến môi trường
-
-| Biến | Mặc định | |
+| Variable | Default | |
 |---|---|---|
-| `OCR_DOC_ORIENTATION` | `1` | Tự xoay trang 90/180/270° |
-| `OCR_ENABLE_MKLDNN` | `0` | oneDNN của Paddle; tắt vì Paddle 3.3 lỗi với PP-OCRv6 trên CPU |
-| `OCR_VIETOCR_DIR` | `/app/models/vietocr` (image) | Config + trọng số VietOCR; trống thì tải lần đầu |
-| `OCR_MAX_PAGES` | `30` | Số trang tối đa mỗi lần |
-| `OCR_MAX_UPLOAD_MB` | `40` | Dung lượng tối đa mỗi request |
-| `OCR_PDF_DPI` | `200` | Độ phân giải render PDF |
-| `OCR_MAX_IMAGE_SIDE` | `4000` | Ảnh lớn hơn được thu nhỏ trước khi OCR |
+| `OCR_REC_MODEL` | `PP-OCRv6_small_rec` | Recogniser (any PaddleOCR `TextRecognition` model name) |
+| `OCR_DET_MODEL` | `PP-OCRv6_medium_det` | Text-line detector |
+| `OCR_DOC_ORIENTATION` | `1` | Fix pages rotated by 90/180/270° |
+| `OCR_ENABLE_MKLDNN` | `0` | Paddle's oneDNN; off because Paddle 3.3 fails on PP-OCRv6 with it on CPU |
+| `OCR_MAX_PAGES` | `30` | Pages per request |
+| `OCR_MAX_UPLOAD_MB` | `40` | Upload size per request |
+| `OCR_PDF_DPI` | `200` | PDF render resolution |
+| `OCR_MAX_IMAGE_SIDE` | `4000` | Larger images are scaled down first |
 
-## Test
+## Tests
 
-Không cần nạp mô hình — sắp dòng, xử lý tệp và cắt/xoay ảnh tách riêng khỏi engine:
+No model loading needed — line grouping, file handling and crop/rotate geometry
+are separate from the engine:
 
 ```bash
 docker compose run --rm ocr python -m pytest -q
 ```
 
-## Image dựng sẵn
+Accuracy benchmark (printed pages with known text): [`bench/README.md`](bench/README.md).
 
-Image public trên GHCR: `ghcr.io/qinzinn/chiron-ocr:0.1.0` (khoảng 4,2 GB, chỉ có
-code và mô hình công khai, không có secret). `docker compose up` **pull** image
-này, không build — máy demo không cần build PaddlePaddle/PyTorch, cũng không cần
-cấu hình mạng như máy dev.
+## Prebuilt image
 
-## Build từ source và đẩy tag mới
+Public on GHCR: `ghcr.io/qinzinn/chiron-ocr:<tag>` (code and public models only,
+no secrets). `docker compose up` **pulls** it rather than building, so a demo
+machine needs neither a PaddlePaddle build nor the dev machine's network setup.
 
-Khi đổi code trong `ocr/`:
+## Building from source and pushing a new tag
+
+After changing anything in `ocr/`:
 
 ```bash
 cd ocr
 docker build --network host -t ghcr.io/qinzinn/chiron-ocr:<tag> .
-gh auth token | docker login ghcr.io -u QinZinn --password-stdin   # cần scope write:packages
+gh auth token | docker login ghcr.io -u QinZinn --password-stdin   # needs write:packages
 docker push ghcr.io/qinzinn/chiron-ocr:<tag>
 ```
 
-rồi đổi tag ở `image:` của service `ocr` trong `docker-compose.yml`.
+then bump the `image:` tag of the `ocr` service in `docker-compose.yml`.
 
-`--network host`: trên máy dev, tải tệp lớn từ bên trong mạng bridge của Docker
-bị treo vô hạn, mà bước build phải tải PaddlePaddle, PyTorch và mô hình.
+`--network host`: on the dev machine, large downloads from inside Docker's
+bridge network stall indefinitely, and the build downloads PaddlePaddle and the
+models.

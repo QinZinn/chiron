@@ -50,7 +50,7 @@ def kind_of(data: bytes) -> str:
         return "image"
     except Exception as exc:  # noqa: BLE001 — PIL raises many unrelated types
         raise DocumentError(
-            "Không đọc được tệp: chỉ nhận ảnh (JPG, PNG, WebP…) hoặc PDF"
+            "Unreadable file: only images (JPG, PNG, WebP…) and PDFs are accepted"
         ) from exc
 
 
@@ -68,7 +68,7 @@ def _save_image(img: Image.Image, directory: Path, name: str) -> Path:
 def to_pages(files: list[tuple[str, bytes]], directory: Path) -> list[Page]:
     """Expand uploads into pages, in upload order. Enforces MAX_PAGES."""
     if not files:
-        raise DocumentError("Chưa có tệp nào được gửi lên")
+        raise DocumentError("No file was uploaded")
     pages: list[Page] = []
     for index, (filename, data) in enumerate(files):
         kind = kind_of(data)
@@ -84,7 +84,7 @@ def to_pages(files: list[tuple[str, bytes]], directory: Path) -> list[Page]:
         try:
             pdf = pdfium.PdfDocument(data)
         except Exception as exc:  # noqa: BLE001
-            raise DocumentError(f"PDF “{filename}” bị hỏng hoặc có mật khẩu") from exc
+            raise DocumentError(f"PDF “{filename}” is damaged or password-protected") from exc
         try:
             _guard(len(pages) + len(pdf))
             for n in range(len(pdf)):
@@ -98,7 +98,7 @@ def to_pages(files: list[tuple[str, bytes]], directory: Path) -> list[Page]:
 
 def _guard(total: int) -> None:
     if total > MAX_PAGES:
-        raise TooManyPages(f"Tối đa {MAX_PAGES} trang mỗi lần quét")
+        raise TooManyPages(f"At most {MAX_PAGES} pages per scan")
 
 
 def work_dir() -> tempfile.TemporaryDirectory:
