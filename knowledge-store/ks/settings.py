@@ -44,7 +44,11 @@ EDGE_SUGGESTION_TOP_K = 8
 #
 # Đặt rộng tay: chi phí chỉ phát sinh theo token THỰC SỰ sinh ra, còn cắt ngang
 # thì hỏng cả lô. Đừng hạ hai số này xuống theo độ dài output nhìn thấy được.
-EDGE_SUGGESTION_MAX_TOKENS = 4000
+
+# Gợi ý cạnh: ĐO THẬT 2026-09-26 trên 15 node thật (vở Hoá + Sinh), 4000 thì 8/15
+# lần cắt (reasoning 3630–4000, không còn token cho JSON) — toàn bộ node Sinh học.
+# Người dùng chọn 20000.
+EDGE_SUGGESTION_MAX_TOKENS = 20000
 
 # Rút khái niệm cần nhiều hơn hẳn. ĐO THẬT 2026-09-25, deepseek-v4-flash, vở viết
 # tay 3 trang (3050 ký tự) đã sửa: 4000 thì CẢ HAI lần đều cắt với reasoning=4000,

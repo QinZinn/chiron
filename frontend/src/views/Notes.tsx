@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { ApiError } from '../api/http';
-import { ks, type AcceptResult, type Note, type OcrPage, type ReviewConcept } from '../api/ks';
+import { ks, type AcceptDecision, type AcceptResult, type Note, type OcrPage, type ReviewConcept } from '../api/ks';
 import { useAsync } from '../lib/useAsync';
 import { href, navigate } from '../lib/route';
 import { dateTime } from '../lib/time';
@@ -459,6 +459,17 @@ function ConceptCard({ concept, onChange }: { concept: ReviewConcept; onChange: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>();
   const [result, setResult] = useState<AcceptResult>();
+  // 'create', or the node id to merge into. Undefined = not chosen yet.
+  const [choice, setChoice] = useState<string>();
+  const pending = concept.status === 'pending_review';
+  // Re-asked when the title changes: similarity is computed on the title.
+  const candQ = useAsync(() => ks.conceptCandidates(concept.id), [concept.id, concept.title], pending);
+  const cands = candQ.data?.candidates ?? [];
+  const suggested = candQ.data?.suggested_node_id ?? null;
+  // Above the threshold the learner must choose; below it "create" is the
+  // default, since that is also what the rule would do.
+  const effectiveChoice = choice ?? (candQ.data && !suggested ? 'create' : undefined);
+  const mergedInto = result && !result.created ? result.candidates.find((c) => c.node_id === result.node_id)?.title : undefined;
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -486,7 +497,9 @@ function ConceptCard({ concept, onChange }: { concept: ReviewConcept; onChange: 
         onChange({ ...concept, ...next });
         setEdit(undefined);
       }
-      const r = await ks.acceptConcept(concept.id);
+      const decision: AcceptDecision =
+        effectiveChoice === 'create' || !effectiveChoice ? { decision: 'create' } : { decision: 'merge', node_id: effectiveChoice };
+      const r = await ks.acceptConcept(concept.id, decision);
       setResult(r);
       onChange({ ...concept, ...(edit ?? {}), status: 'accepted', node_id: r.node_id });
     });
@@ -515,13 +528,36 @@ function ConceptCard({ concept, onChange }: { concept: ReviewConcept; onChange: 
               <span className="wk-meta">{concept.subject}</span>
               {concept.status === 'accepted' && (
                 <span className="tag tag-green tag-sm">
-                  {result && !result.created ? 'Đã gộp vào khái niệm có sẵn' : 'Đã thêm vào KS'}
+                  {result && !result.created ? `Đã gộp vào “${mergedInto ?? 'khái niệm có sẵn'}”` : 'Đã thêm vào KS'}
                 </span>
               )}
               {concept.status === 'discarded' && <span className="tag tag-dim tag-sm">Đã bỏ</span>}
             </div>
             <p className="wk-desc">{concept.summary}</p>
           </>
+        )}
+        {pending && candQ.error != null && <div style={{ marginTop: 8 }}><ErrorNotice error={candQ.error} onRetry={candQ.reload} compact /></div>}
+        {pending && cands.length > 0 && (
+          <fieldset className="dup" aria-label="Khái niệm gần giống đã có">
+            <legend className="wk-meta">
+              {suggested
+                ? 'Đã có khái niệm rất giống. Chọn gộp vào khái niệm đó hay thêm thành khái niệm mới:'
+                : 'Có khái niệm hơi giống (chưa tới ngưỡng gộp). Mặc định thêm mới:'}
+            </legend>
+            <label className={`dup-opt${effectiveChoice === 'create' ? ' dup-on' : ''}`}>
+              <input type="radio" name={`dup-${concept.id}`} checked={effectiveChoice === 'create'} onChange={() => setChoice('create')} disabled={busy} />
+              <span><b>Thêm thành khái niệm mới</b></span>
+            </label>
+            {cands.map((c) => (
+              <label key={c.node_id} className={`dup-opt${effectiveChoice === c.node_id ? ' dup-on' : ''}`}>
+                <input type="radio" name={`dup-${concept.id}`} checked={effectiveChoice === c.node_id} onChange={() => setChoice(c.node_id)} disabled={busy} />
+                <span style={{ minWidth: 0 }}>
+                  Gộp vào <b>{c.title}</b> <span className="wk-meta">· {c.subject} · giống {Math.round(c.score * 100)}%{c.node_id === suggested ? ' · quy tắc tự động sẽ chọn' : ''}</span>
+                  <span className="wk-desc clamp2" style={{ display: 'block' }}>{c.summary}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
         )}
         {error != null && <div style={{ marginTop: 8 }}><Problem error={error} /></div>}
       </div>
@@ -538,7 +574,12 @@ function ConceptCard({ concept, onChange }: { concept: ReviewConcept; onChange: 
                 <i className="ph ph-pencil-simple" />
               </button>
             )}
-            <button className="btn btn-frost" onClick={accept} disabled={busy}>
+            <button
+              className="btn btn-frost"
+              onClick={accept}
+              disabled={busy || candQ.loading || !effectiveChoice}
+              title={!effectiveChoice ? 'Chọn gộp hay thêm mới trước' : undefined}
+            >
               {busy ? <span className="spin" /> : <i className="ph ph-check" />}Chấp nhận
             </button>
             <button className="btn btn-soft" onClick={discard} disabled={busy}>

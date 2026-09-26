@@ -41,8 +41,8 @@ RETURNING id
 # tự nhớ gọi. Rollback phải mất cả log lẫn data.
 _LOG_SQL = """
 INSERT INTO ks.ingest_log
-  (node_id, draft_title, draft_subject, source_module, decision, threshold, top_score, candidates)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+  (node_id, draft_title, draft_subject, source_module, decision, threshold, top_score, candidates, chosen_by)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 
@@ -50,6 +50,7 @@ def _log_ingest(
     conn: psycopg.Connection,
     item: IngestedConcept,
     threshold: float,
+    chosen_by: str = "rule",
 ) -> None:
     payload = json.dumps(
         [
@@ -71,6 +72,7 @@ def _log_ingest(
                 threshold,
                 top_score,
                 payload,
+                chosen_by,
             ),
         )
 
@@ -94,6 +96,60 @@ def find_candidates(
         DuplicateCandidate(node_id=row[0], title=row[1], score=float(row[2]))
         for row in rows
     )
+
+
+def _insert_node(conn: psycopg.Connection, draft: ConceptDraft) -> UUID:
+    with conn.cursor() as cur:
+        cur.execute(
+            _INSERT_SQL,
+            (draft.title, draft.subject, draft.summary, draft.source_module.value),
+        )
+        return cur.fetchone()[0]
+
+
+class MergeTargetInvalid(ValueError):
+    """Node đích để gộp không tồn tại, hoặc chính nó đã bị gộp vào node khác."""
+
+
+def pick_duplicate(
+    candidates: tuple[DuplicateCandidate, ...],
+    threshold: float = settings.DUPLICATE_THRESHOLD,
+) -> DuplicateCandidate | None:
+    """Node mà quy tắc tự động sẽ gộp vào — dùng để màn duyệt nói trước."""
+    return _pick_duplicate(candidates, threshold)
+
+
+def ingest_decided(
+    conn: psycopg.Connection,
+    draft: ConceptDraft,
+    *,
+    merge_into: UUID | None,
+    threshold: float = settings.DUPLICATE_THRESHOLD,
+) -> IngestedConcept:
+    """Ghi một draft theo lựa chọn của NGƯỜI HỌC, không theo ngưỡng.
+
+    `merge_into=None` → tạo node mới, kể cả khi có candidate vượt ngưỡng.
+    Ngược lại → khớp vào node đó; node phải tồn tại và chưa bị gộp. Candidate
+    vẫn được tìm và log như ingest_concepts, với `chosen_by='learner'`, để so
+    được quyết định của người với quyết định mà ngưỡng lẽ ra đưa ra.
+    """
+    candidates = find_candidates(conn, draft.title)
+    if merge_into is None:
+        node_id = _insert_node(conn, draft)
+        created = True
+    else:
+        with conn.cursor() as cur:
+            cur.execute("SELECT merged_into_id FROM ks.nodes WHERE id = %s", (merge_into,))
+            row = cur.fetchone()
+        if row is None:
+            raise MergeTargetInvalid(f"node {merge_into} không tồn tại")
+        if row[0] is not None:
+            raise MergeTargetInvalid(f"node {merge_into} đã được gộp vào {row[0]}; chọn node đó")
+        node_id = merge_into
+        created = False
+    item = IngestedConcept(draft=draft, node_id=node_id, created=created, candidates=candidates)
+    _log_ingest(conn, item, threshold, chosen_by="learner")
+    return item
 
 
 def _pick_duplicate(
@@ -126,17 +182,7 @@ def ingest_concepts(
             node_id: UUID = match.node_id
             created = False
         else:
-            with conn.cursor() as cur:
-                cur.execute(
-                    _INSERT_SQL,
-                    (
-                        draft.title,
-                        draft.subject,
-                        draft.summary,
-                        draft.source_module.value,
-                    ),
-                )
-                node_id = cur.fetchone()[0]
+            node_id = _insert_node(conn, draft)
             created = True
 
         item = IngestedConcept(

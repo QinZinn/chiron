@@ -118,6 +118,42 @@ bị đánh dấu có trung vị 18 %. Trong 46 dòng có CER > 20 %, **chỉ 21
    hơn, hoặc gửi ảnh gốc thay vì ảnh đã nén qua ứng dụng chat, có thể giúp;
    chưa đo.
 
+## 2026-09-26 — Vở viết tay tiếng Anh, bố cục thường (không Cornell)
+
+**Dữ liệu.** 19 ảnh vở ghi một khoá kỹ năng học (tiếng Anh, lẫn vài từ tiếng
+Việt), 960×1280, khoảng 110–150 KB mỗi ảnh (nhiều khả năng đã nén qua app chat).
+Đo trên 5 trang chọn theo quy tắc cố định **trước khi** xem kết quả: trang 1, 5,
+9, 13, 17 theo thứ tự tên file. 3123 ký tự. Văn bản gốc do Claude gõ lại, chưa
+được người học xác nhận; không commit.
+
+**Số đo** (không phân biệt hoa thường). Cùng bộ phát hiện dòng và cùng cách cắt;
+chỉ đổi bộ đọc chữ:
+
+| Bộ đọc chữ | CER | CER chỉ chữ cái | Từ đúng hẳn | Confidence |
+|---|---:|---:|---:|---:|
+| VietOCR vgg_transformer (đang dùng) | 42,0 % | 36,7 % | 30,1 % | 0,71–0,79 |
+| PaddleOCR PP-OCRv6_medium_rec | **32,5 %** | **29,0 %** | **51,1 %** | 0,79–0,91 |
+
+Theo trang, VietOCR → Paddle: 27,4 → 16,0 %; 34,5 → 24,9 %; 53,1 → 34,4 %;
+53,1 → 50,7 %; 33,3 → 30,8 %.
+
+**Quan sát.**
+
+- VietOCR bịa ra tiếng Việt khi đọc chữ viết tay tiếng Anh:
+  `L: "I don't believe it"` → "Nên có thứ tropersitional", một dòng khác →
+  "Thời tổ chị yên giái thị thị".
+- PaddleOCR không có nguyên âm mang dấu thanh: "quý ông" ra 2/2 ký tự có dấu
+  sai (đúng với phát hiện ngày 25/09 trên chữ in).
+- Trang 13 tệ với cả hai bộ đọc (khoảng 51 %). Lỗi nằm ở bố cục: một hộp chữ
+  bên phải bị nối vào dòng bên trái (giống cột Cornell), cộng với số mũ
+  `1.10^999` và chữ bị gạch.
+- So với vở Sinh tiếng Việt (CER 21,7 %), vở này tệ hơn gấp đôi với bộ đọc
+  đang dùng. Nguyên nhân chính là ngôn ngữ, không phải bố cục Cornell.
+
+**Kết luận.** Không bộ đọc nào tốt cho cả hai ngôn ngữ: VietOCR cho tiếng Việt,
+Paddle cho tiếng Anh. Chọn bộ đọc theo ngôn ngữ của ghi chép là quyết định
+chưa chốt.
+
 ## Chưa đo
 
 - Chữ viết tay của người khác, và chữ viết tay ở độ phân giải gốc (chưa nén).

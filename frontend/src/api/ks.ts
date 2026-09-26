@@ -59,6 +59,17 @@ export interface ReviewConcept {
   source_module?: string;
 }
 
+/** Existing nodes that look like a pending concept (KS pg_trgm similarity). */
+export interface DuplicateCandidates {
+  threshold: number;
+  /** The node the automatic rule would merge into (score ≥ threshold), if any. */
+  suggested_node_id: string | null;
+  candidates: { node_id: string; title: string; score: number; subject: string; summary: string }[];
+}
+
+/** The learner's choice on the review screen; omitted = the automatic rule. */
+export type AcceptDecision = { decision: 'create' } | { decision: 'merge'; node_id: string };
+
 export interface AcceptResult {
   node_id: string;
   /** false: matched an existing concept (duplicate detection) rather than adding one. */
@@ -125,8 +136,11 @@ export const ks = {
   editConcept: (id: string, patch: { title?: string; subject?: string; summary?: string }) =>
     request<ReviewConcept>(S, `/api/ks/extracted/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
 
-  acceptConcept: (id: string) =>
-    request<AcceptResult>(S, `/api/ks/extracted/${encodeURIComponent(id)}/accept`, { method: 'POST' }),
+  conceptCandidates: (id: string) =>
+    request<DuplicateCandidates>(S, `/api/ks/extracted/${encodeURIComponent(id)}/candidates`),
+
+  acceptConcept: (id: string, decision?: AcceptDecision) =>
+    request<AcceptResult>(S, `/api/ks/extracted/${encodeURIComponent(id)}/accept`, { method: 'POST', body: decision }),
 
   discardConcept: (id: string) =>
     request<{ discarded: boolean }>(S, `/api/ks/extracted/${encodeURIComponent(id)}/discard`, { method: 'POST' }),

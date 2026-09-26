@@ -50,6 +50,7 @@ const KS_WRITE_ROUTES: { method: string; pattern: RegExp; timeoutMs: number }[] 
   { method: 'PATCH', pattern: /^\/notes\/[^/]+$/, timeoutMs: KS_TIMEOUT_MS },
   { method: 'POST', pattern: /^\/notes\/[^/]+\/extract$/, timeoutMs: KS_EXTRACT_TIMEOUT_MS },
   { method: 'GET', pattern: /^\/extracted$/, timeoutMs: KS_TIMEOUT_MS },
+  { method: 'GET', pattern: /^\/extracted\/[^/]+\/candidates$/, timeoutMs: KS_TIMEOUT_MS },
   { method: 'PATCH', pattern: /^\/extracted\/[^/]+$/, timeoutMs: KS_TIMEOUT_MS },
   { method: 'POST', pattern: /^\/extracted\/[^/]+\/(accept|discard)$/, timeoutMs: KS_TIMEOUT_MS },
 ];
