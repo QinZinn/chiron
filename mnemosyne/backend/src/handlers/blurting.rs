@@ -124,25 +124,27 @@ fn build_context(cards: &[CardRow]) -> (usize, String) {
 
 fn build_system_prompt(card_context: &str) -> String {
     format!(
-        "Bạn chấm bài \"blurting\": học sinh vừa viết ra MỌI THỨ nhớ được về một bộ thẻ \
-         học mà KHÔNG nhìn tài liệu. Đối chiếu bài viết với từng thẻ dưới đây. Mỗi thẻ có \
-         một nhãn trong ngoặc vuông, ví dụ [c1].\n\
+        "You are grading a \"blurting\" exercise: the student has just written down \
+         EVERYTHING they remember about a study set WITHOUT looking at the material. \
+         Compare what they wrote with each card below. Each card has a label in square \
+         brackets, e.g. [c1].\n\
          \n\
-         CÁC THẺ:\n\
+         CARDS:\n\
          {card_context}\n\
-         Với từng thẻ, xác định:\n\
-         - \"remembered\": bài viết nêu đúng ý chính của đáp án (không cần đúng từng chữ, \
-         diễn đạt khác vẫn tính).\n\
-         - \"wrong\": bài viết có nhắc tới nội dung của thẻ nhưng nói SAI (sai số liệu, \
-         nhầm khái niệm, đảo ngược quan hệ). Kèm \"note\": một câu tiếng Việt nói rõ sai ở đâu.\n\
-         - Thẻ không được nhắc tới, hoặc nhắc quá mơ hồ để biết là nhớ, thì KHÔNG liệt kê — \
-         hệ thống tự tính là bị thiếu.\n\
-         Chỉ dùng nhãn của các thẻ ở trên. Không tự đặt tên khái niệm, không thêm thẻ.\n\
+         For each card, decide:\n\
+         - \"remembered\": the text states the key idea of the answer correctly (it need \
+         not match word for word; different phrasing still counts).\n\
+         - \"wrong\": the text mentions the card's content but gets it WRONG (wrong \
+         figures, confused concepts, a reversed relationship). Add a \"note\": one English \
+         sentence saying exactly what is wrong.\n\
+         - A card that is not mentioned, or mentioned too vaguely to tell it was \
+         remembered, is NOT listed — the system counts it as missing.\n\
+         Use only the labels of the cards above. Do not invent concept names or add cards.\n\
          \n\
-         \"feedback\": 1-3 câu tiếng Việt nói thẳng với học sinh — nhớ được phần nào, hổng \
-         phần nào. Không khen quá mức.\n\
+         \"feedback\": 1-3 English sentences addressed directly to the student — what \
+         they remembered and where the gaps are. Do not over-praise.\n\
          \n\
-         Chỉ trả JSON hợp lệ, không markdown, không giải thích ngoài JSON:\n\
+         Return only valid JSON, no markdown, no explanation outside the JSON:\n\
          {{\"remembered\": [\"c1\"], \"wrong\": [{{\"card\": \"c2\", \"note\": \"...\"}}], \
          \"feedback\": \"...\"}}"
     )
@@ -305,7 +307,7 @@ pub async fn evaluate(
 
     // 4. Ask the model.
     let system_prompt = build_system_prompt(&context);
-    let user_prompt = format!("Bài viết của học sinh:\n\n{recall}");
+    let user_prompt = format!("The student's text:\n\n{recall}");
     let messages = vec![LLMMessage::system(system_prompt.clone()), LLMMessage::user(user_prompt.clone())];
     let prompt_log = format!("[blurting:evaluate]\n[system] {system_prompt}\n[user] {user_prompt}");
 

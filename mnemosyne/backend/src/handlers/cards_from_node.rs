@@ -171,7 +171,7 @@ fn build_prompt(node: &KsNode) -> (String, String) {
          the idea, not one that asks them to name a term. The answer should be \
          1-3 sentences, in the learner's own explanatory register.\n\
          \n\
-         Write in the same language as the concept you are given.\n\
+         Write the question and answer in English.\n\
          \n\
          Do NOT quote the provided summary back as the answer: the learner has \
          already read it, and recognising a sentence is not the same as \

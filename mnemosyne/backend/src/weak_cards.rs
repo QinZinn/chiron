@@ -44,7 +44,7 @@ pub const WEAK_CARD_ERROR_THRESHOLD: f64 = 0.4;
 
 /// Title of the item a weak set gets. The set's name is not baked in: it is
 /// joined in when the list is read, so renaming a set renames its item too.
-pub const WEAK_TODO_TITLE: &str = "Ôn lại các thẻ đang yếu";
+pub const WEAK_TODO_TITLE: &str = "Review weak cards";
 
 // ---------------------------------------------------------------------------
 // Outcomes

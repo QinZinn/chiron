@@ -1,4 +1,4 @@
-//! "Hỏi bài" and "Giải bài" — the two chat modes the UI has always offered
+//! "Ask" and "Solve" — the two chat modes the UI has always offered
 //! and the backend never had.
 //!
 //! - `POST /chat/start`        — open a conversation with the first question
@@ -73,33 +73,33 @@ impl ChatMode {
     fn system_prompt(self, card_context: Option<&str>) -> String {
         let base = match self {
             ChatMode::Ask => "\
-Bạn là gia sư của một học sinh cấp 3 người Việt. Học sinh hỏi một câu và muốn \
-câu trả lời thẳng, đúng và ngắn gọn.
+You are a tutor for a high-school student. The student asks a question and \
+wants a direct, correct and concise answer.
 
-Quy tắc:
-- Trả lời thẳng vào câu hỏi trước, rồi mới giải thích ngắn nếu cần.
-- Viết bằng tiếng Việt, giọng tự nhiên, không sáo rỗng.
-- Dùng ký hiệu toán/lý ở dạng chữ thường gặp (Φ = B·S·cosα), không dùng LaTeX.
-- Nếu câu hỏi thiếu dữ kiện, hỏi lại đúng một câu để làm rõ.
-- Nếu bạn không chắc, nói rõ là không chắc. Tuyệt đối không bịa số liệu, \
-công thức hay trích dẫn.",
+Rules:
+- Answer the question directly first, then add a short explanation only if needed.
+- Write in English, in a natural voice, without filler.
+- Write maths/physics notation in plain text as it is usually written (Φ = B·S·cosα), never LaTeX.
+- If the question is missing information, ask exactly one clarifying question.
+- If you are not sure, say plainly that you are not sure. Never invent figures, \
+formulas or citations.",
             ChatMode::Solve => "\
-Bạn là gia sư của một học sinh cấp 3 người Việt. Học sinh đưa một bài tập và \
-muốn thấy cách giải, không chỉ đáp số.
+You are a tutor for a high-school student. The student gives you a problem and \
+wants to see how it is solved, not just the final answer.
 
-Quy tắc:
-- Giải theo các bước được đánh số. Mỗi bước một ý, nói rõ đang làm gì và vì sao.
-- Nêu công thức dùng ở bước cần đến nó.
-- Kết thúc bằng một dòng \"Đáp số:\" rõ ràng.
-- Viết bằng tiếng Việt. Ký hiệu toán/lý ở dạng chữ thường gặp, không dùng LaTeX.
-- Nếu đề thiếu dữ kiện hoặc mâu thuẫn, nói ra thay vì đoán bừa một đáp số.
-- Ở các lượt sau, học sinh có thể hỏi về một bước cụ thể: trả lời đúng bước đó, \
-đừng giải lại từ đầu.",
+Rules:
+- Solve it in numbered steps. One idea per step; say what you are doing and why.
+- State each formula at the step that needs it.
+- Finish with a clear \"Final answer:\" line.
+- Write in English. Write maths/physics notation in plain text as it is usually written, never LaTeX.
+- If the problem is missing information or contradicts itself, say so instead of guessing an answer.
+- In later turns the student may ask about one specific step: answer that step, \
+do not solve the whole problem again.",
         };
         match card_context {
             Some(ctx) if !ctx.trim().is_empty() => format!(
-                "{base}\n\nHọc sinh đang học bộ thẻ dưới đây. Ưu tiên dùng đúng cách diễn đạt \
-                 và ký hiệu trong đó khi chúng liên quan:\n\n{ctx}"
+                "{base}\n\nThe student is studying the card set below. Prefer its wording \
+                 and notation where they are relevant:\n\n{ctx}"
             ),
             _ => base.to_string(),
         }
@@ -615,12 +615,12 @@ mod tests {
         let ask = ChatMode::Ask.system_prompt(None);
         let solve = ChatMode::Solve.system_prompt(None);
         // The distinction is the whole feature: one answers, one shows work.
-        assert!(ask.contains("thẳng"), "{ask}");
-        assert!(solve.contains("bước"), "{solve}");
-        assert!(solve.contains("Đáp số"), "{solve}");
+        assert!(ask.contains("direct"), "{ask}");
+        assert!(solve.contains("steps"), "{solve}");
+        assert!(solve.contains("Final answer"), "{solve}");
         assert_ne!(ask, solve);
         // Neither may behave like the Socratic tutor, which withholds answers.
-        assert!(!ask.contains("không đưa đáp án"));
+        assert!(!ask.contains("guiding question"));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 0008: "Hỏi bài" and "Giải bài" conversations
+-- Migration 0008: "Ask" and "Solve" conversations
 -- =============================================================================
 -- Two modes the frontend has always shown and never had a backend for:
 --

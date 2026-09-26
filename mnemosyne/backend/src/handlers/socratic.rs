@@ -227,6 +227,7 @@ Rules:\n\
           they switch topics, apply rule 4 instead.\n\
           6. Do NOT lecture or give long explanations. Your messages should be \
           concise: ideally 1-4 sentences plus a question.\n\
+          7. Write in English.\n\
          \n\
          The material this session covers:\n\
          {card_context}\n\
