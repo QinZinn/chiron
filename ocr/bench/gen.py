@@ -1,31 +1,31 @@
-"""Ground-truth pages of printed Vietnamese for measuring OCR CER."""
+"""Ground-truth pages of printed English for measuring OCR CER."""
 import json, random
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 random.seed(7)
 TEXTS = {
- "sinh": ["Quang hợp là quá trình cây xanh sử dụng năng lượng ánh sáng",
-          "để tổng hợp chất hữu cơ từ khí cacbonic và nước.",
-          "Phương trình tổng quát: 6CO2 + 6H2O → C6H12O6 + 6O2.",
-          "Pha sáng diễn ra ở màng thylakoid, tạo ra ATP và NADPH;",
-          "ôxi được giải phóng từ quá trình quang phân li nước.",
-          "Pha tối (chu trình Calvin) diễn ra ở chất nền của lục lạp.",
-          "Thực vật C4 và CAM thích nghi với điều kiện khô hạn, nắng nóng."],
- "ly":   ["Hiện tượng cảm ứng điện từ được Faraday phát hiện năm 1831.",
-          "Khi từ thông qua mạch kín biến thiên, trong mạch xuất hiện",
-          "dòng điện cảm ứng. Từ thông Φ = B·S·cosα, đơn vị là vêbe (Wb).",
-          "Định luật Len-xơ: dòng điện cảm ứng có chiều sao cho từ trường",
-          "do nó sinh ra chống lại sự biến thiên của từ thông ban đầu.",
-          "Suất điện động cảm ứng: e = −ΔΦ/Δt, đơn vị là vôn (V)."],
- "su":   ["Ngày 2 tháng 9 năm 1945, tại Quảng trường Ba Đình, Hà Nội,",
-          "Chủ tịch Hồ Chí Minh đọc bản Tuyên ngôn Độc lập, khai sinh",
-          "nước Việt Nam Dân chủ Cộng hoà. Cách mạng tháng Tám thành công",
-          "đã phá tan xiềng xích nô lệ của thực dân Pháp hơn tám mươi năm",
-          "và lật đổ chế độ quân chủ tồn tại hàng chục thế kỉ ở nước ta."],
- "van":  ["Truyện Kiều của Nguyễn Du gồm 3254 câu thơ lục bát.",
-          "Trăm năm trong cõi người ta, chữ tài chữ mệnh khéo là ghét nhau.",
-          "Trải qua một cuộc bể dâu, những điều trông thấy mà đau đớn lòng.",
-          "Tác phẩm khắc hoạ số phận bi kịch của người phụ nữ tài sắc",
-          "trong xã hội phong kiến, đồng thời thể hiện giá trị nhân đạo sâu sắc."],
+ "bio":  ["Photosynthesis is the process by which green plants use light energy",
+          "to make organic compounds from carbon dioxide and water.",
+          "Overall equation: 6CO2 + 6H2O → C6H12O6 + 6O2.",
+          "The light reactions take place in the thylakoid membranes, producing ATP",
+          "and NADPH; oxygen is released when water molecules are split.",
+          "The Calvin cycle runs in the stroma of the chloroplast.",
+          "C4 and CAM plants are adapted to hot and dry conditions."],
+ "phys": ["Electromagnetic induction was discovered by Michael Faraday in 1831.",
+          "When the magnetic flux through a closed circuit changes, an induced",
+          "current flows in it. Magnetic flux Φ = B·A·cosθ, measured in webers (Wb).",
+          "Lenz's law: the induced current flows in the direction that opposes",
+          "the change in magnetic flux that produced it.",
+          "Induced electromotive force: ε = −ΔΦ/Δt, measured in volts (V)."],
+ "hist": ["On 4 July 1776, the Second Continental Congress adopted the",
+          "Declaration of Independence in Philadelphia, announcing that the",
+          "thirteen American colonies no longer considered themselves part of",
+          "the British Empire. The war that followed lasted until the Treaty",
+          "of Paris was signed in 1783, recognising the United States."],
+ "lit":  ["Shakespeare's Hamlet was probably written between 1599 and 1601.",
+          "To be, or not to be, that is the question: whether 'tis nobler",
+          "in the mind to suffer the slings and arrows of outrageous fortune.",
+          "The play explores revenge, madness and moral corruption, and it",
+          "remains one of the most performed tragedies in the English language."],
 }
 FONTS = {"serif": "/usr/share/fonts/noto/NotoSerif-Regular.ttf",
          "sans": "/usr/share/fonts/TTF/Roboto-Regular.ttf",
@@ -56,8 +56,8 @@ def photo(im):
     im = im.filter(ImageFilter.GaussianBlur(1.1))
     return im
 
-pages = [("sinh", "serif", 34, False), ("ly", "sans", 30, False), ("su", "times", 32, False),
-         ("van", "dejavu", 26, False), ("sinh", "serif", 34, True), ("ly", "sans", 30, True)]
+pages = [("bio", "serif", 34, False), ("phys", "sans", 30, False), ("hist", "times", 32, False),
+         ("lit", "dejavu", 26, False), ("bio", "serif", 34, True), ("phys", "sans", 30, True)]
 gt = {}
 for topic, font, size, is_photo in pages:
     name = f"{topic}-{font}{'-photo' if is_photo else ''}"

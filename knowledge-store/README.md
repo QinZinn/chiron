@@ -65,7 +65,7 @@ Auth: `Authorization: Bearer <KS_HTTP_TOKEN>`. `/health` không cần auth.
 
 ## Ghi chép scan
 
-Ảnh/PDF → service OCR (`Chiron/ocr`, PaddleOCR + VietOCR) → note `draft` → người học sửa
+Ảnh/PDF → service OCR (`Chiron/ocr`, PaddleOCR) → note `draft` → người học sửa
 văn bản → rút khái niệm → duyệt từng khái niệm. Note **không** có đường riêng vào
 `ks.nodes`: văn bản được lưu thành transcript `kind:"note"` và đi qua đúng
 `extract_concepts` + `pending_review` như transcript phiên học, với prompt riêng

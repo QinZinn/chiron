@@ -8,7 +8,7 @@ gộp chúng lại một chỗ để phát triển chung.
 | [`mnemosyne/`](mnemosyne/) | Học bài (Socratic, Feynman), thẻ ghi nhớ FSRS, quiz | Rust + Actix + Postgres | `127.0.0.1:8081` |
 | [`knowledge-store/`](knowledge-store/) | "Second brain" lưu khái niệm đã học | Python + Flask + Postgres | `127.0.0.1:8080` |
 | [`frontend/`](frontend/) | Giao diện web thống nhất | Vite + React + TypeScript | `localhost:5173` |
-| [`ocr/`](ocr/) | Nhận dạng chữ cho "Scan ghi chép" | Python + PaddleOCR + VietOCR (CPU) | nội bộ `ocr:8866` |
+| [`ocr/`](ocr/) | Nhận dạng chữ cho "Scan ghi chép" | Python + PaddleOCR (CPU) | nội bộ `ocr:8866` |
 
 Chiron không kết nối dịch vụ bên ngoài nào ngoài nhà cung cấp LLM. Việc cần ôn
 (thẻ yếu, việc tự thêm) nằm trong todo list nội bộ của Mnemosyne; Chiron không tự
@@ -32,7 +32,7 @@ Mở http://localhost:4173 và dán token vừa in ra vào màn Cài đặt.
   tự chạy migration khi khởi động.
 - Chỉ mở ra `127.0.0.1`: Mnemosyne `8081` (browser gọi thẳng) và frontend
   `4173`. Knowledge Store, OCR và Postgres chỉ nằm trong network nội bộ.
-- Image `ocr` (~4,2 GB, PaddlePaddle + PyTorch + mô hình) được **pull** từ
+- Image `ocr` (~2,5 GB, PaddlePaddle + mô hình) được **pull** từ
   `ghcr.io/qinzinn/chiron-ocr`, không build tại chỗ — xem `ocr/README.md`.
 - Dữ liệu nằm trong volume `chiron_pgdata`; `docker compose down` giữ nguyên
   nó, `docker compose down -v` thì xoá.

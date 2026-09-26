@@ -154,6 +154,49 @@ Theo trang, VietOCR → Paddle: 27,4 → 16,0 %; 34,5 → 24,9 %; 53,1 → 34,4 
 Paddle cho tiếng Anh. Chọn bộ đọc theo ngôn ngữ của ghi chép là quyết định
 chưa chốt.
 
+## 2026-09-26 — English only: choosing the recogniser
+
+Chiron is being built for an international hackathon and is now English only,
+so VietOCR (Vietnamese) is gone. Six PaddleOCR recognisers were compared, each
+on **the same detector output and the same line crops**, so only the
+recogniser differs.
+
+**Data.**
+
+- Printed English: `bench/` — 6 pages, 2260 characters, 4 clean renders and 2
+  fake phone photos (tinted paper, 1.8° tilt, blur, JPEG 70), with formulas
+  (`6CO2 + 6H2O → …`, `Φ = B·A·cosθ`, `ε = −ΔΦ/Δt`).
+- Handwritten English: 5 real notebook pages (a study-skills course), picked by a
+  fixed rule before looking at any output — pages 1, 5, 9, 13, 17 by file
+  name. 3123 characters. Ground truth typed by Claude from the photos, not
+  confirmed by the learner; not committed (personal notes). 960×1280 JPEGs of
+  about 120 KB, probably compressed by a chat app.
+
+**Measurements** (case-insensitive; "words" = order-free exact word matches).
+
+| Recogniser | Printed CER | Printed words | Handwritten CER | Handwritten words | Speed |
+|---|---:|---:|---:|---:|---:|
+| **PP-OCRv6_small_rec** | **0.35 %** | **98.9 %** | **27.95 %** | 55.2 % | **1.3 s/page** |
+| en_PP-OCRv5_mobile_rec | 0.62 % | 98.1 % | 29.33 % | **57.8 %** | 2.7 s/page |
+| latin_PP-OCRv5_mobile_rec | 0.35 % | 98.6 % | 31.96 % | 50.2 % | 2.7 s/page |
+| PP-OCRv6_medium_rec | 0.44 % | 98.9 % | 32.47 % | 51.1 % | 3.0 s/page |
+| PP-OCRv5_server_rec | 30.00 % | 43.8 % | 34.29 % | 45.0 % | 4.2 s/page |
+| PP-OCRv4_server_rec | 3.41 % | 81.2 % | 44.09 % | 17.1 % | 4.1 s/page |
+| *VietOCR vgg_transformer (previous)* | — | — | *42.01 %* | *30.1 %* | — |
+
+**Conclusions.**
+
+1. `PP-OCRv6_small_rec` is the default: lowest CER on both sets and the fastest.
+   `en_PP-OCRv5_mobile_rec` matches 2.6 points more handwritten words, which on
+   five pages is within noise; it stays one `OCR_REC_MODEL` away.
+2. Replacing VietOCR cuts handwritten English CER from 42 % to 28 % — VietOCR
+   invented Vietnamese on English lines (`L: "I don't believe it"` → "Nên có
+   thứ tropersitional").
+3. Printed English is essentially solved (4 letter errors in 1814). Handwriting
+   is not: about one word in two still needs correcting, and two-column
+   layouts (a box beside the notes) are merged line by line whatever the
+   recogniser — page 13 stays around 50 % CER with every model.
+
 ## Chưa đo
 
 - Chữ viết tay của người khác, và chữ viết tay ở độ phân giải gốc (chưa nén).

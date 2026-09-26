@@ -1,5 +1,0 @@
-# Installed with --no-deps: vietocr 0.3.13 pins training-only packages
-# (albumentations, imgaug, lmdb, …) and exact old versions of pillow/einops/gdown
-# that have no Python 3.13 wheels. Inference needs only torch, torchvision,
-# einops, gdown, pyyaml, requests and pillow, all installed separately.
-vietocr==0.3.13

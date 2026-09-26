@@ -1,5 +1,5 @@
-# Chiron OCR — PaddleOCR text detection + VietOCR recognition, on CPU, behind a
-# small HTTP API.
+# Chiron OCR — PaddleOCR text detection and English recognition, on CPU, behind
+# a small HTTP API.
 #
 # Python 3.13: the newest version PaddlePaddle 3.3 publishes wheels for.
 
@@ -15,16 +15,13 @@ RUN apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY requirements.txt requirements-torch.txt requirements-vietocr.txt ./
-RUN pip install --no-cache-dir --timeout 60 --retries 5 -r requirements-torch.txt \
- && pip install --no-cache-dir --timeout 60 --retries 5 -r requirements.txt pytest \
- && pip install --no-cache-dir --timeout 60 --retries 5 --no-deps -r requirements-vietocr.txt
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --timeout 60 --retries 5 -r requirements.txt pytest
 COPY chiron_ocr ./chiron_ocr
 COPY tests ./tests
 
 ENV OCR_HOST=0.0.0.0 \
     OCR_PORT=8866 \
-    OCR_VIETOCR_DIR=/app/models/vietocr \
     PYTHONUNBUFFERED=1
 
 # Models are fetched at BUILD time and baked into the image, not downloaded on
@@ -37,7 +34,7 @@ RUN python -c "from chiron_ocr import engine; engine.load(); assert engine.statu
 
 # Links the image published to ghcr.io/qinzinn/chiron-ocr to this repository.
 LABEL org.opencontainers.image.source="https://github.com/QinZinn/chiron" \
-      org.opencontainers.image.description="Chiron OCR: PaddleOCR text detection + VietOCR recognition (CPU)" \
+      org.opencontainers.image.description="Chiron OCR: PaddleOCR text detection + English recognition (CPU)" \
       org.opencontainers.image.licenses="MIT"
 
 EXPOSE 8866
