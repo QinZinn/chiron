@@ -83,6 +83,16 @@ class NodeSummary:
 
 
 @dataclass(frozen=True)
+class EdgeSummary:
+    """Cho GET /edges: một cạnh ĐÃ DUYỆT, hai đầu đã resolve merge."""
+
+    id: UUID
+    from_node_id: UUID
+    to_node_id: UUID
+    relation_type: str
+
+
+@dataclass(frozen=True)
 class SaveResult:
     """Kết quả save_transcript. ok=False kèm error thay vì raise."""
 

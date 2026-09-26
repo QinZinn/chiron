@@ -20,7 +20,7 @@ from ks import confirm as confirm_mod, notes as notes_mod, query as query_mod, s
 from ks.db import connect
 from ks.ingest import ingest_concepts
 from ks.llm import LLMError, LLMProvider, provider_from_env
-from ks.models import ConceptDraft, SourceModule
+from ks.models import SYMMETRIC_RELATIONS, ConceptDraft, SourceModule
 from ks.ocr_client import OcrClient, OcrError, Upload, client_from_env
 from ks.transcripts import save_transcript
 
@@ -249,6 +249,59 @@ def create_app(
             ]
         }), 200
 
+
+    @app.get("/edges")
+    @require_token
+    def get_edges():
+        """Cạnh ĐÃ DUYỆT cho bản đồ khái niệm. Thuần đọc DB, KHÔNG chạm LLM.
+
+        Route riêng vì GET /nodes cố tình không trả edges. `symmetric` cho biết
+        quan hệ không có chiều (related, contrasts_with): lưu một chiều, đọc
+        như hai chiều.
+        """
+        raw_limit = request.args.get("limit")
+        limit = settings.MAX_EDGE_LIMIT
+        if raw_limit is not None:
+            try:
+                limit = int(raw_limit)
+            except ValueError:
+                return jsonify({"error": "invalid_limit", "detail": "limit phải là số nguyên"}), 400
+            if limit < 1 or limit > settings.MAX_EDGE_LIMIT:
+                return jsonify({
+                    "error": "invalid_limit",
+                    "detail": f"limit phải trong khoảng 1–{settings.MAX_EDGE_LIMIT}",
+                }), 400
+
+        node_id = None
+        raw_node = request.args.get("node_id")
+        if raw_node is not None:
+            try:
+                node_id = UUID(raw_node)
+            except ValueError:
+                return jsonify({
+                    "error": "invalid_node_id",
+                    "detail": f"'{raw_node}' không phải UUID hợp lệ",
+                }), 400
+
+        try:
+            with connect() as conn:
+                edges = query_mod.list_edges(conn, node_id=node_id, limit=limit)
+        except psycopg.Error as exc:
+            return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
+
+        symmetric = {r.value for r in SYMMETRIC_RELATIONS}
+        return jsonify({
+            "edges": [
+                {
+                    "id": str(e.id),
+                    "from": str(e.from_node_id),
+                    "to": str(e.to_node_id),
+                    "relation_type": e.relation_type,
+                    "symmetric": e.relation_type in symmetric,
+                }
+                for e in edges
+            ]
+        }), 200
 
     @app.get("/nodes/<node_id>")
     @require_token

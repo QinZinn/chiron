@@ -68,6 +68,8 @@ DEFAULT_HTTP_HOST = "127.0.0.1"
 
 # Trần limit của GET /nodes. Vượt trần → 400, KHÔNG âm thầm cắt.
 MAX_NODE_LIMIT = 500
+# Trần của GET /edges, cùng quy tắc: vượt trần → 400.
+MAX_EDGE_LIMIT = 2000
 DEFAULT_NODE_LIMIT = 50
 
 # ---------------------------------------------------------------- OCR (ghi chép scan)

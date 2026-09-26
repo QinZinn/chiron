@@ -54,6 +54,7 @@ Auth: `Authorization: Bearer <KS_HTTP_TOKEN>`. `/health` không cần auth.
 | `POST /ingest` | `{drafts:[...]}`. All-or-nothing. `psycopg.Error` → 503. Idempotency là **fuzzy match theo similarity**, không phải khoá định danh — retry an toàn chỉ khi giữ nguyên văn `title` |
 | `GET /nodes` | `?subject=&source_module=&limit=` (mặc định 50, **trần 500**, vượt trần → 400 chứ không âm thầm cắt). Không trả edges |
 | `GET /nodes/{id}` | Một node. `400` id không phải UUID, `404` không có. Node đã merge → trả **node đích với 200** (một bước), nên `id` trả về có thể khác id đã hỏi |
+| `GET /edges` | Cạnh **đã duyệt** (`approved`) cho bản đồ khái niệm; `?node_id=`, `?limit=` (tối đa 2000). Hai đầu resolve merge một bước như `GET /nodes`; cạnh thành vòng sau khi resolve bị bỏ, cạnh trùng gộp một. `symmetric` = quan hệ không chiều |
 | `POST /notes` | multipart `files` (ảnh/PDF) + `title` tuỳ chọn. Gọi service OCR, lưu note `draft`. **Chưa** rút khái niệm |
 | `GET /notes`, `GET /notes/{id}` | Danh sách / chi tiết (kèm kết quả OCR theo trang và các khái niệm đã rút) |
 | `PATCH /notes/{id}` | `{title, text}` — người học sửa văn bản OCR |

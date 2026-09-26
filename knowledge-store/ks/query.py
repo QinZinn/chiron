@@ -1,4 +1,8 @@
-"""Đọc node cho consumer HTTP. Thuần đọc DB, KHÔNG chạm LLM, KHÔNG trả edges."""
+"""Đọc node và cạnh cho consumer HTTP. Thuần đọc DB, KHÔNG chạm LLM.
+
+`list_nodes` / `get_node` không trả edges (quyết định đã chốt); cạnh có route
+riêng, `list_edges`.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +11,7 @@ from uuid import UUID
 import psycopg
 
 from ks import settings
-from ks.models import NodeSummary
+from ks.models import EdgeSummary, NodeSummary
 
 # merged_into_id khác NULL → trả node ĐÍCH, đúng MỘT BƯỚC (không walk chain).
 # DISTINCT ON gộp nhiều node cùng đích về một dòng. LEFT JOIN + DISTINCT ON làm
@@ -88,3 +92,49 @@ def get_node(conn: psycopg.Connection, node_id: UUID) -> NodeSummary | None:
     if row is None:
         return None
     return NodeSummary(id=row[0], title=row[1], subject=row[2], summary=row[3])
+
+
+# GET /edges: chỉ cạnh `approved` — `pending` là gợi ý của LLM chưa ai duyệt,
+# `rejected` là câu trả lời "không" của người duyệt; vẽ cả hai lên bản đồ là nói
+# sai điều người học đã quyết.
+#
+# Hai đầu resolve merge ĐÚNG MỘT BƯỚC, cùng luật với _LIST_SQL, để mọi id trong
+# kết quả đều là id mà GET /nodes trả về. Sau khi resolve:
+# - cạnh thành vòng về chính nó (A→B khi A đã merge vào B) bị bỏ;
+# - nhiều cạnh trùng (from, to, relation) gộp thành một, giữ id nhỏ nhất.
+# Bộ lọc node_id cũng áp lên id ĐÃ RESOLVE.
+_EDGES_SQL = """
+SELECT DISTINCT ON (from_id, to_id, relation_type)
+       id, from_id, to_id, relation_type
+FROM (
+  SELECT e.id,
+         COALESCE(fm.id, f.id) AS from_id,
+         COALESCE(tm.id, t.id) AS to_id,
+         e.relation_type::text  AS relation_type
+  FROM ks.edges e
+  JOIN ks.nodes f ON f.id = e.from_node_id
+  LEFT JOIN ks.nodes fm ON fm.id = f.merged_into_id
+  JOIN ks.nodes t ON t.id = e.to_node_id
+  LEFT JOIN ks.nodes tm ON tm.id = t.merged_into_id
+  WHERE e.status = 'approved'
+) resolved
+WHERE from_id <> to_id
+  AND (%(node_id)s::uuid IS NULL OR from_id = %(node_id)s::uuid OR to_id = %(node_id)s::uuid)
+ORDER BY from_id, to_id, relation_type, id
+LIMIT %(limit)s
+"""
+
+
+def list_edges(
+    conn: psycopg.Connection,
+    *,
+    node_id: UUID | None = None,
+    limit: int = settings.MAX_EDGE_LIMIT,
+) -> tuple[EdgeSummary, ...]:
+    """Cạnh đã duyệt, hai đầu đã resolve merge. Không bao giờ có pending/rejected."""
+    with conn.cursor() as cur:
+        cur.execute(_EDGES_SQL, {"node_id": node_id, "limit": limit})
+        rows = cur.fetchall()
+    return tuple(
+        EdgeSummary(id=r[0], from_node_id=r[1], to_node_id=r[2], relation_type=r[3]) for r in rows
+    )

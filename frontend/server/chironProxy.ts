@@ -10,6 +10,7 @@
  *   /api/ks/health               → KS GET /health          (no auth upstream)
  *   /api/ks/nodes?…              → KS GET /nodes           (Bearer CHIRON_KS_TOKEN)
  *   /api/ks/nodes/{id}           → KS GET /nodes/{id}      (Bearer CHIRON_KS_TOKEN)
+ *   /api/ks/edges?…              → KS GET /edges           (cạnh đã duyệt, cho bản đồ khái niệm)
  *   /api/ks/notes…, /api/ks/extracted…
  *                                → ghi chép scan và duyệt khái niệm (bảng KS_WRITE_ROUTES)
  *
@@ -166,6 +167,12 @@ function createHandler(env: ProxyEnv): Connect.NextHandleFunction {
     // ------------------------------------------------------------ Knowledge Store
     if (path === '/api/ks/health') {
       return void forward(res, `${env.ksUrl}/health`, 'Knowledge Store', {}, KS_TIMEOUT_MS);
+    }
+    if (path === '/api/ks/edges') {
+      if (!env.ksToken) {
+        return sendJson(res, 503, { error: 'not_configured', detail: 'CHIRON_KS_TOKEN đang trống trong frontend/.env' });
+      }
+      return void forward(res, `${env.ksUrl}/edges${url.search}`, 'Knowledge Store', { Authorization: `Bearer ${env.ksToken}` }, KS_TIMEOUT_MS);
     }
     const nodeMatch = /^\/api\/ks\/nodes(?:\/([^/]+))?$/.exec(path);
     if (nodeMatch) {

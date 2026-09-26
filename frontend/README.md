@@ -23,7 +23,7 @@ server (`server/chironProxy.ts`), mở thẳng `dist/index.html` thì không có
 | Module | Cách gọi | Ghi chú |
 |---|---|---|
 | Mnemosyne `:8081` | Browser gọi thẳng | Không có secret. CORS chỉ cho `localhost`/`127.0.0.1` cổng 5173 và 4173 |
-| Knowledge Store | Proxy `/api/ks/*` | Proxy gắn `Bearer CHIRON_KS_TOKEN`. GET `/health`, `/nodes`, `/nodes/{id}` và các route của Scan ghi chép (allowlist trong `server/chironProxy.ts`) |
+| Knowledge Store | Proxy `/api/ks/*` | Proxy gắn `Bearer CHIRON_KS_TOKEN`. GET `/health`, `/nodes`, `/nodes/{id}`, `/edges` và các route của Scan ghi chép (allowlist trong `server/chironProxy.ts`) |
 
 Frontend không gọi dịch vụ bên ngoài nào.
 
@@ -39,7 +39,7 @@ allowlist cấu hình public (`src/config.ts`).
 | Chat · Giải bài | Mnemosyne `/chat/*` (`mode: solve`) | Hoạt động |
 | Thẻ ghi nhớ | Mnemosyne `GET /due`, `POST /review` | Hoạt động |
 | Quiz | Mnemosyne `/quiz/*` | Hoạt động |
-| Kiến thức | KS `GET /nodes`, `/nodes/{id}` | Hoạt động |
+| Kiến thức | KS `GET /nodes`, `/nodes/{id}`, `/edges` | Hoạt động: danh sách theo môn, hoặc bản đồ khái niệm (chỉ cạnh đã duyệt) |
 | Điểm yếu | Mnemosyne `GET /weak_cards` | Hoạt động |
 | Việc cần ôn | Mnemosyne `/todos` + Pomodoro (thuần frontend) | Hoạt động: việc tự sinh từ thẻ yếu, thêm tay, tick xong; Pomodoro chỉ là đồng hồ, không lưu lịch sử |
 | Sửa / xoá | Mnemosyne `PATCH`, `DELETE` | Sửa và xoá thẻ, đổi tên và xoá bộ thẻ, xoá câu quiz, xoá phiên, sửa hồ sơ |

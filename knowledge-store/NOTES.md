@@ -509,3 +509,19 @@ do sơ đồ). 3 tên quá chung (#3–5). 3 cặp trùng một phần (#2 với
    chiếu vở thì khó phát hiện.
 3. Hai nguồn lỗi còn lại không nằm ở LLM: **sơ đồ mũi tên** mất chiều khi làm
    phẳng thành chữ, và **cột gợi ý Cornell** bị trộn vào dòng ghi chép.
+
+
+## GET /edges — route đọc riêng cho bản đồ khái niệm (2026-09-26)
+
+- `GET /nodes` vẫn **không** trả edges (quyết định đã chốt). Cạnh có route riêng.
+- Chỉ trả `approved`. `pending` là gợi ý chưa ai duyệt, `rejected` là câu "không"
+  của người duyệt; vẽ chúng lên bản đồ là nói sai điều người học đã quyết.
+- Hai đầu resolve `merged_into_id` **đúng một bước**, cùng luật `_LIST_SQL`, nên
+  mọi id trong cạnh đều là id `GET /nodes` trả về (test khoá lại điều này). Sau
+  khi resolve, cạnh A→A bị bỏ và cạnh trùng `(from, to, relation)` gộp thành một.
+- Test: `tests/test_edges_http.py` (7 test). Kiểm trên trình duyệt với một DB
+  test riêng: 12 node, 11 cạnh approved + 1 pending + 1 rejected, có một node đã
+  merge. Bản đồ vẽ đúng 12 node và 11 cạnh (8 prerequisite, 1 related,
+  2 contrasts_with); cạnh của node đã merge chuyển sang node đích.
+- **Dữ liệu thật hiện có 0 node, 0 cạnh.** 20 khái niệm từ vở đang chờ duyệt.
+  Chưa có bằng chứng nào về bản đồ trên dữ liệu học thật.
