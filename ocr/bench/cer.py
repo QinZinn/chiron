@@ -1,8 +1,19 @@
 """CER of OCR output against ground truth, with Vietnamese diacritic errors split out."""
 import json, sys, unicodedata as ud
 
-def norm(s):
-    return " ".join(ud.normalize("NFC", s).split())
+# Old and new Vietnamese tone placement are both correct spelling ("hoá" /
+# "hóa", "luỹ" / "lũy"), so neither the writer nor the OCR is wrong for picking
+# one. Both sides are rewritten to the new style before comparing.
+_OLD_TO_NEW = [("oà", "òa"), ("oá", "óa"), ("oả", "ỏa"), ("oã", "õa"), ("oạ", "ọa"),
+               ("oè", "òe"), ("oé", "óe"), ("oẻ", "ỏe"), ("oẽ", "õe"), ("oẹ", "ọe"),
+               ("uỳ", "ùy"), ("uý", "úy"), ("uỷ", "ủy"), ("uỹ", "ũy"), ("uỵ", "ụy")]
+
+
+def norm(s, lower=False):
+    s = " ".join(ud.normalize("NFC", s).split())
+    for old, new in _OLD_TO_NEW:
+        s = s.replace(old, new).replace(old.upper(), new.upper()).replace(old.capitalize(), new.capitalize())
+    return s.lower() if lower else s
 
 def base(c):
     c = c.replace("đ", "d").replace("Đ", "D")
@@ -29,17 +40,19 @@ def align(r, h):
 def is_marked(c):  # carries a Vietnamese diacritic (tone or vowel mark, or đ)
     return base(c) != c
 
-gt = json.load(open(sys.argv[1])); ocr = json.load(open(sys.argv[2]))
+LOWER = "--lower" in sys.argv
+args = [a for a in sys.argv[1:] if not a.startswith("--")]
+gt = json.load(open(args[0])); ocr = json.load(open(args[1]))
 tot = {"chars": 0, "err": 0, "dia": 0, "marked": 0, "marked_wrong": 0}
 rows = []
 for name, lines in gt.items():
-    ref, hyp = norm(" ".join(lines)), norm(ocr[name]["text"])
+    ref, hyp = norm(" ".join(lines), LOWER), norm(ocr[name]["text"], LOWER)
     dist, ops = align(ref, hyp)
     dia = sum(1 for k, a, b in ops if k == "sub" and base(a) == base(b))
     marked = sum(1 for c in ref if is_marked(c))
     # marked chars in ref that were not reproduced exactly
     marked_wrong = sum(1 for k, a, b in ops if k in ("sub", "del") and is_marked(a))
-    rows.append((name, len(ref), dist, dist / len(ref), dia, marked, marked_wrong, ocr[name]["mean_confidence"], ocr[name]["secs"], ops))
+    rows.append((name, len(ref), dist, dist / len(ref), dia, marked, marked_wrong, ocr[name]["mean_confidence"], ocr[name].get("secs", "—"), ops))
     for k, v in zip(tot, (len(ref), dist, dia, marked, marked_wrong)): tot[k] += v
 print(f"{'trang':24} {'ký tự':>6} {'lỗi':>4} {'CER':>7} {'lỗi dấu':>7} {'ký tự có dấu sai':>17} {'conf':>6} {'giây':>5}")
 for name, n, dist, cer, dia, marked, mw, conf, secs, _ in rows:
@@ -54,8 +67,38 @@ def kind(a):
     if a in ".,;:!?()\"' ": return "dấu câu/khoảng trắng"
     return "chữ cái/chữ số"
 from collections import Counter
-c = Counter(); letters = sum(1 for n, lines in gt.items() for ch in norm(" ".join(lines)) if kind(ch) == "chữ cái/chữ số")
+c = Counter(); letters = sum(1 for n, lines in gt.items() for ch in norm(" ".join(lines), LOWER) if kind(ch) == "chữ cái/chữ số")
 for *_, ops in rows:
     for k, a, b in ops: c[kind(a) if a else "chèn thừa"] += 1
 print("\nPhân loại lỗi:", dict(c))
 print(f"CER chỉ tính chữ cái/chữ số: {c['chữ cái/chữ số']}/{letters} = {c['chữ cái/chữ số']/letters:.2%}")
+
+
+# -- order-free word accuracy ----------------------------------------------
+# Levenshtein punishes reading order: on a Cornell page the cue column can come
+# out before or after the notes it sits beside, and every character of it then
+# counts as an error although it was read right. Matching words as a multiset
+# ignores order and measures recognition alone.
+import re
+from collections import Counter as _C
+
+def words(text):
+    return re.findall(r"[^\W_]+", norm(text, True))
+
+print("\nTừ đọc đúng (không tính thứ tự, không phân biệt hoa thường):")
+tw = tm = td = 0
+for name, lines in gt.items():
+    ref, hyp = _C(words(" ".join(lines))), _C(words(ocr[name]["text"]))
+    exact = sum((ref & hyp).values())
+    left_ref, left_hyp = ref - hyp, hyp - ref
+    by_base = _C()
+    for w, n in left_hyp.items():
+        by_base[base(w)] += n
+    dia = 0
+    for w, n in left_ref.items():
+        k = min(n, by_base[base(w)])
+        dia += k; by_base[base(w)] -= k
+    total = sum(ref.values())
+    tw += total; tm += exact; td += dia
+    print(f"  {name:24} {exact}/{total} = {exact/total:.1%} đúng hẳn; thêm {dia} từ đúng chữ nhưng sai dấu")
+print(f"  TỔNG {tm}/{tw} = {tm/tw:.1%} đúng hẳn; {td} từ ({td/tw:.1%}) chỉ sai dấu; {tw-tm-td} từ ({(tw-tm-td)/tw:.1%}) sai chữ hoặc mất")

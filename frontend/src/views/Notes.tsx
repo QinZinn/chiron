@@ -34,6 +34,10 @@ function friendly(err: unknown): { title: string; detail: string } | null {
       return { title: 'Tệp quá lớn', detail: err.message };
     case 'llm_not_configured':
       return { title: 'Knowledge Store chưa cấu hình LLM', detail: `${err.message}. Điền khoá LLM trong knowledge-store/.env để rút khái niệm.` };
+    case 'extraction_failed':
+      return err.message.includes('max_tokens')
+        ? { title: 'Ghi chép quá dài cho một lần rút', detail: 'Mô hình dùng hết ngân sách token trước khi trả kết quả. Bấm rút lại (mỗi lần tốn một lượng khác nhau), hoặc tách ghi chép thành nhiều lần scan.' }
+        : { title: 'Không rút được khái niệm', detail: err.message };
     case 'empty_note':
       return { title: 'Ghi chép không còn chữ nào', detail: 'OCR không đọc được gì, hoặc văn bản đã bị xoá hết.' };
     default:

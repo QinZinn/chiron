@@ -45,7 +45,14 @@ EDGE_SUGGESTION_TOP_K = 8
 # Đặt rộng tay: chi phí chỉ phát sinh theo token THỰC SỰ sinh ra, còn cắt ngang
 # thì hỏng cả lô. Đừng hạ hai số này xuống theo độ dài output nhìn thấy được.
 EDGE_SUGGESTION_MAX_TOKENS = 4000
-EXTRACTION_MAX_TOKENS = 4000
+
+# Rút khái niệm cần nhiều hơn hẳn. ĐO THẬT 2026-09-25, deepseek-v4-flash, vở viết
+# tay 3 trang (3050 ký tự) đã sửa: 4000 thì CẢ HAI lần đều cắt với reasoning=4000,
+# không còn token nào cho JSON. Với 16000: 3 trang tốn 8270 và 8577 completion
+# (reasoning 6871 / 6880); từng trang riêng tốn 944, 2382 và 8723 — một trang
+# 1210 ký tự đã dùng 7824 reasoning. Tách theo trang vì vậy KHÔNG giải quyết
+# được; 16000 là khoảng gấp đôi mức cao nhất đo được.
+EXTRACTION_MAX_TOKENS = 16000
 
 # ---------------------------------------------------------------- http
 
