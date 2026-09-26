@@ -134,3 +134,45 @@ def test_khong_co_body_van_dung_quy_tac_tu_dong_nhu_cu(client):
     r = client.post(f"/extracted/{cid}/accept", headers=_auth()).get_json()
     assert r["created"] is False and r["node_id"] == str(tu_duong)
     assert _log_for("Quang tự dưỡng")[0][:2] == ("merged", "rule")
+
+
+# ---------------------------------------------------------------- split
+
+
+def _accepted_merged(title, into):
+    """An accepted concept the rule merged into node `into`."""
+    cid = _pending(title)
+    _sql("UPDATE ks.extracted_concepts SET status = 'accepted', node_id = %s WHERE id = %s", (into, cid))
+    return cid
+
+
+def test_split_tao_node_rieng_va_tro_khai_niem_sang_do(client):
+    from ks import confirm
+
+    tu_duong = _node("Tự dưỡng")
+    cid = _accepted_merged("Quang tự dưỡng", tu_duong)
+    with psycopg.connect(os.environ["KS_DATABASE_URL"]) as conn:
+        item = confirm.split(conn, cid)
+        conn.commit()
+    assert item.created is True and item.node_id != tu_duong
+    row = _sql(
+        "SELECT n.title, n.summary FROM ks.extracted_concepts c JOIN ks.nodes n ON n.id = c.node_id WHERE c.id = %s",
+        (cid,),
+    )[0]
+    assert row == ("Quang tự dưỡng", "tóm tắt")
+    assert _sql("SELECT title FROM ks.nodes WHERE id = %s", (tu_duong,))[0][0] == "Tự dưỡng", "old node untouched"
+    assert _log_for("Quang tự dưỡng")[0][:2] == ("created", "learner")
+
+
+def test_split_tu_choi_khai_niem_chua_gop_hoac_chua_chap_nhan(client):
+    from ks import confirm
+
+    own = _node("Chu trình Calvin")
+    cid_own = _accepted_merged("Chu trình Calvin", own)  # its node carries its own title
+    cid_pending = _pending("Pha sáng")
+    with psycopg.connect(os.environ["KS_DATABASE_URL"]) as conn:
+        with pytest.raises(confirm.NotMerged):
+            confirm.split(conn, cid_own)
+        with pytest.raises(confirm.AlreadyDecided):
+            confirm.split(conn, cid_pending)
+    assert _sql("SELECT count(*) FROM ks.nodes")[0][0] == 1
