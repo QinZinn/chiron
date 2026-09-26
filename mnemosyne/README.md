@@ -86,7 +86,7 @@ Mnemosyne       ──GET /nodes, /nodes/{id}→ Knowledge Store (reading a conc
 | `POST /cards`, `GET /cards` | Flashcard CRUD |
 | `POST /cards/from_node` | Turn one Knowledge Store concept node into one flashcard. Idempotent per `(study_set_id, node_id)` — a repeat call returns `409` with the existing card's id rather than a duplicate. On failure, `502` carries a machine-readable `reason`: `truncated` (the model hit its token budget — retrying the same input won't help), `provider_error` (network/upstream/unparseable — retry with a bound), or `knowledge_store_error` (the node couldn't be read from the Knowledge Store — usually safe to retry) |
 | `POST /review` | Submit a card review rating → FSRS reschedules it |
-| `GET /due` | Fetch cards due for review right now |
+| `GET /due` | Fetch cards due for review right now. `?order=due` (default: new first, then most overdue), `interleave` (neighbours from different study sets when possible) or `hardest` (most misses in the last 5 reviews first — the weak-card rule). The order only rearranges the batch; the cards are the same |
 | `POST /study_sets/{id}/generate_cards` | AI-generate flashcards from source text (`recall` or `elaboration` style) |
 | `POST /socratic/start`, `POST /socratic/{id}/reply`, `POST /socratic/{id}/end`, `GET /socratic/{id}` | Multi-turn Socratic dialogue on a study set. `/end` ships the transcript to the Knowledge Store and stamps `ended_at` |
 | `GET /socratic` | The learner's Socratic sessions, most recently active first |
