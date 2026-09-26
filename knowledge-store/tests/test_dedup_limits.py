@@ -1,11 +1,14 @@
-"""Giới hạn ĐÃ BIẾT của dò trùng trigram — khoá bằng test, KHÔNG chỉnh ngưỡng.
+"""KNOWN limits of trigram duplicate detection — locked in by tests, the threshold is NOT tuned.
 
-Chỉnh mù là đoán; hạ ngưỡng chắc chắn kéo theo false negative ở nơi khác.
-Quyết định nâng cấp (pgvector/embedding) chờ dữ liệu thật từ Mnemosyne.
+Blind tuning is guessing; lowering the threshold surely brings false negatives elsewhere.
+The upgrade decision (pgvector/embeddings) waits for real data from Mnemosyne.
 
-QUY TẮC GHI EVIDENCE POINT (xem NOTES.md): mỗi con số phải đi kèm NGUYÊN VĂN cả
-hai chuỗi, phiên bản pg_trgm, và collation của DB. Ghi số trần thì lần sau không
-diễn giải lại được — đã suýt trả giá đúng một lần vì chuyện này.
+EVIDENCE-POINT RULE (see NOTES.md): every number must come with BOTH strings
+VERBATIM, the pg_trgm version, and the DB collation. A bare number cannot be
+reinterpreted later — we nearly paid for exactly that once.
+
+The strings are Vietnamese physics terms from before the English switch; they
+stay verbatim because the recorded numbers depend on their exact characters.
 """
 
 from __future__ import annotations
@@ -27,12 +30,12 @@ def _draft(title: str) -> ConceptDraft:
     return ConceptDraft(title, "Vật lý", "x", SourceModule.MNEMOSYNE)
 
 
-# ---------------------------------------------------------------- dấu vân tay môi trường
+# ---------------------------------------------------------------- environment fingerprint
 
 
-def test_dau_van_tay_moi_truong_cua_cac_evidence_point(conn):
-    """Các số dưới đây chỉ có nghĩa kèm môi trường này. Test đỏ = môi trường đổi,
-    KHÔNG phải code hỏng — đọc NOTES.md trước khi sửa số."""
+def test_environment_fingerprint_of_the_evidence_points(conn):
+    """The numbers below only mean something in this environment. Red = the environment changed,
+    NOT broken code — read NOTES.md before changing any number."""
     with conn.cursor() as cur:
         cur.execute("SELECT extversion FROM pg_extension WHERE extname = 'pg_trgm'")
         assert cur.fetchone()[0] == "1.6"
@@ -46,63 +49,63 @@ def test_dau_van_tay_moi_truong_cua_cac_evidence_point(conn):
 
 
 @pytest.mark.parametrize(
-    "a, b, expected, bi_gop",
+    "a, b, expected, merged",
     [
-        # Ba evidence point gốc của lần build trước, đo đúng chuỗi nguyên văn.
+        # The previous build's three original evidence points, measured on the verbatim strings.
         ("Định luật Newton 1", "Định luật Newton 2", 0.8095, True),
         ("Định luật khúc xạ ánh sáng", "Định luật phản xạ ánh sáng", 0.6774, True),
         ("Định luật Ohm (curl-nodes)", "Định luật Newton 2 (curl-nodes)", 0.6364, True),
-        # Cùng khái niệm, bỏ tiền tố/hậu tố dùng chung → tụt xuống dưới ngưỡng.
-        # Đây là bằng chứng similarity phụ thuộc phần CHUNG chứ không phải phần khác.
+        # The same concepts without the shared prefix/suffix → drop below the threshold.
+        # Evidence that similarity depends on the SHARED part, not the differing part.
         ("khúc xạ", "phản xạ", 0.2308, False),
         ("Định luật Ohm", "Định luật Newton 2", 0.4348, False),
     ],
 )
-def test_evidence_point_similarity(conn, a, b, expected, bi_gop):
+def test_evidence_point_similarity(conn, a, b, expected, merged):
     score = _sim(conn, a, b)
     assert score == pytest.approx(expected, abs=0.001)
-    assert (score >= settings.DUPLICATE_THRESHOLD) is bi_gop
+    assert (score >= settings.DUPLICATE_THRESHOLD) is merged
 
 
-# ---------------------------------------------------------------- hành vi gộp nhầm
+# ---------------------------------------------------------------- wrong-merge behaviour
 
 
 def test_numbered_variants_are_wrongly_deduped(conn):
-    """LỖI ĐÃ BIẾT: hai định luật khác nhau bị gộp làm một chỉ vì tên khác mỗi chữ số."""
+    """KNOWN BUG: two different laws merge into one because their names differ by a single digit."""
     ingest_concepts(conn, [_draft("Định luật Newton 1")])
     result = ingest_concepts(conn, [_draft("Định luật Newton 2")])
     assert result.ingested[0].created is False, (
-        "Nếu test này đỏ: hành vi dedup đã đổi, đọc NOTES.md trước khi sửa"
+        "If this test is red: dedup behaviour changed; read NOTES.md before fixing"
     )
 
 
-def test_khai_niem_doi_lap_bi_gop_khi_title_co_hau_to_chung(conn):
-    """khúc xạ và phản xạ là hai hiện tượng ĐỐI LẬP, vẫn bị gộp — vì tiền tố
-    'Định luật ' cộng hậu tố ' ánh sáng' chiếm đa số trigram (0.6774)."""
+def test_opposite_concepts_merge_when_titles_share_a_suffix(conn):
+    """khúc xạ (refraction) and phản xạ (reflection) are OPPOSITE phenomena, yet merge — because the prefix
+    'Định luật ' ("law of") plus the suffix ' ánh sáng' ("of light") make up most trigrams (0.6774)."""
     ingest_concepts(conn, [_draft("Định luật khúc xạ ánh sáng")])
     result = ingest_concepts(conn, [_draft("Định luật phản xạ ánh sáng")])
     assert result.ingested[0].created is False
 
 
-def test_HAU_TO_DUNG_CHUNG_la_thu_nguy_hiem_nhat(conn):
-    """Cùng một cặp khái niệm: bỏ hậu tố chung thì KHÔNG gộp, thêm vào thì GỘP.
+def test_a_SHARED_SUFFIX_is_the_most_dangerous_thing(conn):
+    """The same pair of concepts: without the shared suffix they do NOT merge, with it they MERGE.
 
-    Phần khác biệt y hệt nhau ở cả hai lượt — chỉ phần CHUNG thay đổi. Title thật
-    từ Mnemosyne rất dễ mang hậu tố chung (tên chương, tên môn, tên bộ đề), nên
-    đây là đường false-positive đáng theo dõi nhất khi có dữ liệu thật.
+    The differing part is identical both times — only the SHARED part changes. Real titles
+    from Mnemosyne easily carry a shared suffix (chapter, subject, question-set names), so
+    this is the false-positive path most worth watching once there is real data.
     """
-    khong_hau_to = ingest_concepts(
+    without_suffix = ingest_concepts(
         conn, [_draft("Định luật Ohm"), _draft("Định luật Newton 2")]
     ).ingested
-    assert [i.created for i in khong_hau_to] == [True, True]
+    assert [i.created for i in without_suffix] == [True, True]
 
-    co_hau_to = ingest_concepts(
+    with_suffix = ingest_concepts(
         conn,
         [_draft("Định luật Ohm (curl-nodes)"), _draft("Định luật Newton 2 (curl-nodes)")],
     ).ingested
-    assert [i.created for i in co_hau_to] == [True, False]
+    assert [i.created for i in with_suffix] == [True, False]
 
 
-def test_nguong_gop_van_la_0_6(conn):
-    """Khoá hằng số: đổi ngưỡng là quyết định của Agent A, không phải của code."""
+def test_merge_threshold_is_still_0_6(conn):
+    """Locks the constant: changing the threshold is Agent A's decision, not the code's."""
     assert settings.DUPLICATE_THRESHOLD == 0.6

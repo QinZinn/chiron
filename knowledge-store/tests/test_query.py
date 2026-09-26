@@ -1,4 +1,4 @@
-"""ks/query.py — list_nodes: lọc, resolve merge một bước, dedup."""
+"""ks/query.py — list_nodes: filters, one-step merge resolution, dedup."""
 
 from __future__ import annotations
 
@@ -16,13 +16,13 @@ def _merge(conn, src, dst):
         cur.execute("UPDATE ks.nodes SET merged_into_id = %s WHERE id = %s", (dst, src))
 
 
-def test_tra_ve_tat_ca_node(conn):
+def test_returns_every_node(conn):
     _mk(conn, "Quang hợp", "Sinh học")
     _mk(conn, "Chiến tranh Lạnh", "Lịch sử")
     assert [n.title for n in list_nodes(conn)] == ["Chiến tranh Lạnh", "Quang hợp"]
 
 
-def test_khong_tra_edges(conn):
+def test_returns_no_edges(conn):
     from ks.models import NodeSummary
     _mk(conn, "Quang hợp", "Sinh học")
     node = list_nodes(conn)[0]
@@ -30,46 +30,46 @@ def test_khong_tra_edges(conn):
     assert not hasattr(node, "edges")
 
 
-def test_loc_theo_subject(conn):
+def test_filter_by_subject(conn):
     _mk(conn, "Quang hợp", "Sinh học")
     _mk(conn, "Chiến tranh Lạnh", "Lịch sử")
     assert [n.title for n in list_nodes(conn, subject="Sinh học")] == ["Quang hợp"]
 
 
-def test_subject_la_text_tu_do_khop_nguyen_van(conn):
+def test_subject_is_free_text_matched_exactly(conn):
     _mk(conn, "Quang hợp", "Sinh học nâng cao")
     assert list_nodes(conn, subject="Sinh học") == ()
     assert len(list_nodes(conn, subject="Sinh học nâng cao")) == 1
 
 
-def test_loc_theo_source_module(conn):
+def test_filter_by_source_module(conn):
     _mk(conn, "Quang hợp", "Sinh học")
     _mk(conn, "Từ vựng IELTS", "Tiếng Anh", source=SourceModule.LEXIFLASH)
     assert [n.title for n in list_nodes(conn, source_module="lexiflash")] == ["Từ vựng IELTS"]
 
 
-def test_hai_bo_loc_cong_don(conn):
+def test_two_filters_combine(conn):
     _mk(conn, "Quang hợp", "Sinh học")
     _mk(conn, "Chiến tranh Lạnh", "Lịch sử", source=SourceModule.LEXIFLASH)
     assert list_nodes(conn, subject="Sinh học", source_module="lexiflash") == ()
 
 
-def test_limit_duoc_ton_trong(conn):
+def test_limit_is_respected(conn):
     _mk(conn, "Quang hợp", "Sinh học")
     _mk(conn, "Chiến tranh Lạnh", "Lịch sử")
     _mk(conn, "Phương trình bậc hai", "Toán")
     assert len(list_nodes(conn, limit=2)) == 2
 
 
-def test_merged_node_tra_ve_node_dich(conn):
+def test_merged_node_returns_the_target(conn):
     a = _mk(conn, "Quang hợp", "Sinh học")
     b = _mk(conn, "Chiến tranh Lạnh", "Lịch sử")
     _merge(conn, a, b)
     assert [n.title for n in list_nodes(conn)] == ["Chiến tranh Lạnh"]
 
 
-def test_dedup_nhieu_node_cung_dich(conn):
-    """Ba node trỏ về cùng một đích chỉ ra MỘT dòng."""
+def test_several_nodes_with_one_target_collapse(conn):
+    """Three nodes pointing at the same target give ONE row."""
     target = _mk(conn, "Chiến tranh Lạnh", "Lịch sử")
     for title in ("Quang hợp", "Phương trình bậc hai", "Thì hiện tại hoàn thành"):
         _merge(conn, _mk(conn, title, "Môn khác"), target)
@@ -78,21 +78,21 @@ def test_dedup_nhieu_node_cung_dich(conn):
     assert result[0].id == target
 
 
-def test_resolve_dung_MOT_BUOC_khong_walk_chain(conn):
-    """A → B → C: liệt kê A phải ra B, KHÔNG phải C."""
+def test_resolves_exactly_ONE_STEP_no_chain_walk(conn):
+    """A → B → C: listing A must give B, NOT C."""
     c = _mk(conn, "Chiến tranh Lạnh", "Lịch sử")
     b = _mk(conn, "Phương trình bậc hai", "Toán")
     a = _mk(conn, "Quang hợp", "Sinh học")
     _merge(conn, b, c)
     _merge(conn, a, b)
     titles = sorted(n.title for n in list_nodes(conn))
-    # A→B cho ra "Phương trình bậc hai"; B→C và C cho ra "Chiến tranh Lạnh"
+    # A→B gives "Phương trình bậc hai"; B→C and C give "Chiến tranh Lạnh"
     assert titles == ["Chiến tranh Lạnh", "Phương trình bậc hai"]
 
 
-def test_loc_ap_len_node_da_resolve(conn):
-    """Lọc subject='Vật lý' không được trả về node môn Sinh học chỉ vì node gốc
-    (đã merge đi) từng thuộc môn Vật lý."""
+def test_filters_apply_to_the_resolved_node(conn):
+    """Filtering subject='Vật lý' (Physics) must not return a Biology node just because the original
+    node (merged away) used to be Physics."""
     target = _mk(conn, "Quang hợp", "Sinh học")
     src = _mk(conn, "Định luật Ohm", "Vật lý")
     _merge(conn, src, target)
@@ -100,14 +100,14 @@ def test_loc_ap_len_node_da_resolve(conn):
     assert [n.title for n in list_nodes(conn, subject="Sinh học")] == ["Quang hợp"]
 
 
-def test_db_rong_tra_ve_rong(conn):
+def test_empty_db_returns_empty(conn):
     assert list_nodes(conn) == ()
 
 
 # ---------------------------------------------------------------- get_node
 
 
-def test_get_node_tra_ve_node(conn):
+def test_get_node_returns_the_node(conn):
     from ks.query import get_node
     node_id = _mk(conn, "Quang hợp", "Sinh học", "Cây dùng ánh sáng.")
     node = get_node(conn, node_id)
@@ -116,15 +116,15 @@ def test_get_node_tra_ve_node(conn):
     )
 
 
-def test_get_node_khong_ton_tai_tra_None(conn):
+def test_get_node_missing_returns_None(conn):
     import uuid
 
     from ks.query import get_node
     assert get_node(conn, uuid.uuid4()) is None
 
 
-def test_get_node_da_merge_tra_node_dich(conn):
-    """Giống hệt GET /nodes: resolve merge, KHÔNG 404."""
+def test_get_node_merged_returns_the_target(conn):
+    """Exactly like GET /nodes: resolve the merge, NO 404."""
     from ks.query import get_node
     a = _mk(conn, "Quang hợp", "Sinh học")
     b = _mk(conn, "Chiến tranh Lạnh", "Lịch sử")
@@ -134,8 +134,8 @@ def test_get_node_da_merge_tra_node_dich(conn):
     assert node.title == "Chiến tranh Lạnh"
 
 
-def test_get_node_resolve_dung_MOT_BUOC(conn):
-    """A → B → C: hỏi A ra B, KHÔNG phải C."""
+def test_get_node_resolves_exactly_ONE_STEP(conn):
+    """A → B → C: asking for A gives B, NOT C."""
     from ks.query import get_node
     c = _mk(conn, "Chiến tranh Lạnh", "Lịch sử")
     b = _mk(conn, "Phương trình bậc hai", "Toán")
@@ -145,9 +145,9 @@ def test_get_node_resolve_dung_MOT_BUOC(conn):
     assert get_node(conn, a).id == b
 
 
-def test_get_node_id_cua_extracted_concept_chua_accept_khong_phai_node(conn):
-    """KHÔNG có khái niệm 'node chưa duyệt': ks.nodes không mang cột status.
-    Khái niệm chưa accept chỉ tồn tại ở ks.extracted_concepts, chưa có node nào."""
+def test_get_node_id_of_an_unaccepted_extracted_concept_is_not_a_node(conn):
+    """There is NO such thing as an 'unreviewed node': ks.nodes has no status column.
+    A concept not yet accepted exists only in ks.extracted_concepts, with no node at all."""
     import json
     import uuid
 

@@ -1,4 +1,4 @@
-"""Migration chạy được, idempotent, và schema đúng như đã chốt."""
+"""Migrations run, are idempotent, and the schema matches what was settled."""
 
 from __future__ import annotations
 
@@ -15,26 +15,26 @@ def _one(conn, sql, params=None):
     return row[0] if row else None
 
 
-def test_schema_ks_ton_tai(conn):
+def test_ks_schema_exists(conn):
     assert _one(conn, "SELECT 1 FROM information_schema.schemata WHERE schema_name = 'ks'") == 1
 
 
-def test_pg_trgm_da_cai(conn):
+def test_pg_trgm_is_installed(conn):
     assert _one(conn, "SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'") == 1
 
 
 def test_migrate_idempotent(conn):
-    """Chạy lại không áp dụng gì thêm — file đã ghi trong bảng theo dõi."""
+    """Re-running applies nothing more — the files are recorded in the tracking table."""
     assert db.migrate(conn) == []
 
 
-def test_moi_file_migration_deu_da_chay(conn):
+def test_every_migration_file_has_run(conn):
     applied = db.applied_migrations(conn)
     assert {p.name for p in db.migration_files()} <= applied
 
 
-def test_subject_la_text_khong_phai_enum(conn):
-    """Horae không có taxonomy môn học đóng kín → subject phải tự do."""
+def test_subject_is_text_not_an_enum(conn):
+    """Horae has no closed subject taxonomy → subject must be free text."""
     dtype = _one(
         conn,
         """SELECT data_type FROM information_schema.columns
@@ -43,7 +43,7 @@ def test_subject_la_text_khong_phai_enum(conn):
     assert dtype == "text"
 
 
-def test_merged_into_id_nullable_va_tro_ve_chinh_bang(conn):
+def test_merged_into_id_is_nullable_and_points_at_the_same_table(conn):
     nullable = _one(
         conn,
         """SELECT is_nullable FROM information_schema.columns
@@ -52,8 +52,8 @@ def test_merged_into_id_nullable_va_tro_ve_chinh_bang(conn):
     assert nullable == "YES"
 
 
-def test_edges_unique_bo_ba(conn):
-    """UNIQUE (from, to, relation_type) — không cho trùng cạnh."""
+def test_edges_unique_triple(conn):
+    """UNIQUE (from, to, relation_type) — no duplicate edges."""
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO ks.nodes (title, subject, summary, source_module)"
@@ -78,8 +78,8 @@ def test_edges_unique_bo_ba(conn):
             )
 
 
-def test_edge_status_mac_dinh_la_pending(conn):
-    """LLM gợi ý phải qua người duyệt — không auto-approve."""
+def test_edge_status_defaults_to_pending(conn):
+    """LLM suggestions must be reviewed by a person — no auto-approve."""
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO ks.nodes (title, subject, summary, source_module)"

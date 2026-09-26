@@ -1,4 +1,4 @@
-"""ingest_concepts: tạo mới, gộp trùng, ghi candidate, và fail-loud."""
+"""ingest_concepts: creating, merging duplicates, recording candidates, and failing loud."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 from ks.ingest import find_candidates, ingest_concepts
 from ks.models import ConceptDraft, SourceModule
 
-# Tên rất khác nhau — §12: tránh dùng cặp gần giống làm fixture.
+# Very different names — §12: avoid near-identical pairs as fixtures.
 QUANG_HOP = ConceptDraft("Quang hợp", "Sinh học", "Cây dùng ánh sáng tạo chất hữu cơ.", SourceModule.MNEMOSYNE)
 CHIEN_TRANH = ConceptDraft("Chiến tranh Lạnh", "Lịch sử", "Đối đầu Mỹ - Liên Xô.", SourceModule.MNEMOSYNE)
 PHUONG_TRINH = ConceptDraft("Phương trình bậc hai", "Toán", "ax^2 + bx + c = 0.", SourceModule.MNEMOSYNE)
@@ -22,13 +22,13 @@ def _titles(conn):
         return [r[0] for r in cur.fetchall()]
 
 
-def test_draft_dau_tien_tao_node_moi(conn):
+def test_first_draft_creates_a_new_node(conn):
     result = ingest_concepts(conn, [QUANG_HOP])
     assert len(result.ingested) == 1
     assert result.ingested[0].created is True
 
 
-def test_node_id_la_uuid_va_row_that_su_ton_tai(conn):
+def test_node_id_is_a_uuid_and_the_row_really_exists(conn):
     node_id = ingest_concepts(conn, [QUANG_HOP]).ingested[0].node_id
     assert isinstance(node_id, UUID)
     with conn.cursor() as cur:
@@ -36,7 +36,7 @@ def test_node_id_la_uuid_va_row_that_su_ton_tai(conn):
         assert cur.fetchone() == ("Quang hợp", "Sinh học", "Cây dùng ánh sáng tạo chất hữu cơ.", "mnemosyne")
 
 
-def test_title_y_het_thi_gop_khong_tao_moi(conn):
+def test_identical_title_merges_rather_than_creating(conn):
     first = ingest_concepts(conn, [QUANG_HOP]).ingested[0]
     second = ingest_concepts(conn, [QUANG_HOP]).ingested[0]
     assert second.created is False
@@ -44,38 +44,38 @@ def test_title_y_het_thi_gop_khong_tao_moi(conn):
     assert _titles(conn) == ["Quang hợp"]
 
 
-def test_trung_trong_cung_mot_lo_van_gop(conn):
-    """Draft thứ hai phải nhìn thấy node vừa tạo bởi draft thứ nhất."""
+def test_duplicates_within_one_batch_still_merge(conn):
+    """The second draft must see the node just created by the first."""
     result = ingest_concepts(conn, [QUANG_HOP, QUANG_HOP])
     a, b = result.ingested
     assert a.created is True and b.created is False
     assert a.node_id == b.node_id
 
 
-def test_khai_niem_khac_han_thi_tao_node_rieng(conn):
+def test_clearly_different_concepts_get_their_own_nodes(conn):
     result = ingest_concepts(conn, [QUANG_HOP, CHIEN_TRANH, PHUONG_TRINH])
     assert all(item.created for item in result.ingested)
     assert len({item.node_id for item in result.ingested}) == 3
 
 
-def test_thu_tu_ket_qua_khop_thu_tu_draft(conn):
+def test_result_order_matches_draft_order(conn):
     result = ingest_concepts(conn, [CHIEN_TRANH, QUANG_HOP])
     assert [item.draft.title for item in result.ingested] == ["Chiến tranh Lạnh", "Quang hợp"]
 
 
-def test_lo_rong_tra_ve_ket_qua_rong(conn):
+def test_empty_batch_returns_an_empty_result(conn):
     assert ingest_concepts(conn, []).ingested == ()
 
 
-def test_candidates_rong_khi_khong_co_gi_giong(conn):
+def test_candidates_empty_when_nothing_is_similar(conn):
     ingest_concepts(conn, [QUANG_HOP])
     result = ingest_concepts(conn, [CHIEN_TRANH])
     assert result.ingested[0].candidates == ()
 
 
-def test_candidates_populate_ca_khi_created_true(conn):
-    """Near-miss dưới ngưỡng vẫn phải log — nếu chỉ log ca merge thì không đo
-    được false negative."""
+def test_candidates_populated_even_when_created_is_true(conn):
+    """Near-misses below the threshold must still be logged — logging only merges
+    cannot measure false negatives."""
     ingest_concepts(conn, [ConceptDraft("Định luật Ohm", "Vật lý", "U = I*R.", SourceModule.MNEMOSYNE)])
     result = ingest_concepts(
         conn,
@@ -87,15 +87,15 @@ def test_candidates_populate_ca_khi_created_true(conn):
     assert 0 < item.candidates[0].score < 0.6
 
 
-def test_candidates_sap_giam_dan_theo_score(conn):
+def test_candidates_sorted_by_score_descending(conn):
     ingest_concepts(conn, [QUANG_HOP, ConceptDraft("Quang hợp ở thực vật C4", "Sinh học", "x", SourceModule.MNEMOSYNE)])
     cands = find_candidates(conn, "Quang hợp ở cây xanh")
     scores = [c.score for c in cands]
     assert scores == sorted(scores, reverse=True)
 
 
-def test_candidates_bo_qua_node_da_merge(conn):
-    """Không gợi ý gộp vào một node đã chết."""
+def test_candidates_skip_merged_nodes(conn):
+    """Never suggest merging into a node that is gone."""
     a = ingest_concepts(conn, [QUANG_HOP]).ingested[0].node_id
     b = ingest_concepts(conn, [CHIEN_TRANH]).ingested[0].node_id
     with conn.cursor() as cur:
@@ -103,9 +103,9 @@ def test_candidates_bo_qua_node_da_merge(conn):
     assert find_candidates(conn, "Quang hợp") == ()
 
 
-def test_candidate_limit_duoc_ton_trong(conn):
-    """Insert thẳng SQL để bỏ qua dedup — các biến thể này giống nhau tới mức
-    ingest_concepts sẽ gộp hết làm một."""
+def test_candidate_limit_is_respected(conn):
+    """Inserted with raw SQL to bypass dedup — these variants are so alike that
+    ingest_concepts would merge them all into one."""
     with conn.cursor() as cur:
         for i in range(6):
             cur.execute(
@@ -117,14 +117,14 @@ def test_candidate_limit_duoc_ton_trong(conn):
     assert len(find_candidates(conn, "Quang hợp", limit=10)) == 6
 
 
-def test_duoi_nguong_thi_tao_node_moi_chu_khong_gop(conn):
+def test_below_threshold_creates_a_new_node_rather_than_merging(conn):
     ingest_concepts(conn, [QUANG_HOP])
     result = ingest_concepts(conn, [QUANG_HOP], threshold=1.1)
     assert result.ingested[0].created is True
     assert len(_titles(conn)) == 2
 
 
-def test_source_module_lexiflash_ghi_duoc(conn):
+def test_source_module_lexiflash_can_be_written(conn):
     draft = ConceptDraft("Từ vựng IELTS band 7", "Tiếng Anh", "x", SourceModule.LEXIFLASH)
     node_id = ingest_concepts(conn, [draft]).ingested[0].node_id
     with conn.cursor() as cur:
@@ -132,16 +132,16 @@ def test_source_module_lexiflash_ghi_duoc(conn):
         assert cur.fetchone()[0] == "lexiflash"
 
 
-def test_fail_loud_loi_db_van_thang_ra(conn):
-    """ĐỐI LẬP CÓ CHỦ ĐÍCH với save_transcript: ingest KHÔNG nuốt lỗi."""
+def test_fail_loud_db_errors_propagate(conn):
+    """DELIBERATELY OPPOSITE to save_transcript: ingest does NOT swallow errors."""
     with conn.cursor() as cur:
         cur.execute("ALTER TABLE ks.nodes ADD CONSTRAINT tmp_no_empty CHECK (title <> '')")
     with pytest.raises(psycopg.Error):
         ingest_concepts(conn, [ConceptDraft("", "Sinh học", "x", SourceModule.MNEMOSYNE)])
 
 
-def test_khong_tu_commit_rollback_mat_du_lieu(conn):
-    """Transaction thuộc về caller."""
+def test_does_not_commit_itself_rollback_loses_the_data(conn):
+    """The transaction belongs to the caller."""
     ingest_concepts(conn, [QUANG_HOP])
     conn.rollback()
     assert _titles(conn) == []

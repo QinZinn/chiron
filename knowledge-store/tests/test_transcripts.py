@@ -1,4 +1,4 @@
-"""save_transcript (không bao giờ raise) + extract_concepts (job retry được)."""
+"""save_transcript (never raises) + extract_concepts (a retryable job)."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ TWO_CONCEPTS = json.dumps([
 
 
 def _save(conn, session_ref="s-1", content=CONTENT):
-    """save_transcript tự mở connection, nên test dùng cùng URL của fixture."""
+    """save_transcript opens its own connection, so the test uses the fixture's URL."""
     result = save_transcript(session_ref, content, url=conn.info.dsn)
     return result
 
@@ -40,32 +40,32 @@ def _save(conn, session_ref="s-1", content=CONTENT):
 # ---------------------------------------------------------------- save
 
 
-def test_save_tra_ve_ok_va_transcript_id(migrated_url):
+def test_save_returns_ok_and_transcript_id(migrated_url):
     result = save_transcript(f"s-{uuid.uuid4()}", CONTENT, url=migrated_url)
     assert result.ok is True
     assert result.transcript_id is not None
     assert result.error is None
 
 
-def test_save_KHONG_BAO_GIO_raise_khi_db_chet():
-    """Phiên học không được hỏng vì KS chết."""
+def test_save_NEVER_raises_when_the_db_is_down():
+    """A study session must not break because KS is down."""
     result = save_transcript("s-x", CONTENT, url="postgresql://nobody@127.0.0.1:1/khong_co")
     assert result.ok is False
     assert result.transcript_id is None
     assert result.error
 
 
-def test_save_khong_raise_ca_khi_url_vo_nghia():
-    result = save_transcript("s-x", CONTENT, url="đây không phải dsn")
+def test_save_does_not_raise_even_with_a_nonsense_url():
+    result = save_transcript("s-x", CONTENT, url="this is not a dsn")
     assert result.ok is False
 
 
-def test_save_khong_raise_khi_content_khong_serialize_duoc():
+def test_save_does_not_raise_when_content_cannot_be_serialised():
     result = save_transcript("s-x", {"f": object()}, url="postgresql://x@127.0.0.1:1/y")
     assert result.ok is False
 
 
-def test_save_idempotent_that_theo_session_ref(migrated_url):
+def test_save_is_truly_idempotent_on_session_ref(migrated_url):
     ref = f"s-{uuid.uuid4()}"
     first = save_transcript(ref, CONTENT, url=migrated_url)
     second = save_transcript(ref, CONTENT, url=migrated_url)
@@ -73,7 +73,7 @@ def test_save_idempotent_that_theo_session_ref(migrated_url):
     assert second.transcript_id == first.transcript_id
 
 
-def test_save_lai_KHONG_de_len_content_da_luu(migrated_url):
+def test_saving_again_does_NOT_overwrite_stored_content(migrated_url):
     ref = f"s-{uuid.uuid4()}"
     save_transcript(ref, CONTENT, url=migrated_url)
     save_transcript(ref, [{"role": "user", "content": "nội dung khác"}], url=migrated_url)
@@ -83,7 +83,7 @@ def test_save_lai_KHONG_de_len_content_da_luu(migrated_url):
         assert cur.fetchone()[0] == CONTENT
 
 
-def test_save_nhan_content_JSON_bat_ky(migrated_url):
+def test_save_accepts_any_JSON_content(migrated_url):
     for content in ({"a": 1}, [1, 2, 3], "chuỗi", 42, None):
         assert save_transcript(f"s-{uuid.uuid4()}", content, url=migrated_url).ok is True
 
@@ -91,33 +91,33 @@ def test_save_nhan_content_JSON_bat_ky(migrated_url):
 # ---------------------------------------------------------------- render / parse
 
 
-def test_render_nhan_dien_dang_role_content():
+def test_render_recognises_the_role_content_shape():
     assert render_transcript(CONTENT) == (
         "assistant: Định luật Newton 2 nói gì?\nuser: F bằng m nhân a."
     )
 
 
-def test_render_dang_khac_van_giu_du_lieu():
+def test_render_other_shapes_keep_the_data():
     out = render_transcript({"gì đó": "khác"})
     assert "gì đó" in out
 
 
-def test_prompt_chua_noi_dung_transcript():
+def test_prompt_contains_the_transcript():
     prompt = build_prompt(CONTENT)[1].content
     assert "F bằng m nhân a." in prompt
 
 
-def test_parse_bo_qua_phan_tu_thieu_field():
+def test_parse_skips_elements_missing_a_field():
     text = json.dumps([{"title": "X"}, {"title": "Y", "subject": "S", "summary": "M"}])
     assert parse_extraction(text) == (("Y", "S", "M"),)
 
 
-def test_parse_khong_phai_json_thi_parse_error():
+def test_parse_non_json_gives_parse_error():
     with pytest.raises(LLMParseError):
-        parse_extraction("xin lỗi")
+        parse_extraction("sorry")
 
 
-def test_parse_mang_rong_hop_le():
+def test_parse_empty_array_is_valid():
     assert parse_extraction("[]") == ()
 
 
@@ -133,7 +133,7 @@ def _new_transcript(conn, content=CONTENT):
         return cur.fetchone()[0]
 
 
-def test_extract_ghi_khai_niem_o_trang_thai_cho_xac_nhan(conn):
+def test_extract_writes_concepts_awaiting_confirmation(conn):
     tid = _new_transcript(conn)
     result = extract_concepts(conn, tid, FakeProvider(TWO_CONCEPTS))
     assert result.ok is True
@@ -141,8 +141,8 @@ def test_extract_ghi_khai_niem_o_trang_thai_cho_xac_nhan(conn):
     assert {c.status for c in result.concepts} == {"pending_review"}
 
 
-def test_extract_KHONG_tu_ghi_vao_nodes(conn):
-    """Extraction chỉ đề xuất; vào đồ thị là việc của accept."""
+def test_extract_does_NOT_write_to_nodes(conn):
+    """Extraction only proposes; entering the graph is accept's job."""
     tid = _new_transcript(conn)
     extract_concepts(conn, tid, FakeProvider(TWO_CONCEPTS))
     with conn.cursor() as cur:
@@ -150,7 +150,7 @@ def test_extract_KHONG_tu_ghi_vao_nodes(conn):
         assert cur.fetchone()[0] == 0
 
 
-def test_extract_thanh_cong_thi_status_done(conn):
+def test_successful_extract_sets_status_done(conn):
     tid = _new_transcript(conn)
     extract_concepts(conn, tid, FakeProvider("[]"))
     with conn.cursor() as cur:
@@ -158,7 +158,7 @@ def test_extract_thanh_cong_thi_status_done(conn):
         assert cur.fetchone() == ("done", 1, None)
 
 
-def test_extract_llm_loi_thi_KHONG_raise_va_tang_attempts(conn):
+def test_extract_llm_error_does_NOT_raise_and_increments_attempts(conn):
     tid = _new_transcript(conn)
     result = extract_concepts(conn, tid, FakeProvider(error=LLMTransientError("503")))
     assert result.ok is False and result.attempts == 1
@@ -169,7 +169,7 @@ def test_extract_llm_loi_thi_KHONG_raise_va_tang_attempts(conn):
     assert "503" in error
 
 
-def test_extract_can_luot_thi_status_failed(conn):
+def test_extract_out_of_attempts_sets_status_failed(conn):
     tid = _new_transcript(conn)
     for _ in range(3):
         extract_concepts(conn, tid, FakeProvider(error=LLMQuotaError("429")), max_attempts=3)
@@ -178,7 +178,7 @@ def test_extract_can_luot_thi_status_failed(conn):
         assert cur.fetchone() == ("failed", 3)
 
 
-def test_retry_don_ket_qua_cu_con_pending_review(conn):
+def test_retry_clears_old_results_still_pending_review(conn):
     tid = _new_transcript(conn)
     extract_concepts(conn, tid, FakeProvider(TWO_CONCEPTS))
     extract_concepts(conn, tid, FakeProvider(json.dumps(
@@ -188,8 +188,8 @@ def test_retry_don_ket_qua_cu_con_pending_review(conn):
         assert [r[0] for r in cur.fetchall()] == ["Chỉ một"]
 
 
-def test_retry_GIU_NGUYEN_thu_da_accepted_hoac_discarded(conn):
-    """Không hỏi lại câu người dùng đã trả lời."""
+def test_retry_KEEPS_what_was_accepted_or_discarded(conn):
+    """Never ask again a question the user already answered."""
     from ks.confirm import accept, discard
     tid = _new_transcript(conn)
     first = extract_concepts(conn, tid, FakeProvider(TWO_CONCEPTS)).concepts
@@ -201,7 +201,7 @@ def test_retry_GIU_NGUYEN_thu_da_accepted_hoac_discarded(conn):
         cur.execute(
             "SELECT title, status FROM ks.extracted_concepts WHERE transcript_id = %s"
             " ORDER BY status, title", (tid,))
-        # enum sắp theo thứ tự khai báo: pending_review → accepted → discarded
+        # the enum sorts in declaration order: pending_review → accepted → discarded
         assert cur.fetchall() == [
             ("Mới toanh", "pending_review"),
             ("Định luật Newton 2", "accepted"),
@@ -209,19 +209,19 @@ def test_retry_GIU_NGUYEN_thu_da_accepted_hoac_discarded(conn):
         ]
 
 
-def test_extract_transcript_khong_ton_tai_thi_raise(conn):
+def test_extract_missing_transcript_raises(conn):
     with pytest.raises(TranscriptNotFound):
         extract_concepts(conn, uuid.uuid4(), FakeProvider())
 
 
-def test_pending_transcripts_bo_qua_thu_da_done(conn):
+def test_pending_transcripts_skip_done_ones(conn):
     a = _new_transcript(conn)
     b = _new_transcript(conn)
     extract_concepts(conn, a, FakeProvider("[]"))
     assert pending_transcripts(conn) == (b,)
 
 
-def test_pending_transcripts_bo_qua_thu_can_luot(conn):
+def test_pending_transcripts_skip_ones_out_of_attempts(conn):
     tid = _new_transcript(conn)
     with conn.cursor() as cur:
         cur.execute("UPDATE ks.transcripts SET attempts = 5 WHERE id = %s", (tid,))

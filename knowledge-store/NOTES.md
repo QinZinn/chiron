@@ -252,7 +252,7 @@ are required**:
    reconciliation.
 
 Changing either step leaves the orphan stuck forever. Locked in by the test
-`test_timeout_roi_409_tu_hoa_giai_ket_qua_mo_coi`, which runs exactly that chain.
+`test_timeout_then_409_reconciles_an_orphaned_result`, which runs exactly that chain.
 
 The actual Gödel case was **not** orphaned — that time their handler really failed
 too (empty body), so the "KS review" set has exactly 8 cards, none extra. But had

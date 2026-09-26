@@ -1,4 +1,4 @@
-"""Ghi chép scan: OCR → sửa → rút khái niệm → duyệt. OCR và LLM đều giả; DB thật."""
+"""Scanned notes: OCR → correct → extract concepts → review. OCR and LLM are fakes; the DB is real."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from ks.transcripts import build_prompt, is_note
 
 from tests.test_edges import FakeProvider
 
-TOKEN = "token-thật-để-test"
+TOKEN = "real-test-token"
 
 PAGES = [
     {"source": "vo-ly.jpg", "number": 1, "text": "Từ thông\nΦ = B·S·cosα", "lines": [], "mean_confidence": 0.93,
@@ -52,45 +52,45 @@ def upload(name="vo-ly.jpg"):
 # ---------------------------------------------------------------- notes module
 
 
-def test_ocr_ra_note_draft_voi_van_ban_cac_trang_noi_bang_dong_trong(conn):
+def test_ocr_gives_a_draft_note_with_pages_joined_by_blank_lines(conn):
     note = notes.create_from_uploads(conn, [upload()], FakeOcr())
     assert note.status == "draft"
     assert note.text == "Từ thông\nΦ = B·S·cosα\n\nĐịnh luật Lenz"
-    assert note.title == "vo-ly", "không đặt tên thì lấy tên tệp"
-    assert note.ocr_pages == PAGES, "kết quả OCR nguyên văn được giữ để còn so với bản sửa"
+    assert note.title == "vo-ly", "without a title, the file name is used"
+    assert note.ocr_pages == PAGES, "the raw OCR result is kept to compare with the corrected text"
 
 
-def test_nhieu_tep_thi_tieu_de_mac_dinh_noi_ro_so_tep(conn):
+def test_several_files_give_a_default_title_with_the_file_count(conn):
     note = notes.create_from_uploads(conn, [upload("a.jpg"), upload("b.png")], FakeOcr())
     assert note.title == "a (+1 file)"
 
 
-def test_sua_van_ban_va_tieu_de(conn):
+def test_edit_text_and_title(conn):
     note = notes.create_from_uploads(conn, [upload()], FakeOcr())
     edited = notes.update(conn, note.id, title="Chương 5", text="Từ thông Φ = B·S·cosα")
     assert (edited.title, edited.text) == ("Chương 5", "Từ thông Φ = B·S·cosα")
 
 
-def test_tieu_de_rong_thi_giu_tieu_de_cu(conn):
+def test_empty_title_keeps_the_old_title(conn):
     note = notes.create_from_uploads(conn, [upload()], FakeOcr())
     assert notes.update(conn, note.id, title="   ", text=None).title == note.title
 
 
-def test_rut_khai_niem_di_qua_hang_cho_duyet_khong_vao_thang_nodes(conn):
+def test_extraction_goes_through_the_review_queue_not_straight_into_nodes(conn):
     note = notes.create_from_uploads(conn, [upload()], FakeOcr())
     result = notes.extract(conn, note.id, FakeProvider(CONCEPTS))
 
     assert result.ok and len(result.concepts) == 2
     assert all(c.status == "pending_review" for c in result.concepts)
     assert all(c.source_module == SourceModule.NOTE_SCAN for c in result.concepts), \
-        "khái niệm từ ghi chép phải còn nhận ra được nguồn"
+        "concepts from notes must keep a recognisable source"
     with conn.cursor() as cur:
         cur.execute("SELECT count(*) FROM ks.nodes")
-        assert cur.fetchone()[0] == 0, "chưa accept thì chưa có node nào"
+        assert cur.fetchone()[0] == 0, "no node exists before accept"
     assert notes.get(conn, note.id).status == "extracted"
 
 
-def test_llm_doc_dung_van_ban_da_sua_chu_khong_phai_ban_ocr(conn):
+def test_llm_reads_the_corrected_text_not_the_ocr_text(conn):
     note = notes.create_from_uploads(conn, [upload()], FakeOcr())
     notes.update(conn, note.id, title=None, text="Văn bản đã sửa tay")
     provider = FakeProvider(CONCEPTS)
@@ -100,7 +100,7 @@ def test_llm_doc_dung_van_ban_da_sua_chu_khong_phai_ban_ocr(conn):
     assert "Φ = B·S·cosα" not in prompt
 
 
-def test_rut_lai_giu_khai_niem_da_quyet_va_thay_khai_niem_con_cho(conn):
+def test_re_extracting_keeps_decided_concepts_and_replaces_pending_ones(conn):
     note = notes.create_from_uploads(conn, [upload()], FakeOcr())
     first = notes.extract(conn, note.id, FakeProvider(CONCEPTS))
     kept = first.concepts[0]
@@ -109,18 +109,18 @@ def test_rut_lai_giu_khai_niem_da_quyet_va_thay_khai_niem_con_cho(conn):
     second = notes.extract(conn, note.id, FakeProvider(CONCEPTS))
     assert second.ok
     statuses = {c["id"]: c["status"] for c in notes.concepts_for(conn, note.id)}
-    assert statuses[str(kept.id)] == "accepted", "rút lại không được hỏi lại câu đã trả lời"
-    assert notes.get(conn, note.id).transcript_id == first.transcript_id, "dùng lại transcript cũ"
+    assert statuses[str(kept.id)] == "accepted", "re-extracting must not ask an answered question again"
+    assert notes.get(conn, note.id).transcript_id == first.transcript_id, "reuses the old transcript"
 
 
-def test_rut_lai_khong_chet_vi_luot_thu_cua_ban_cu(conn):
+def test_re_extracting_does_not_die_on_the_old_versions_attempts(conn):
     note = notes.create_from_uploads(conn, [upload()], FakeOcr())
-    for _ in range(6):  # quá MAX_EXTRACTION_ATTEMPTS
+    for _ in range(6):  # more than MAX_EXTRACTION_ATTEMPTS
         notes.extract(conn, note.id, FakeProvider(error=LLMTransientError("timeout")))
     assert notes.extract(conn, note.id, FakeProvider(CONCEPTS)).ok
 
 
-def test_ghi_chep_rong_thi_khong_goi_llm(conn):
+def test_empty_note_does_not_call_the_llm(conn):
     note = notes.create_from_uploads(conn, [upload()], FakeOcr(pages=[]))
     provider = FakeProvider(CONCEPTS)
     with pytest.raises(notes.EmptyNote):
@@ -128,7 +128,7 @@ def test_ghi_chep_rong_thi_khong_goi_llm(conn):
     assert provider.calls == []
 
 
-def test_note_khong_ton_tai(conn):
+def test_missing_note(conn):
     with pytest.raises(notes.NoteNotFound):
         notes.get(conn, uuid.uuid4())
 
@@ -136,7 +136,7 @@ def test_note_khong_ton_tai(conn):
 # ---------------------------------------------------------------- prompt
 
 
-def test_prompt_ghi_chep_khac_prompt_phien_hoc():
+def test_note_prompt_differs_from_session_prompt():
     note_content = {"kind": "note", "title": "Chương 5", "text": "Từ thông"}
     assert is_note(note_content) and not is_note([{"role": "user", "content": "x"}])
     note_prompt = build_prompt(note_content)[1].content
@@ -146,13 +146,13 @@ def test_prompt_ghi_chep_khac_prompt_phien_hoc():
     assert "STUDY SESSION TRANSCRIPT" in session_prompt, "the session prompt is unchanged"
 
 
-def test_multipart_giu_ten_tep_tieng_viet():
+def test_multipart_keeps_non_ascii_file_names():
     body, content_type = _multipart([Upload("vở lý.jpg", "image/jpeg", b"abc")])
     assert content_type.startswith("multipart/form-data; boundary=")
     assert b"filename*=UTF-8''v%E1%BB%9F%20l%C3%BD.jpg" in body
 
 
-def test_confirm_sua_khai_niem_truoc_khi_accept(conn):
+def test_confirm_edit_concept_before_accept(conn):
     note = notes.create_from_uploads(conn, [upload()], FakeOcr())
     concept = notes.extract(conn, note.id, FakeProvider(CONCEPTS)).concepts[0]
     edited = confirm.edit_pending(conn, concept.id, title="Từ thông (sửa)")
@@ -160,7 +160,7 @@ def test_confirm_sua_khai_niem_truoc_khi_accept(conn):
     item = confirm.accept(conn, concept.id)
     with conn.cursor() as cur:
         cur.execute("SELECT title FROM ks.nodes WHERE id = %s", (item.node_id,))
-        assert cur.fetchone()[0] == "Từ thông (sửa)", "node mang bản đã sửa"
+        assert cur.fetchone()[0] == "Từ thông (sửa)", "the node carries the corrected version"
     with pytest.raises(confirm.AlreadyDecided):
         confirm.edit_pending(conn, concept.id, title="muộn rồi")
 
@@ -197,7 +197,7 @@ def _post_note(client, name="vở lý.jpg"):
     )
 
 
-def test_http_luong_day_du_tu_upload_toi_node(make_client):
+def test_http_full_flow_from_upload_to_node(make_client):
     client = make_client()
     resp = _post_note(client)
     assert resp.status_code == 201
@@ -224,27 +224,27 @@ def test_http_luong_day_du_tu_upload_toi_node(make_client):
     assert sorted(c["status"] for c in detail["concepts"]) == ["accepted", "discarded"]
 
 
-def test_http_can_token(make_client):
+def test_http_needs_a_token(make_client):
     assert make_client().post("/notes").status_code == 403
 
 
-def test_http_khong_co_tep(make_client):
+def test_http_no_files(make_client):
     resp = make_client().post("/notes", data={}, headers=_auth(), content_type="multipart/form-data")
     assert resp.status_code == 400
 
 
 @pytest.mark.parametrize("error, status", [
-    (OcrError("Chỉ nhận ảnh hoặc PDF", status=400, code="invalid_document"), 400),
-    (OcrError("Không kết nối được service OCR", status=502, code="ocr_unreachable"), 502),
-    (OcrError("Mô hình OCR đang tải", status=503, code="not_ready"), 503),
+    (OcrError("Only images or PDFs are accepted", status=400, code="invalid_document"), 400),
+    (OcrError("Could not reach the OCR service", status=502, code="ocr_unreachable"), 502),
+    (OcrError("The OCR model is loading", status=503, code="not_ready"), 503),
 ])
-def test_http_loi_ocr_duoc_chuyen_dung_ma(make_client, error, status):
+def test_http_ocr_errors_are_passed_on_with_the_right_code(make_client, error, status):
     resp = _post_note(make_client(ocr=FakeOcr(error=error)))
     assert resp.status_code == status
     assert resp.get_json()["detail"] == str(error)
 
 
-def test_http_ocr_chua_cau_hinh_thi_503_va_ks_van_song(monkeypatch, migrated_url):
+def test_http_ocr_not_configured_gives_503_and_ks_stays_up(monkeypatch, migrated_url):
     monkeypatch.setenv("KS_HTTP_TOKEN", TOKEN)
     monkeypatch.setenv("KS_DATABASE_URL", migrated_url)
     monkeypatch.delenv("KS_OCR_URL", raising=False)
@@ -253,7 +253,7 @@ def test_http_ocr_chua_cau_hinh_thi_503_va_ks_van_song(monkeypatch, migrated_url
     assert client.get("/health").status_code == 200
 
 
-def test_http_llm_loi_thi_502_kem_nguyen_nhan(make_client):
+def test_http_llm_error_gives_502_with_the_cause(make_client):
     client = make_client(provider=FakeProvider(error=LLMTransientError("DeepSeek timeout")))
     note = _post_note(client).get_json()
     resp = client.post(f"/notes/{note['id']}/extract", headers=_auth())
@@ -261,7 +261,7 @@ def test_http_llm_loi_thi_502_kem_nguyen_nhan(make_client):
     assert "DeepSeek timeout" in resp.get_json()["detail"]
 
 
-def test_http_sua_khai_niem_roi_accept(make_client):
+def test_http_edit_concept_then_accept(make_client):
     client = make_client()
     note = _post_note(client).get_json()
     concept = client.post(f"/notes/{note['id']}/extract", headers=_auth()).get_json()["concepts"][0]
@@ -270,7 +270,7 @@ def test_http_sua_khai_niem_roi_accept(make_client):
     assert client.patch(f"/extracted/{concept['id']}", json={"title": "  "}, headers=_auth()).status_code == 400
 
 
-def test_http_id_sai_dinh_dang_va_khong_ton_tai(make_client):
+def test_http_malformed_and_missing_ids(make_client):
     client = make_client()
     assert client.get("/notes/khong-phai-uuid", headers=_auth()).status_code == 400
     assert client.get(f"/notes/{uuid.uuid4()}", headers=_auth()).status_code == 404
