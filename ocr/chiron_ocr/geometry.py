@@ -8,12 +8,12 @@ import cv2
 import numpy as np
 
 # A crop this much taller than wide is a vertical line of text (a sideways
-# margin note); VietOCR reads left to right, so it is turned first.
+# margin note); the recogniser reads left to right, so it is turned first.
 VERTICAL_RATIO = 1.5
 
 # Blank margin around each line crop, as a fraction of the line's height.
-# Cropped flush to the ink, VietOCR tends to invent a word or a "TP." at the end
-# of the line ("… ánh sáng thuận"); with this margin the same crops read clean.
+# Cropped flush to the ink, recognisers tend to invent a word at the end of the
+# line; with this margin the same crops read clean (measured 2026-09-17).
 PAD_Y = 0.15
 PAD_X = 0.25
 

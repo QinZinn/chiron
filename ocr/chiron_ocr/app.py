@@ -35,12 +35,12 @@ def create_app(load_model: bool = True) -> Flask:
 
     @app.errorhandler(413)
     def too_large(_):
-        return jsonify({"error": "too_large", "detail": f"Tổng dung lượng tối đa {MAX_UPLOAD_MB} MB"}), 413
+        return jsonify({"error": "too_large", "detail": f"Upload limit is {MAX_UPLOAD_MB} MB in total"}), 413
 
     @app.post("/ocr")
     def ocr():
         uploads = request.files.getlist("files")
-        files = [(f.filename or "tệp", f.read()) for f in uploads]
+        files = [(f.filename or "file", f.read()) for f in uploads]
         started = time.monotonic()
         try:
             with work_dir() as tmp:

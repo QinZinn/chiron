@@ -1,4 +1,4 @@
-"""CER of OCR output against ground truth, with Vietnamese diacritic errors split out."""
+"""CER of OCR output against ground truth, with accent-only errors split out."""
 import json, sys, unicodedata as ud
 
 # Old and new Vietnamese tone placement are both correct spelling ("hoá" /
@@ -54,24 +54,24 @@ for name, lines in gt.items():
     marked_wrong = sum(1 for k, a, b in ops if k in ("sub", "del") and is_marked(a))
     rows.append((name, len(ref), dist, dist / len(ref), dia, marked, marked_wrong, ocr[name]["mean_confidence"], ocr[name].get("secs", "—"), ops))
     for k, v in zip(tot, (len(ref), dist, dia, marked, marked_wrong)): tot[k] += v
-print(f"{'trang':24} {'ký tự':>6} {'lỗi':>4} {'CER':>7} {'lỗi dấu':>7} {'ký tự có dấu sai':>17} {'conf':>6} {'giây':>5}")
+print(f"{'page':24} {'chars':>6} {'errs':>4} {'CER':>7} {'accent':>7} {'accented wrong':>17} {'conf':>6} {'secs':>5}")
 for name, n, dist, cer, dia, marked, mw, conf, secs, _ in rows:
     print(f"{name:24} {n:6} {dist:4} {cer:7.2%} {dia:7} {f'{mw}/{marked}':>17} {conf:6.3f} {secs:5}")
-print(f"{'TỔNG':24} {tot['chars']:6} {tot['err']:4} {tot['err']/tot['chars']:7.2%} {tot['dia']:7} {str(tot['marked_wrong'])+'/'+str(tot['marked']):>17}")
-print("\nChi tiết lỗi (ref → ocr):")
+print(f"{'TOTAL':24} {tot['chars']:6} {tot['err']:4} {tot['err']/tot['chars']:7.2%} {tot['dia']:7} {str(tot['marked_wrong'])+'/'+str(tot['marked']):>17}")
+print("\nErrors (ref → ocr):")
 for name, *_, ops in rows:
-    print(" ", name + ":", "; ".join(f"{k} {a!r}→{b!r}" for k, a, b in ops) or "không lỗi")
+    print(" ", name + ":", "; ".join(f"{k} {a!r}→{b!r}" for k, a, b in ops) or "no errors")
 
 def kind(a):
-    if a in "ΦΔαβγ→−+=·/×": return "ký hiệu/công thức"
-    if a in ".,;:!?()\"' ": return "dấu câu/khoảng trắng"
-    return "chữ cái/chữ số"
+    if a in "ΦΔαβγθε→−+=·/×": return "symbol/formula"
+    if a in ".,;:!?()\"' ": return "punctuation/space"
+    return "letter/digit"
 from collections import Counter
-c = Counter(); letters = sum(1 for n, lines in gt.items() for ch in norm(" ".join(lines), LOWER) if kind(ch) == "chữ cái/chữ số")
+c = Counter(); letters = sum(1 for n, lines in gt.items() for ch in norm(" ".join(lines), LOWER) if kind(ch) == "letter/digit")
 for *_, ops in rows:
-    for k, a, b in ops: c[kind(a) if a else "chèn thừa"] += 1
-print("\nPhân loại lỗi:", dict(c))
-print(f"CER chỉ tính chữ cái/chữ số: {c['chữ cái/chữ số']}/{letters} = {c['chữ cái/chữ số']/letters:.2%}")
+    for k, a, b in ops: c[kind(a) if a else "inserted"] += 1
+print("\nErrors by kind:", dict(c))
+print(f"CER on letters/digits only: {c['letter/digit']}/{letters} = {c['letter/digit']/letters:.2%}")
 
 
 # -- order-free word accuracy ----------------------------------------------
@@ -85,7 +85,7 @@ from collections import Counter as _C
 def words(text):
     return re.findall(r"[^\W_]+", norm(text, True))
 
-print("\nTừ đọc đúng (không tính thứ tự, không phân biệt hoa thường):")
+print("\nWords read right (order-free, case-insensitive):")
 tw = tm = td = 0
 for name, lines in gt.items():
     ref, hyp = _C(words(" ".join(lines))), _C(words(ocr[name]["text"]))
@@ -100,5 +100,5 @@ for name, lines in gt.items():
         dia += k; by_base[base(w)] -= k
     total = sum(ref.values())
     tw += total; tm += exact; td += dia
-    print(f"  {name:24} {exact}/{total} = {exact/total:.1%} đúng hẳn; thêm {dia} từ đúng chữ nhưng sai dấu")
-print(f"  TỔNG {tm}/{tw} = {tm/tw:.1%} đúng hẳn; {td} từ ({td/tw:.1%}) chỉ sai dấu; {tw-tm-td} từ ({(tw-tm-td)/tw:.1%}) sai chữ hoặc mất")
+    print(f"  {name:24} {exact}/{total} = {exact/total:.1%} exact; {dia} more right but for an accent")
+print(f"  TOTAL {tm}/{tw} = {tm/tw:.1%} exact; {td} ({td/tw:.1%}) wrong only in an accent; {tw-tm-td} ({(tw-tm-td)/tw:.1%}) wrong or missing")

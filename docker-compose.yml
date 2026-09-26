@@ -68,15 +68,15 @@ services:
     # qua network nội bộ. Nhờ vậy cũng hết xung đột cổng 8080 với SearXNG.
 
   ocr:
-    # PaddleOCR + VietOCR (CPU) cho màn "Scan ghi chép". Mô hình nằm sẵn trong
-    # image, nên container khởi động không cần mạng.
+    # PaddleOCR (CPU, English) for the Note scan screen. Models are baked into
+    # the image, so the container starts with no network access.
     #
     # Image dựng sẵn trên GHCR (public). Có cả `image:` lẫn `build:` thì Compose
     # thử PULL trước và chỉ build khi registry không có tag này — nên máy khác
-    # không phải build PaddlePaddle/PyTorch (~4 GB), và không cần cấu hình mạng
+    # không phải build PaddlePaddle (~2,5 GB), và không cần cấu hình mạng
     # riêng của máy dev. Đổi code trong ocr/ thì build lại và đẩy tag mới (xem
     # ocr/README.md), rồi tăng tag ở đây.
-    image: ghcr.io/qinzinn/chiron-ocr:0.1.0
+    image: ghcr.io/qinzinn/chiron-ocr:0.2.0
     build:
       context: ./ocr
       # Chỉ dùng khi build từ source. network: host vì trên máy dev, tải tệp lớn
