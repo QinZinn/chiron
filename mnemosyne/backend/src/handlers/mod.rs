@@ -4,6 +4,7 @@
 //! helper enforces a single, consistent JSON error shape across all
 //! endpoints in this module: `{"error": "<message>"}`.
 
+pub mod blurting;
 pub mod cards;
 pub mod chat;
 pub mod cards_from_node;

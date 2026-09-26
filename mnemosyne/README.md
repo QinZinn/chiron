@@ -35,6 +35,7 @@ Mnemosyne is a backend module of the Chiron ecosystem. It is feature-complete fo
 - [x] Sửa và xoá — mọi thứ trước đây chỉ có thể thêm, kể cả thẻ do LLM sinh sai
 - [x] Hỏi bài / Giải bài — direct answers and step-by-step solutions (`/chat/*`), kept apart from Socratic in both prompt and storage
 - [x] Weak-card dashboard — `GET /weak_cards` reads back what `POST /review` has been writing
+- [x] Blurting — write down everything remembered, judged card by card against the set
 - [x] Review todo list — `/todos`: weak-card items plus items the learner adds; never scheduled
 - [x] Quiz — AI-generated multiple-choice questions (`POST /quiz/generate`) from either free-text or Knowledge Store concepts, graded server-side with no LLM in the grading path (`POST /quiz/{question_id}/attempt`)
 - [x] Authentication — per-learner bearer tokens; every endpoint derives `user_id` from the token instead of reading it out of the request
@@ -95,6 +96,8 @@ Mnemosyne       ──GET /nodes, /nodes/{id}→ Knowledge Store (reading a conc
 | `PATCH`/`DELETE` `/study_sets/{id}`, `/cards/{id}`; `DELETE /quiz/{id}`, `/socratic/{id}`, `/chat/{id}` | Edit and delete. Real deletes, cascading — a study set takes its cards, their review history and its quiz questions with it |
 | `GET /stats` | Reviews, accuracy, study streak, card and session counts — counted at read time, in the caller's timezone (`tz_offset_minutes`) |
 | `GET /weak_cards` | Study sets with cards the learner keeps failing, with the evidence and the rule behind it. The read side of the weak-card todo items |
+| `POST /study_sets/{id}/blurting` | Blurting: `{recall_text}` written without looking → each card judged remembered / missing / wrong (with a note). The model answers with per-prompt labels (`c1`, `c2`, …) that the server maps to real card ids; unknown labels are dropped and logged |
+| `GET /study_sets/{id}/blurting/history` | Past blurting attempts on the set, with per-verdict counts |
 | `GET /todos` | The learner's review todo list (`?done=true\|false`). Weak-card items are opened by `POST /review`, one open item per study set |
 | `POST /todos` | Add an item by hand: `{title, study_set_id?}` |
 | `POST /todos/{id}/complete` | Tick an item off (idempotent) |

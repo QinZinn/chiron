@@ -464,3 +464,13 @@ ul.todo-list { list-style: none; margin: 0; padding: 0; }
 /* ───────────────────────────────────────────────────────────── due order */
 .due-order { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
 .due-order select.input { width: auto; min-width: 210px; }
+
+/* ───────────────────────────────────────────────────────────── blurting */
+.method-tabs { min-width: 360px; }
+.blurt-card { box-shadow: inset 3px 0 0 var(--dim); }
+.blurt-red { box-shadow: inset 3px 0 0 var(--red); }
+.blurt-yel { box-shadow: inset 3px 0 0 var(--yel); }
+.blurt-green { box-shadow: inset 3px 0 0 var(--green); }
+.blurt-note { color: var(--red); }
+.blurt-own { margin-top: 16px; }
+.blurt-own summary { cursor: pointer; }

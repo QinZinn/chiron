@@ -64,3 +64,44 @@ bảng `todo_items` thay cho lời gọi Todoist.
 Hai câu truy vấn kiểm ngưỡng ở `docs/da-ngung-dung/weakpoint-todoist-2026-09-13.md`
 (mục "Validate ngưỡng") vẫn dùng được cho câu hỏi 40 %/5 lượt. DB hiện chưa có
 dữ liệu học thật nên chưa chạy.
+
+
+# NOTES — Blurting, 2026-09-26
+
+Code: `backend/src/handlers/blurting.rs`, migration `0011_add_blurting.sql`,
+giao diện là một tab trong màn Giảng lại (`frontend/src/views/Blurting.tsx`).
+
+## Quyết định
+
+1. **Model không thấy `card_id`.** Mỗi thẻ trong prompt có nhãn `c1…cN`; model trả
+   nhãn và server đổi về `card_id` thật. Brief yêu cầu "dùng card_id thật, không để
+   LLM tự bịa tên khái niệm" và "card_id lạ → loại bỏ và log". Cả hai điều vẫn giữ:
+   mọi `card_id` được lưu hay trả về đều là của đúng bộ thẻ (theo cách dựng, và có FK
+   `blurting_attempt_cards.card_id → cards`); nhãn lạ (`c99`, `c0`, một UUID chép
+   từ đâu đó) bị bỏ và ghi log `[blurting] … dropped N label(s)`. Lý do không đưa
+   UUID vào prompt: chuỗi 36 ký tự là chỗ model dễ chép sai nhất, và mỗi thẻ tốn
+   thêm khoảng 20 token.
+2. **"Bị thiếu" do server tính,** không do model liệt kê: mọi thẻ được đưa vào
+   prompt mà model không xếp vào "nhớ" hay "sai" đều là thiếu. Nhờ vậy một thẻ
+   không bao giờ bị lọt khỏi kết quả vì model quên nhắc tới.
+3. **Một thẻ vừa "nhớ" vừa "sai" thì tính là sai:** học sinh đã viết điều sai về
+   thẻ đó, và đó là phần cần hiện ra.
+4. **Giới hạn ngữ cảnh 6000 ký tự, nguyên thẻ,** giống `/feynman_evaluate`. Bộ thẻ
+   lớn hơn chỉ được chấm trên các thẻ đầu. Số thẻ đã đối chiếu (`cards_considered`)
+   được lưu và hiện ra, để kết quả không ngụ ý đã chấm cả bộ.
+5. **Truncation:** provider trả `LLMError::Truncated` khi `finish_reason=length`,
+   handler báo 502 qua `describe_llm_failure` và không lưu gì. Test
+   `blurting_a_truncated_or_unparsable_reply_stores_nothing`.
+
+## Kiểm tra thật (DeepSeek, 2026-09-26)
+
+Bộ 8 thẻ từ ghi chép Hoá "Phân bón" của người học. Bài viết thử có cài sẵn lỗi:
+gán Ca, Mg, S cho vi lượng, và nói phân hữu cơ "làm từ phân hoá học tổng hợp
+trong nhà máy".
+
+- Kết quả: nhớ 3 (định nghĩa, đa lượng, thiếu phân), thiếu 1 (vai trò), sai 4
+  (trung lượng, vi lượng, vô cơ, hữu cơ). 23 s, 0 nhãn bị loại.
+- So với đáp án đặt trước: 6/8 thẻ khớp. Trung lượng và vô cơ bị chấm "sai" thay
+  vì "thiếu", vì người học đem nội dung của chính hai thẻ đó gán nhầm sang thẻ
+  khác. Model tính một lần nhầm là sai ở cả hai thẻ. Cả 4 ghi chú sai đều đúng
+  kiến thức.

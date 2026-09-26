@@ -29,6 +29,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0008_add_chat_sessions", include_str!("../sql/migrations/0008_add_chat_sessions.sql")),
     ("0009_socratic_ended_at", include_str!("../sql/migrations/0009_socratic_ended_at.sql")),
     ("0010_replace_weak_card_tasks_with_todos", include_str!("../sql/migrations/0010_replace_weak_card_tasks_with_todos.sql")),
+    ("0011_add_blurting", include_str!("../sql/migrations/0011_add_blurting.sql")),
 ];
 
 const CREATE_TABLE: &str = r#"CREATE TABLE IF NOT EXISTS schema_migrations (

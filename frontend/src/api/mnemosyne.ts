@@ -130,6 +130,38 @@ export interface WeakResponse {
   error_threshold: number;
 }
 
+/** One card's verdict in a blurting attempt. `note` says what was wrong (verdict `wrong` only). */
+export interface BlurtingCard {
+  card_id: string;
+  question: string;
+  answer: string;
+  note: string;
+}
+
+export interface BlurtingResult {
+  attempt_id: string;
+  feedback: string;
+  remembered: BlurtingCard[];
+  missing: BlurtingCard[];
+  wrong: BlurtingCard[];
+  /** Cards the AI was shown; below `cards_total` when the set exceeds the prompt budget. */
+  cards_considered: number;
+  cards_total: number;
+  dropped_labels: number;
+}
+
+export interface BlurtingHistoryEntry {
+  id: string;
+  recall_text: string;
+  feedback: string;
+  cards_considered: number;
+  cards_total: number;
+  remembered: number;
+  missing: number;
+  wrong: number;
+  created_at: string;
+}
+
 /** One entry in the review todo list (Mnemosyne `/todos`). */
 export interface Todo {
   id: string;
@@ -244,6 +276,19 @@ export const mnemosyne = {
       body: { explanation_text: explanation },
       timeoutMs: LLM_TIMEOUT_MS,
     }),
+
+  blurting: (setId: string, recallText: string) =>
+    request<BlurtingResult>(S, `${base}/study_sets/${encodeURIComponent(setId)}/blurting`, {
+      method: 'POST',
+      body: { recall_text: recallText },
+      timeoutMs: LLM_TIMEOUT_MS,
+    }),
+
+  blurtingHistory: (setId: string) =>
+    request<{ attempts: BlurtingHistoryEntry[]; count: number }>(
+      S,
+      `${base}/study_sets/${encodeURIComponent(setId)}/blurting/history`,
+    ),
 
   feynmanHistory: (setId: string) =>
     request<{ evaluations: FeynmanHistoryEntry[]; count: number }>(

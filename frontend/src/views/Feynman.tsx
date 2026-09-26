@@ -5,6 +5,9 @@
  * The fourth methodology Mnemosyne implements, and the one that had a working
  * backend and no screen at all: the learner explains a topic in their own
  * words and the tutor scores clarity, completeness and correctness.
+ *
+ * The screen has a second mode, Blurting (views/Blurting.tsx): write down
+ * everything remembered, then see it card by card. Both share the set picker.
  */
 import { useState } from 'react';
 import { mnemosyne, type FeynmanEvaluation } from '../api/mnemosyne';
@@ -12,6 +15,7 @@ import { useApp } from '../state/app';
 import { useAsync } from '../lib/useAsync';
 import { dateTime } from '../lib/time';
 import { ErrorNotice, Loading, NeedToken, PageHeader } from '../components/ui';
+import { Blurting } from './Blurting';
 
 const SCORES: { key: 'clarity_score' | 'completeness_score' | 'correctness_score'; label: string; hint: string }[] = [
   { key: 'clarity_score', label: 'Rõ ràng', hint: 'Người chưa biết có hiểu được không' },
@@ -31,22 +35,42 @@ export function FeynmanView() {
     <main className="main">
       <PageHeader title="Giảng lại" />
       <div className="page">
-        <div className="page-inner">{user ? <Feynman /> : <NeedToken />}</div>
+        <div className="page-inner">{user ? <Methods /> : <NeedToken />}</div>
       </div>
     </main>
   );
 }
 
-function Feynman() {
+type Mode = 'feynman' | 'blurting';
+const MODE_KEY = 'chiron.feynmanMode';
+
+function loadMode(): Mode {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'blurting' ? 'blurting' : 'feynman';
+  } catch {
+    return 'feynman';
+  }
+}
+
+const MODE_TEXT: Record<Mode, { tab: string; title: string; lead: string }> = {
+  feynman: {
+    tab: 'Giảng lại (Feynman)',
+    title: 'Giảng lại bằng lời của bạn',
+    lead:
+      'Phương pháp Feynman: giải thích chủ đề như đang dạy cho người chưa biết. Chiron chấm ba mặt — rõ ràng, đầy đủ, chính xác — dựa trên các thẻ trong bộ thẻ bạn chọn.',
+  },
+  blurting: {
+    tab: 'Viết ra trí nhớ (Blurting)',
+    title: 'Viết ra mọi thứ bạn nhớ',
+    lead:
+      'Blurting: không nhìn tài liệu, viết hết những gì nhớ được về bộ thẻ. Chiron đối chiếu với từng thẻ và chỉ ra thẻ nào bạn đã nhớ, thẻ nào bị thiếu, thẻ nào hiểu sai.',
+  },
+};
+
+function Methods() {
   const { studySets, studySetsError, reloadSets } = useApp();
   const [setId, setSetId] = useState('');
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<unknown>();
-  const [result, setResult] = useState<FeynmanEvaluation>();
-
-  const effectiveSet = setId || studySets?.[0]?.id || '';
-  const historyQ = useAsync(() => mnemosyne.feynmanHistory(effectiveSet), [effectiveSet, result], Boolean(effectiveSet));
+  const [mode, setMode] = useState<Mode>(loadMode);
 
   if (studySetsError) return <ErrorNotice error={studySetsError} onRetry={reloadSets} />;
   if (!studySets) return <Loading label="Đang tải bộ thẻ…" />;
@@ -54,10 +78,57 @@ function Feynman() {
     return (
       <div className="notice notice-info">
         <i className="ph ph-info" />
-        <div>Giảng lại chấm điểm dựa trên thẻ của một bộ thẻ. Người học này chưa có bộ thẻ nào.</div>
+        <div>Giảng lại và Blurting đối chiếu với thẻ của một bộ thẻ. Người học này chưa có bộ thẻ nào.</div>
       </div>
     );
   }
+  const effectiveSet = setId || studySets[0].id;
+  const switchMode = (m: Mode) => {
+    setMode(m);
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {
+      // Storage blocked: the mode lasts until the page reloads.
+    }
+  };
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <h2>{MODE_TEXT[mode].title}</h2>
+          <p>{MODE_TEXT[mode].lead}</p>
+        </div>
+      </div>
+
+      <div className="toolbar" style={{ marginTop: 10, marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+        <div className="pomo-tabs method-tabs" role="tablist" aria-label="Phương pháp">
+          {(['feynman', 'blurting'] as Mode[]).map((m) => (
+            <button key={m} role="tab" aria-selected={mode === m} className={`pomo-tab${mode === m ? ' pomo-tab-on' : ''}`} onClick={() => switchMode(m)}>
+              {MODE_TEXT[m].tab}
+            </button>
+          ))}
+        </div>
+        <select className="input" aria-label="Bộ thẻ" style={{ width: 'auto', minWidth: 240 }} value={effectiveSet} onChange={(e) => setSetId(e.target.value)}>
+          {studySets.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}{s.topic ? ` · ${s.topic}` : ''}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Keyed by set: changing the set starts a fresh attempt in either mode. */}
+      {mode === 'feynman' ? <Feynman key={effectiveSet} setId={effectiveSet} /> : <Blurting key={effectiveSet} setId={effectiveSet} />}
+    </>
+  );
+}
+
+function Feynman({ setId: effectiveSet }: { setId: string }) {
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<unknown>();
+  const [result, setResult] = useState<FeynmanEvaluation>();
+
+  const historyQ = useAsync(() => mnemosyne.feynmanHistory(effectiveSet), [effectiveSet, result], Boolean(effectiveSet));
 
   const submit = async () => {
     if (!text.trim() || !effectiveSet) return;
@@ -76,24 +147,6 @@ function Feynman() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h2>Giảng lại bằng lời của bạn</h2>
-          <p>
-            Phương pháp Feynman: giải thích chủ đề như đang dạy cho người chưa biết. Chiron chấm ba mặt — rõ ràng,
-            đầy đủ, chính xác — dựa trên các thẻ trong bộ thẻ bạn chọn.
-          </p>
-        </div>
-      </div>
-
-      <div className="toolbar" style={{ marginTop: 10, marginBottom: 16 }}>
-        <select className="input" style={{ width: 'auto', minWidth: 240 }} value={effectiveSet} onChange={(e) => { setSetId(e.target.value); setResult(undefined); }}>
-          {studySets.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}{s.topic ? ` · ${s.topic}` : ''}</option>
-          ))}
-        </select>
-      </div>
-
       <div className="gen" style={{ maxWidth: 760 }}>
         <div className="field">
           <label>Bài giảng của bạn</label>
