@@ -1,5 +1,5 @@
 /**
- * Cài đặt — local only (this browser's localStorage). Secrets are not
+ * Settings — local only (this browser's localStorage). Secrets are not
  * editable here: they live in frontend/.env and never reach the browser.
  */
 import { useState } from 'react';
@@ -19,7 +19,7 @@ function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
   return <button className={`switch${on ? ' switch-on' : ''}`} role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)} />;
 }
 
-const HEALTH_TEXT: Record<Health, string> = { ok: 'Đang chạy', down: 'Không kết nối được', checking: 'Đang kiểm tra…' };
+const HEALTH_TEXT: Record<Health, string> = { ok: 'Running', down: 'Unreachable', checking: 'Checking…' };
 
 export function SettingsView() {
   const { settings, updateSettings, token, saveToken, user, userError, reloadUser, health, recheck, studySets, reloadSets } =
@@ -33,28 +33,28 @@ export function SettingsView() {
 
   return (
     <main className="main">
-      <PageHeader title="Cài đặt" />
+      <PageHeader title="Settings" />
       <div className="page">
         <div className="page-head">
           <div>
-            <h2>Cài đặt</h2>
-            <p>Lưu trong trình duyệt này. Token và khoá bí mật nằm trong <code>frontend/.env</code>, không chỉnh ở đây.</p>
+            <h2>Settings</h2>
+            <p>Saved in this browser. Tokens and secret keys live in <code>frontend/.env</code> and are not edited here.</p>
           </div>
         </div>
         <hr className="rule" style={{ margin: '18px 0 22px' }} />
 
         <section className="set-sec">
-          <h4>Người học</h4>
+          <h4>Learner</h4>
           <p>
-            Mnemosyne nhận diện bạn bằng token. Cấp token bằng lệnh
-            {' '}<code>cargo run -p backend -- create-user &lt;email&gt;</code> trong <code>mnemosyne/</code>;
-            token chỉ hiện đúng một lần. Nó được lưu trong trình duyệt này, không nằm trong <code>.env</code>.
+            Mnemosyne knows you by a token. Create one with
+            {' '}<code>cargo run -p backend -- create-user &lt;email&gt;</code> in <code>mnemosyne/</code>;
+            it is shown exactly once. It is stored in this browser, not in <code>.env</code>.
           </p>
 
           {user ? (
             <>
               <div className="set-row">
-                <label>Đang đăng nhập</label>
+                <label>Signed in as</label>
                 <span style={{ fontSize: 14 }}>
                   {user.email}
                   {user.learning_style ? <span className="sub"> · {user.learning_style}</span> : null}
@@ -74,7 +74,7 @@ export function SettingsView() {
                     setDraft('');
                   }}
                 >
-                  <i className="ph ph-sign-out" />Đăng xuất
+                  <i className="ph ph-sign-out" />Sign out
                 </button>
               </div>
             </>
@@ -83,7 +83,7 @@ export function SettingsView() {
               {rejected && (
                 <div className="notice notice-warn" style={{ marginBottom: 12 }}>
                   <i className="ph ph-key" />
-                  <div>Token đang lưu bị Mnemosyne từ chối — có thể đã bị thu hồi. Dán token khác.</div>
+                  <div>Mnemosyne rejected the saved token — it may have been revoked. Paste another one.</div>
                 </div>
               )}
               {!rejected && userError != null && <ErrorNotice error={userError} compact />}
@@ -95,7 +95,7 @@ export function SettingsView() {
                   setDraft('');
                 }}
               >
-                <label htmlFor="token">Dán token</label>
+                <label htmlFor="token">Paste a token</label>
                 <input
                   id="token"
                   className="input"
@@ -108,27 +108,27 @@ export function SettingsView() {
                   onChange={(e) => setDraft(e.target.value)}
                 />
                 <button className="btn btn-primary btn-main" type="submit" disabled={!draft.trim()}>
-                  <i className="ph ph-sign-in" />Đăng nhập
+                  <i className="ph ph-sign-in" />Sign in
                 </button>
               </form>
               {draft.trim() !== '' && !draft.trim().startsWith(TOKEN_PREFIX) && (
                 <p className="wk-meta" style={{ color: 'var(--yel)' }}>
-                  Token của Mnemosyne bắt đầu bằng <code>{TOKEN_PREFIX}</code> — kiểm tra lại chuỗi vừa dán.
+                  Mnemosyne tokens start with <code>{TOKEN_PREFIX}</code> — check what you pasted.
                 </p>
               )}
             </>
           )}
           {token && !user && health.mnemosyne === 'ok' && !rejected && (
             <button className="btn btn-soft" onClick={reloadUser}>
-              <i className="ph ph-arrow-clockwise" />Thử lại
+              <i className="ph ph-arrow-clockwise" />Retry
             </button>
           )}
         </section>
 
         {user && (
           <section className="set-sec">
-            <h4>Hồ sơ học tập</h4>
-            <p>Một dòng mô tả cách bạn học. Mnemosyne lưu kèm người học; hiện chưa dùng vào việc sinh nội dung.</p>
+            <h4>Learning profile</h4>
+            <p>One line about how you learn. Mnemosyne stores it with the learner; it is not used for generation yet.</p>
             <form
               className="set-row"
               onSubmit={async (e) => {
@@ -143,18 +143,18 @@ export function SettingsView() {
                 }
               }}
             >
-              <label htmlFor="style">Cách học</label>
+              <label htmlFor="style">Learning style</label>
               <input
                 id="style"
                 className="input"
                 style={{ width: 'auto', minWidth: 300 }}
                 lang="vi"
-                placeholder="Ví dụ: Lớp 11 · thích ví dụ thực tế"
+                placeholder="e.g. Grade 11 · likes real-world examples"
                 value={style ?? user.learning_style ?? ''}
                 onChange={(e) => setStyle(e.target.value)}
               />
               <button className="btn btn-soft" type="submit" disabled={styleSaving || style === undefined}>
-                {styleSaving ? <span className="spin" /> : <i className="ph ph-check" />}Lưu
+                {styleSaving ? <span className="spin" /> : <i className="ph ph-check" />}Save
               </button>
             </form>
           </section>
@@ -162,10 +162,10 @@ export function SettingsView() {
 
         {user && studySets && studySets.length > 0 && (
           <section className="set-sec">
-            <h4>Bộ thẻ</h4>
+            <h4>Study sets</h4>
             <p>
-              Đổi tên hoặc xoá. Xoá một bộ thẻ sẽ xoá luôn thẻ, lịch sử ôn, câu quiz và phiên Học bài thuộc bộ đó —
-              không khôi phục được.
+              Rename or delete. Deleting a study set also deletes its cards, review history, quiz questions and Study
+              sessions — this cannot be undone.
             </p>
             {setsError != null && <ErrorNotice error={setsError} compact />}
             <div className="list" style={{ maxWidth: 680 }}>
@@ -184,10 +184,10 @@ export function SettingsView() {
         )}
 
         <section className="set-sec">
-          <h4>Giao diện</h4>
-          <p>Ba tuỳ chọn của bản thiết kế: màu nhấn, thu gọn thanh bên, nền bản đồ sao.</p>
+          <h4>Appearance</h4>
+          <p>The design’s three options: accent colour, collapsed sidebar, star-map background.</p>
           <div className="set-row">
-            <label>Màu nhấn</label>
+            <label>Accent colour</label>
             <div className="swatches">
               {ACCENTS.map((c) => (
                 <button
@@ -195,43 +195,43 @@ export function SettingsView() {
                   className={`swatch${settings.accent === c ? ' swatch-on' : ''}`}
                   style={{ background: c }}
                   title={c}
-                  aria-label={`Màu nhấn ${c}`}
+                  aria-label={`Accent colour ${c}`}
                   onClick={() => updateSettings({ accent: c })}
                 />
               ))}
             </div>
           </div>
           <div className="set-row">
-            <label>Thu gọn thanh bên</label>
-            <Switch on={settings.sidebarCollapsed} onChange={(v) => updateSettings({ sidebarCollapsed: v })} label="Thu gọn thanh bên" />
+            <label>Collapse sidebar</label>
+            <Switch on={settings.sidebarCollapsed} onChange={(v) => updateSettings({ sidebarCollapsed: v })} label="Collapse sidebar" />
           </div>
           <div className="set-row">
-            <label>Nền bản đồ sao</label>
-            <Switch on={settings.starTexture} onChange={(v) => updateSettings({ starTexture: v })} label="Nền bản đồ sao" />
+            <label>Star-map background</label>
+            <Switch on={settings.starTexture} onChange={(v) => updateSettings({ starTexture: v })} label="Star-map background" />
           </div>
         </section>
 
         <section className="set-sec">
           <h4 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            Kết nối
-            <button className="btn btn-secondary btn-soft" onClick={recheck}><i className="ph ph-arrow-clockwise" />Kiểm tra lại</button>
+            Connections
+            <button className="btn btn-secondary btn-soft" onClick={recheck}><i className="ph ph-arrow-clockwise" />Check again</button>
           </h4>
-          <p>Mỗi module chạy độc lập. Module nào tắt thì chỉ khu vực dùng module đó báo lỗi.</p>
+          <p>Each module runs on its own. When one is down, only the areas that use it show an error.</p>
           <table className="table conn">
             <thead>
-              <tr><th>Module</th><th>Trạng thái</th><th>Cách kết nối</th></tr>
+              <tr><th>Module</th><th>Status</th><th>How it connects</th></tr>
             </thead>
             <tbody>
               <tr>
-                <td>Mnemosyne<div className="sub">Học bài · Thẻ ghi nhớ · Quiz</div></td>
+                <td>Mnemosyne<div className="sub">Study · Flashcards · Quiz</div></td>
                 <td><Dot h={health.mnemosyne} />{HEALTH_TEXT[health.mnemosyne]}</td>
-                <td>Browser gọi thẳng <code>{config.mnemosyneUrl}</code> (CORS)</td>
+                <td>Browser calls <code>{config.mnemosyneUrl}</code> directly (CORS)</td>
               </tr>
               <tr>
-                <td>Knowledge Store<div className="sub">Kiến thức</div></td>
+                <td>Knowledge Store<div className="sub">Knowledge · Note scan</div></td>
                 <td>
                   <Dot h={health.ks} />{HEALTH_TEXT[health.ks]}
-                  {proxy && !proxy.ks.tokenConfigured && <div className="sub" style={{ color: 'var(--yel)' }}>Thiếu CHIRON_KS_TOKEN</div>}
+                  {proxy && !proxy.ks.tokenConfigured && <div className="sub" style={{ color: 'var(--yel)' }}>CHIRON_KS_TOKEN missing</div>}
                 </td>
                 <td>Qua proxy <code>/api/ks</code> → <code>{proxy?.ks.url ?? '?'}</code></td>
               </tr>
@@ -240,11 +240,11 @@ export function SettingsView() {
         </section>
 
         <section className="set-sec">
-          <h4>Thời gian</h4>
-          <p>Từ <code>frontend/.env</code>.</p>
+          <h4>Time</h4>
+          <p>From <code>frontend/.env</code>.</p>
           <table className="table conn">
             <tbody>
-              <tr><td>Múi giờ</td><td><code>{config.timezone}</code></td></tr>
+              <tr><td>Time zone</td><td><code>{config.timezone}</code></td></tr>
             </tbody>
           </table>
         </section>
@@ -323,13 +323,13 @@ function StudySetRow({
           <div className="notice notice-warn" style={{ marginTop: 10 }}>
             <i className="ph ph-warning" />
             <div>
-              <div className="notice-title">Xoá “{name}” và mọi thứ trong đó?</div>
-              <div>Thẻ, lịch sử ôn, câu quiz và phiên Học bài của bộ thẻ này sẽ mất hẳn.</div>
+              <div className="notice-title">Delete “{name}” and everything in it?</div>
+              <div>Its cards, review history, quiz questions and Study sessions will be gone for good.</div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-soft rate-again" onClick={remove} disabled={busy}>
-                  {busy ? <span className="spin" /> : <i className="ph ph-trash" />}Xoá hẳn
+                  {busy ? <span className="spin" /> : <i className="ph ph-trash" />}Delete
                 </button>
-                <button className="btn btn-soft" onClick={() => setConfirming(false)} disabled={busy}>Giữ lại</button>
+                <button className="btn btn-soft" onClick={() => setConfirming(false)} disabled={busy}>Keep</button>
               </div>
             </div>
           </div>
@@ -338,17 +338,17 @@ function StudySetRow({
       <div className="wk-side">
         {draft === undefined ? (
           <div style={{ display: 'flex', gap: 6 }}>
-            <button className="icon-btn" title="Đổi tên" onClick={() => setDraft(name)}>
+            <button className="icon-btn" title="Rename" onClick={() => setDraft(name)}>
               <i className="ph ph-pencil-simple" />
             </button>
-            <button className="icon-btn" title="Xoá bộ thẻ" onClick={() => setConfirming(true)}>
+            <button className="icon-btn" title="Delete study set" onClick={() => setConfirming(true)}>
               <i className="ph ph-trash" />
             </button>
           </div>
         ) : (
           <div style={{ display: 'flex', gap: 6 }}>
-            <button className="btn btn-soft" onClick={rename} disabled={busy || !draft.trim()}>Lưu</button>
-            <button className="btn btn-soft" onClick={() => setDraft(undefined)} disabled={busy}>Huỷ</button>
+            <button className="btn btn-soft" onClick={rename} disabled={busy || !draft.trim()}>Save</button>
+            <button className="btn btn-soft" onClick={() => setDraft(undefined)} disabled={busy}>Cancel</button>
           </div>
         )}
       </div>

@@ -1,6 +1,6 @@
 /**
- * Kiến thức — Knowledge Store GET /nodes and GET /nodes/{id}, via the proxy.
- * Nodes are concepts the learner has studied ("Định luật Newton 2"), not sessions.
+ * Knowledge — Knowledge Store GET /nodes and GET /nodes/{id}, via the proxy.
+ * Nodes are concepts the learner has studied ("Newton's second law"), not sessions.
  *
  * Two views of the same filtered nodes: a list grouped by subject, and a
  * concept map that adds KS GET /edges (approved edges only).
@@ -12,7 +12,7 @@ import { href, navigate } from '../lib/route';
 import { ErrorNotice, Loading, PageHeader } from '../components/ui';
 import { ConceptMap } from '../components/ConceptMap';
 
-const SOURCE_LABEL: Record<KsSourceModule, string> = { mnemosyne: 'Mnemosyne', lexiflash: 'LexiFlash', note_scan: 'Scan ghi chép' };
+const SOURCE_LABEL: Record<KsSourceModule, string> = { mnemosyne: 'Mnemosyne', lexiflash: 'LexiFlash', note_scan: 'Note scan' };
 
 type ViewMode = 'list' | 'map';
 const VIEW_KEY = 'chiron.knowledgeView';
@@ -61,32 +61,32 @@ export function KnowledgeView({ nodeId }: { nodeId?: string }) {
 
   return (
     <main className="main">
-      <PageHeader title="Kiến thức">
+      <PageHeader title="Knowledge">
         <button className="btn btn-secondary btn-soft" onClick={nodesQ.reload}>
-          <i className="ph ph-arrow-clockwise" />Tải lại
+          <i className="ph ph-arrow-clockwise" />Reload
         </button>
       </PageHeader>
       <div className="page">
         <div className="page-head">
           <div>
-            <h2>{nodes ? `${nodes.length} khái niệm${truncated ? '+' : ''}` : 'Khái niệm đã học'}</h2>
-            <p>Từ Knowledge Store — “second brain” lưu khái niệm đã học, rút ra từ các phiên Học bài và ghi chép scan.</p>
+            <h2>{nodes ? `${nodes.length}${truncated ? '+' : ''} concept${nodes.length === 1 ? '' : 's'}` : 'Concepts you have learned'}</h2>
+            <p>From the Knowledge Store — a “second brain” of the concepts you have learned, extracted from Study sessions and scanned notes.</p>
           </div>
         </div>
         <div className="stats">
-          <div><div className="stat-k">Khái niệm</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{nodes ? nodes.length : '—'}</div></div>
-          <div><div className="stat-k">Môn học</div><div className="stat-v">{nodes ? subjects : '—'}</div></div>
+          <div><div className="stat-k">Concepts</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{nodes ? nodes.length : '—'}</div></div>
+          <div><div className="stat-k">Subjects</div><div className="stat-v">{nodes ? subjects : '—'}</div></div>
         </div>
         <div className="toolbar" style={{ marginBottom: 16 }}>
-          <div className="pomo-tabs" role="tablist" aria-label="Cách xem" style={{ minWidth: 220 }}>
+          <div className="pomo-tabs" role="tablist" aria-label="View" style={{ minWidth: 220 }}>
             <button role="tab" aria-selected={view === 'list'} className={`pomo-tab${view === 'list' ? ' pomo-tab-on' : ''}`} onClick={() => switchView('list')}>
-              <i className="ph ph-list-bullets" /> Danh sách
+              <i className="ph ph-list-bullets" /> List
             </button>
             <button role="tab" aria-selected={view === 'map'} className={`pomo-tab${view === 'map' ? ' pomo-tab-on' : ''}`} onClick={() => switchView('map')}>
-              <i className="ph ph-graph" /> Bản đồ
+              <i className="ph ph-graph" /> Map
             </button>
           </div>
-          <input className="input input-sm" style={{ width: 220 }} lang="vi" placeholder="Tìm trong kết quả…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="input input-sm" style={{ width: 220 }} lang="vi" placeholder="Search the results…" value={search} onChange={(e) => setSearch(e.target.value)} />
           <form
             style={{ display: 'flex', gap: 6 }}
             onSubmit={(e) => {
@@ -94,38 +94,38 @@ export function KnowledgeView({ nodeId }: { nodeId?: string }) {
               setAppliedSubject(subject.trim());
             }}
           >
-            <input className="input input-sm" style={{ width: 180 }} lang="vi" placeholder="Môn học (khớp đúng)" value={subject} onChange={(e) => setSubject(e.target.value)} />
-            <button className="btn btn-secondary btn-soft" type="submit"><i className="ph ph-funnel" />Lọc</button>
+            <input className="input input-sm" style={{ width: 180 }} lang="vi" placeholder="Subject (exact match)" value={subject} onChange={(e) => setSubject(e.target.value)} />
+            <button className="btn btn-secondary btn-soft" type="submit"><i className="ph ph-funnel" />Filter</button>
           </form>
           <select className="input" style={{ width: 'auto' }} value={sourceModule} onChange={(e) => setSourceModule(e.target.value as KsSourceModule | '')}>
-            <option value="">Mọi nguồn</option>
+            <option value="">All sources</option>
             {KS_SOURCE_MODULES.map((m) => <option key={m} value={m}>{SOURCE_LABEL[m]}</option>)}
           </select>
         </div>
         <hr className="rule" style={{ marginBottom: 18 }} />
 
-        {nodesQ.loading && !nodes && <Loading label="Đang tải khái niệm từ Knowledge Store…" />}
+        {nodesQ.loading && !nodes && <Loading label="Loading concepts from the Knowledge Store…" />}
         {nodesQ.error != null && <ErrorNotice error={nodesQ.error} onRetry={nodesQ.reload} />}
         {nodes && nodes.length === 0 && (
           <div className="notice notice-info">
             <i className="ph ph-info" />
             <div>
-              <div className="notice-title">Knowledge Store chưa có khái niệm nào{appliedSubject || sourceModule ? ' khớp bộ lọc' : ''}</div>
-              <div>Khái niệm được thêm khi transcript Học bài được rút (job <code>extract</code>) và bạn chấp nhận chúng.</div>
+              <div className="notice-title">The Knowledge Store has no concepts{appliedSubject || sourceModule ? ' matching these filters' : ' yet'}</div>
+              <div>Concepts are added when a Study transcript or a scanned note is extracted and you accept them.</div>
             </div>
           </div>
         )}
         {truncated && (
           <div className="notice notice-warn" style={{ marginBottom: 14 }}>
             <i className="ph ph-warning" />
-            <div>Đang hiện {KS_MAX_NODE_LIMIT} khái niệm đầu tiên (giới hạn của KS). Lọc theo môn để thu hẹp.</div>
+            <div>Showing the first {KS_MAX_NODE_LIMIT} concepts (the Knowledge Store's limit). Filter by subject to narrow it down.</div>
           </div>
         )}
 
         {nodes && nodes.length > 0 && view === 'map' && (
           <div className="kn">
             <div style={{ minWidth: 0 }}>
-              {edgesQ.loading && !edgesQ.data && <Loading label="Đang tải liên kết…" />}
+              {edgesQ.loading && !edgesQ.data && <Loading label="Loading links…" />}
               {edgesQ.error != null && <ErrorNotice error={edgesQ.error} onRetry={edgesQ.reload} />}
               {edgesQ.data && (
                 <>
@@ -133,10 +133,10 @@ export function KnowledgeView({ nodeId }: { nodeId?: string }) {
                     <div className="notice notice-info" style={{ marginBottom: 12 }}>
                       <i className="ph ph-info" />
                       <div>
-                        <div className="notice-title">Chưa có liên kết nào được duyệt</div>
+                        <div className="notice-title">No approved links yet</div>
                         <div>
-                          Bản đồ chỉ vẽ liên kết đã được người duyệt. Chạy <code>ks suggest-edges</code> để LLM gợi ý, rồi
-                          duyệt bằng <code>ks list-pending</code> / <code>ks approve</code>. Hiện mỗi khái niệm là một điểm rời.
+                          The map only draws links a person has approved. Run <code>ks suggest-edges</code> for LLM suggestions,
+                          then review them with <code>ks list-pending</code> / <code>ks approve</code>. For now every concept is a lone dot.
                         </div>
                       </div>
                     </div>
@@ -146,7 +146,7 @@ export function KnowledgeView({ nodeId }: { nodeId?: string }) {
               )}
             </div>
             <div className="kn-detail">
-              {nodeId ? <NodeDetail key={nodeId} id={nodeId} /> : <div className="wk-desc">Chọn một khái niệm trên bản đồ để xem đầy đủ.</div>}
+              {nodeId ? <NodeDetail key={nodeId} id={nodeId} /> : <div className="wk-desc">Pick a concept on the map to see it in full.</div>}
             </div>
           </div>
         )}
@@ -169,10 +169,10 @@ export function KnowledgeView({ nodeId }: { nodeId?: string }) {
                   </div>
                 </div>
               ))}
-              {filtered.length === 0 && <div className="wk-desc">Không có khái niệm nào khớp “{search}”.</div>}
+              {filtered.length === 0 && <div className="wk-desc">No concept matches “{search}”.</div>}
             </div>
             <div className="kn-detail">
-              {nodeId ? <NodeDetail key={nodeId} id={nodeId} /> : <div className="wk-desc">Chọn một khái niệm để xem đầy đủ.</div>}
+              {nodeId ? <NodeDetail key={nodeId} id={nodeId} /> : <div className="wk-desc">Pick a concept to see it in full.</div>}
             </div>
           </div>
         )}
@@ -194,13 +194,13 @@ function NodeDetail({ id }: { id: string }) {
         // KS answers a merged node with its target (one hop), under a different id.
         <div className="notice notice-info" style={{ marginBottom: 12 }}>
           <i className="ph ph-git-merge" />
-          <div>Khái niệm này đã được gộp vào khái niệm đang hiển thị.</div>
+          <div>This concept was merged into the one shown here.</div>
         </div>
       )}
       <div className="kn-summary">{n.summary}</div>
       <div style={{ marginTop: 16 }}>
         <button className="btn btn-secondary btn-soft" onClick={() => navigate({ view: 'knowledge' })}>
-          <i className="ph ph-x" />Đóng
+          <i className="ph ph-x" />Close
         </button>
       </div>
     </>
