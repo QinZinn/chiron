@@ -8,7 +8,7 @@
  *   unauthenticated  no token, or the token was rejected (Mnemosyne 401)
  *   http             it answered with an error status; `status` + `message` set
  *
- * Views render `unreachable` as "không kết nối được <module>" for their own
+ * Views render `unreachable` as "cannot reach <module>" for their own
  * area only — one module down never takes the rest of the app with it.
  */
 
@@ -73,7 +73,7 @@ export async function request<T>(service: Service, url: string, opts: RequestOpt
       throw new ApiError({
         kind: 'unauthenticated',
         service,
-        message: 'Chưa có token Mnemosyne — dán token vào Cài đặt.',
+        message: 'No Mnemosyne token — paste one in Settings.',
       });
     }
     headers.Authorization = `Bearer ${token}`;
@@ -97,12 +97,12 @@ export async function request<T>(service: Service, url: string, opts: RequestOpt
       throw new ApiError({
         kind: 'timeout',
         service,
-        message: `${service} không phản hồi sau ${Math.round(timeoutMs / 1000)} giây.`,
+        message: `${service} did not respond within ${Math.round(timeoutMs / 1000)} seconds.`,
       });
     }
     // fetch() rejects with a TypeError for a refused connection AND for a CORS
     // rejection; the browser does not let script tell the two apart.
-    throw new ApiError({ kind: 'unreachable', service, message: `Không kết nối được ${service}.` });
+    throw new ApiError({ kind: 'unreachable', service, message: `Cannot reach ${service}.` });
   }
 
   const text = await res.text();
@@ -116,7 +116,7 @@ export async function request<T>(service: Service, url: string, opts: RequestOpt
   }
 
   if (!res.ok) {
-    const { message, code } = messageFrom(body, `${service} trả về HTTP ${res.status}.`);
+    const { message, code } = messageFrom(body, `${service} returned HTTP ${res.status}.`);
     // 401 from Mnemosyne means the token is wrong or revoked — a different
     // problem from an outage, and a different thing to tell the learner.
     if (res.status === 401) {
@@ -127,7 +127,7 @@ export async function request<T>(service: Service, url: string, opts: RequestOpt
       throw new ApiError({ kind: 'not_configured', service, message, status: res.status, code });
     }
     if (code === 'upstream_unreachable') {
-      throw new ApiError({ kind: 'unreachable', service, message: `Không kết nối được ${service}.`, status: res.status, code });
+      throw new ApiError({ kind: 'unreachable', service, message: `Cannot reach ${service}.`, status: res.status, code });
     }
     if (code === 'upstream_timeout') {
       throw new ApiError({ kind: 'timeout', service, message, status: res.status, code });

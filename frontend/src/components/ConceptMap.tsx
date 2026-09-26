@@ -18,9 +18,9 @@ const BOX_W = 640;
 const ALWAYS_LABEL_UP_TO = 60;
 
 export const RELATION_LABEL: Record<KsEdge['relation_type'], string> = {
-  prerequisite: 'cần học trước',
-  related: 'liên quan',
-  contrasts_with: 'đối lập với',
+  prerequisite: 'prerequisite of',
+  related: 'related to',
+  contrasts_with: 'contrasts with',
 };
 
 function short(s: string, n = 28): string {
@@ -57,7 +57,7 @@ export function ConceptMap({ nodes, edges, selectedId }: { nodes: KsNode[]; edge
 
   return (
     <div className="cmap">
-      <svg viewBox={`${-padX} ${-padY} ${BOX_W + 2 * padX} ${height + 2 * padY + 20}`} role="img" aria-label={`Bản đồ ${nodes.length} khái niệm, ${shown.length} liên kết`}>
+      <svg viewBox={`${-padX} ${-padY} ${BOX_W + 2 * padX} ${height + 2 * padY + 20}`} role="img" aria-label={`Map of ${nodes.length} concepts, ${shown.length} links`}>
         <defs>
           <marker id="cmap-arrow" viewBox="0 0 10 10" refX="17" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="var(--mut)" />

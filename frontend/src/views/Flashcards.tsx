@@ -1,5 +1,5 @@
 /**
- * Thẻ ghi nhớ — Mnemosyne GET /due (the FSRS review queue) and POST /review.
+ * Flashcards — Mnemosyne GET /due (the FSRS review queue) and POST /review.
  * Layout follows the design's list screen (1c): header, title + summary,
  * stats row, faded rule, then the content.
  */
@@ -11,16 +11,16 @@ import { relative } from '../lib/time';
 import { ErrorNotice, Loading, NeedToken, PageHeader } from '../components/ui';
 
 const RATINGS: { id: Rating; label: string; hint: string; cls: string; key: string }[] = [
-  { id: 'again', label: 'Quên', hint: 'không nhớ ra', cls: 'rate-again', key: '1' },
-  { id: 'hard', label: 'Khó', hint: 'nhớ nhưng vất vả', cls: 'rate-hard', key: '2' },
-  { id: 'good', label: 'Được', hint: 'nhớ đúng', cls: 'rate-good', key: '3' },
-  { id: 'easy', label: 'Dễ', hint: 'nhớ ngay', cls: 'rate-easy', key: '4' },
+  { id: 'again', label: 'Again', hint: 'could not recall', cls: 'rate-again', key: '1' },
+  { id: 'hard', label: 'Hard', hint: 'recalled with effort', cls: 'rate-hard', key: '2' },
+  { id: 'good', label: 'Good', hint: 'recalled correctly', cls: 'rate-good', key: '3' },
+  { id: 'easy', label: 'Easy', hint: 'recalled instantly', cls: 'rate-easy', key: '4' },
 ];
 
 const ORDERS: { id: DueOrder; label: string; hint: string }[] = [
-  { id: 'due', label: 'Theo lịch ôn (mặc định)', hint: 'Thẻ mới trước, rồi thẻ quá hạn lâu nhất.' },
-  { id: 'interleave', label: 'Xen kẽ bộ thẻ', hint: 'Hai thẻ liền nhau thuộc hai bộ khác nhau khi có thể (interleaving).' },
-  { id: 'hardest', label: 'Thẻ khó trước', hint: 'Thẻ sai nhiều nhất trong 5 lượt gần nhất lên đầu (Eat That Frog).' },
+  { id: 'due', label: 'By schedule (default)', hint: 'New cards first, then the most overdue.' },
+  { id: 'interleave', label: 'Interleave sets', hint: 'Consecutive cards come from different study sets whenever possible.' },
+  { id: 'hardest', label: 'Hardest first', hint: 'Cards missed most in their last 5 reviews come first (Eat That Frog).' },
 ];
 const ORDER_KEY = 'chiron.dueOrder';
 
@@ -45,7 +45,7 @@ export function FlashcardsView() {
   const { user } = useApp();
   return (
     <main className="main">
-      <PageHeader title="Thẻ ghi nhớ" />
+      <PageHeader title="Flashcards" />
       <div className="page">
         <div className="page-inner">{user ? <Review /> : <NeedToken />}</div>
       </div>
@@ -77,7 +77,7 @@ function Review() {
   }, [dueQ.data]);
 
   const current = queue[0];
-  const setName = (id: string) => studySets?.find((s) => s.id === id)?.name ?? 'Bộ thẻ';
+  const setName = (id: string) => studySets?.find((s) => s.id === id)?.name ?? 'Study set';
 
   const rate = async (r: Rating) => {
     if (!current || rating) return;
@@ -145,7 +145,7 @@ function Review() {
     return () => window.removeEventListener('keydown', on);
   });
 
-  if (dueQ.loading && !dueQ.data) return <Loading label="Đang tải hàng đợi ôn tập…" />;
+  if (dueQ.loading && !dueQ.data) return <Loading label="Loading the review queue…" />;
   if (dueQ.error) return <ErrorNotice error={dueQ.error} onRetry={dueQ.reload} />;
 
   const total = dueQ.data?.count ?? 0;
@@ -156,15 +156,15 @@ function Review() {
     <>
       <div className="page-head">
         <div>
-          <h2>{queue.length > 0 ? `${queue.length}${capped && done === 0 ? '+' : ''} thẻ đến hạn` : 'Không còn thẻ đến hạn'}</h2>
-          <p>Thẻ mới và thẻ đã tới lịch ôn theo FSRS, lấy từ Mnemosyne. Mỗi lần chấm được ghi lại và dời lịch ôn kế tiếp.</p>
+          <h2>{queue.length > 0 ? `${queue.length}${capped && done === 0 ? '+' : ''} card${queue.length === 1 ? '' : 's'} due` : 'Nothing due'}</h2>
+          <p>New cards and cards whose FSRS review date has come, from Mnemosyne. Every rating is recorded and moves the next review.</p>
         </div>
         <button className="btn btn-secondary btn-soft" onClick={dueQ.reload}>
-          <i className="ph ph-arrow-clockwise" />Tải lại
+          <i className="ph ph-arrow-clockwise" />Reload
         </button>
       </div>
       <div className="toolbar due-order">
-        <label htmlFor="due-order" className="wk-meta">Thứ tự ôn</label>
+        <label htmlFor="due-order" className="wk-meta">Review order</label>
         <select
           id="due-order"
           className="input"
@@ -182,16 +182,16 @@ function Review() {
         <span className="wk-meta">{ORDERS.find((o) => o.id === order)?.hint}</span>
       </div>
       <div className="stats">
-        <div><div className="stat-k">Đến hạn</div><div className="stat-v" style={{ color: 'var(--yel)' }}>{queue.length}{capped && done === 0 ? '+' : ''}</div></div>
-        <div><div className="stat-k">Thẻ mới</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{fresh}</div></div>
-        <div><div className="stat-k">Đã ôn lần này</div><div className="stat-v" style={{ color: 'var(--green)' }}>{done}</div></div>
+        <div><div className="stat-k">Due</div><div className="stat-v" style={{ color: 'var(--yel)' }}>{queue.length}{capped && done === 0 ? '+' : ''}</div></div>
+        <div><div className="stat-k">New</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{fresh}</div></div>
+        <div><div className="stat-k">Reviewed now</div><div className="stat-v" style={{ color: 'var(--green)' }}>{done}</div></div>
         <div>
-          <div className="stat-k">Độ chính xác {stats?.range_days ?? 14} ngày</div>
+          <div className="stat-k">Accuracy, {stats?.range_days ?? 14} days</div>
           <div className="stat-v" style={{ color: 'var(--green)' }}>
             {stats?.reviews.accuracy != null ? `${Math.round(stats.reviews.accuracy * 100)}%` : '—'}
           </div>
         </div>
-        <div><div className="stat-k">Chuỗi ngày học</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{stats?.streak_days ?? '—'}</div></div>
+        <div><div className="stat-k">Day streak</div><div className="stat-v" style={{ color: 'var(--frost)' }}>{stats?.streak_days ?? '—'}</div></div>
       </div>
       <hr className="rule" style={{ marginBottom: 18 }} />
 
@@ -199,7 +199,7 @@ function Review() {
         <div className="notice notice-info" style={{ marginBottom: 14, maxWidth: 760 }}>
           <i className="ph ph-check-circle" />
           <div>
-            Đã ghi “{RATINGS.find((r) => r.id === last.rating)?.label}” — ôn lại sau {last.res.interval_days} ngày
+            Recorded “{RATINGS.find((r) => r.id === last.rating)?.label}” — next review in {last.res.interval_days} day{last.res.interval_days === 1 ? '' : 's'}
             ({relative(last.res.next_review_at)}).
           </div>
         </div>
@@ -208,35 +208,35 @@ function Review() {
       {current && edit ? (
         <div className="fc">
           <div className="wk-head">
-            <span className="tag tag-frost tag-sm">Đang sửa thẻ</span>
+            <span className="tag tag-frost tag-sm">Editing card</span>
             <span className="wk-meta">{setName(current.set_id)}</span>
           </div>
           <div className="field">
-            <label>Câu hỏi</label>
+            <label>Question</label>
             <textarea className="input" lang="vi" value={edit.question} onChange={(e) => setEdit({ ...edit, question: e.target.value })} />
           </div>
           <div className="field">
-            <label>Đáp án</label>
+            <label>Answer</label>
             <textarea className="input" lang="vi" value={edit.answer} onChange={(e) => setEdit({ ...edit, answer: e.target.value })} />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-primary btn-main" onClick={saveEdit} disabled={saving || !edit.question.trim() || !edit.answer.trim()}>
-              {saving ? <span className="spin" /> : <i className="ph ph-check" />}Lưu thay đổi
+              {saving ? <span className="spin" /> : <i className="ph ph-check" />}Save changes
             </button>
-            <button className="btn btn-soft" onClick={() => setEdit(undefined)} disabled={saving}>Huỷ</button>
+            <button className="btn btn-soft" onClick={() => setEdit(undefined)} disabled={saving}>Cancel</button>
           </div>
           {reviewError != null && <ErrorNotice error={reviewError} compact />}
         </div>
       ) : current ? (
         <div className="fc">
           <div className="wk-head">
-            {current.is_new ? <span className="tag tag-frost tag-sm">Thẻ mới</span> : <span className="tag tag-yel tag-sm">Đến hạn {current.next_review_at ? relative(current.next_review_at) : ''}</span>}
+            {current.is_new ? <span className="tag tag-frost tag-sm">New card</span> : <span className="tag tag-yel tag-sm">Due {current.next_review_at ? relative(current.next_review_at) : ''}</span>}
             <span className="wk-meta">{setName(current.set_id)}</span>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-              <button className="icon-btn" title="Sửa thẻ này" onClick={() => setEdit({ question: current.question, answer: current.answer })}>
+              <button className="icon-btn" title="Edit this card" onClick={() => setEdit({ question: current.question, answer: current.answer })}>
                 <i className="ph ph-pencil-simple" />
               </button>
-              <button className="icon-btn" title="Xoá thẻ này" onClick={() => setConfirmDelete(true)}>
+              <button className="icon-btn" title="Delete this card" onClick={() => setConfirmDelete(true)}>
                 <i className="ph ph-trash" />
               </button>
             </div>
@@ -245,13 +245,13 @@ function Review() {
             <div className="notice notice-warn">
               <i className="ph ph-warning" />
               <div>
-                <div className="notice-title">Xoá thẻ này?</div>
-                <div>Lịch sử ôn của thẻ cũng bị xoá theo và không khôi phục được.</div>
+                <div className="notice-title">Delete this card?</div>
+                <div>Its review history is deleted with it and cannot be recovered.</div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="btn btn-soft rate-again" onClick={removeCard} disabled={saving}>
-                    {saving ? <span className="spin" /> : <i className="ph ph-trash" />}Xoá hẳn
+                    {saving ? <span className="spin" /> : <i className="ph ph-trash" />}Delete
                   </button>
-                  <button className="btn btn-soft" onClick={() => setConfirmDelete(false)} disabled={saving}>Giữ lại</button>
+                  <button className="btn btn-soft" onClick={() => setConfirmDelete(false)} disabled={saving}>Keep</button>
                 </div>
               </div>
             </div>
@@ -273,7 +273,7 @@ function Review() {
           ) : (
             <div>
               <button className="btn btn-primary btn-main" onClick={() => setRevealed(true)}>
-                <i className="ph ph-eye" />Hiện đáp án <span style={{ color: 'var(--dim)', fontSize: 11 }}>Space</span>
+                <i className="ph ph-eye" />Show answer <span style={{ color: 'var(--dim)', fontSize: 11 }}>Space</span>
               </button>
             </div>
           )}
@@ -283,15 +283,15 @@ function Review() {
         <div className="notice notice-info" style={{ maxWidth: 760 }}>
           <i className="ph ph-confetti" />
           <div>
-            <div className="notice-title">Hết thẻ đến hạn</div>
-            <div>Thẻ sẽ quay lại đây khi tới lịch ôn. {capped && 'Hàng đợi có thể còn thẻ — bấm Tải lại để lấy tiếp.'}</div>
+            <div className="notice-title">All caught up</div>
+            <div>Cards come back here when they are due. {capped && 'There may be more in the queue — press Reload to fetch them.'}</div>
           </div>
         </div>
       )}
 
       {queue.length > 1 && (
         <>
-          <div className="section-label">Tiếp theo trong hàng đợi · {queue.length - 1}</div>
+          <div className="section-label">Up next · {queue.length - 1}</div>
           <div className="list" style={{ maxWidth: 760 }}>
             {queue.slice(1, 30).map((c) => (
               <div className="wk" key={c.card_id}>
@@ -302,7 +302,7 @@ function Review() {
                   <span className="wk-meta">{setName(c.set_id)}</span>
                 </div>
                 <div className="wk-side">
-                  {c.is_new ? <span className="tag tag-frost tag-sm">Mới</span> : <span className="wk-meta">{c.next_review_at ? relative(c.next_review_at) : ''}</span>}
+                  {c.is_new ? <span className="tag tag-frost tag-sm">New</span> : <span className="wk-meta">{c.next_review_at ? relative(c.next_review_at) : ''}</span>}
                 </div>
               </div>
             ))}

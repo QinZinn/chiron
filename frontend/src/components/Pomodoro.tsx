@@ -72,7 +72,7 @@ function chime() {
   }
 }
 
-const PHASE_LABEL: Record<Phase, string> = { work: 'Tập trung', break: 'Nghỉ' };
+const PHASE_LABEL: Record<Phase, string> = { work: 'Focus', break: 'Break' };
 
 export function Pomodoro({ task }: { task?: string }) {
   const [durations, setDurations] = useState(loadDurations);
@@ -96,7 +96,7 @@ export function Pomodoro({ task }: { task?: string }) {
         chime();
         const next: Phase = phase === 'work' ? 'break' : 'work';
         if (phase === 'work') setRounds((r) => r + 1);
-        setMessage(phase === 'work' ? 'Hết giờ tập trung — nghỉ một chút.' : 'Hết giờ nghỉ — sẵn sàng cho phiên tiếp theo.');
+        setMessage(phase === 'work' ? 'Focus time is up — take a break.' : 'Break is over — ready for the next round.');
         setPhase(next);
         setStatus('idle');
         setEndsAt(undefined);
@@ -171,27 +171,27 @@ export function Pomodoro({ task }: { task?: string }) {
       <div className={`pomo-time pomo-${phase}`} data-testid="pomo-time">{mmss(left)}</div>
       <div className="bar pomo-bar"><div style={{ width: `${progress * 100}%` }} /></div>
       <div className="wk-meta pomo-task">
-        {task ? <>Đang làm: <span style={{ color: 'var(--tx2)' }}>{task}</span></> : 'Chọn một việc bên trái để gắn với phiên này (không bắt buộc).'}
+        {task ? <>Working on: <span style={{ color: 'var(--tx2)' }}>{task}</span></> : 'Pick an item on the left to attach to this session (optional).'}
       </div>
       <div className="pomo-actions">
         {status === 'running' ? (
-          <button className="btn btn-secondary btn-soft" onClick={pause}><i className="ph ph-pause" />Tạm dừng</button>
+          <button className="btn btn-secondary btn-soft" onClick={pause}><i className="ph ph-pause" />Pause</button>
         ) : (
           <button className="btn btn-primary btn-main" onClick={start}>
-            <i className="ph ph-play" />{status === 'paused' ? 'Tiếp tục' : 'Bắt đầu'}
+            <i className="ph ph-play" />{status === 'paused' ? 'Resume' : 'Start'}
           </button>
         )}
         <button className="btn btn-soft" onClick={reset} disabled={status === 'idle' && left === total}>
-          <i className="ph ph-arrow-counter-clockwise" />Đặt lại
+          <i className="ph ph-arrow-counter-clockwise" />Reset
         </button>
       </div>
       <div aria-live="polite" className="pomo-msg">{message}</div>
-      <div className="wk-meta">Phiên tập trung đã xong trong lần mở trang này: {rounds}</div>
+      <div className="wk-meta">Focus rounds finished since this page opened: {rounds}</div>
 
-      <div className="section-label">Thời lượng (phút)</div>
+      <div className="section-label">Durations (minutes)</div>
       <div className="pomo-durations">
         <label className="field">
-          <span className="wk-meta">Tập trung</span>
+          <span className="wk-meta">Focus</span>
           <input
             className="input input-sm"
             type="number"
@@ -200,11 +200,11 @@ export function Pomodoro({ task }: { task?: string }) {
             value={durations.work}
             onChange={(e) => setDuration('work', e.target.value)}
             disabled={status !== 'idle'}
-            aria-label="Số phút tập trung"
+            aria-label="Focus minutes"
           />
         </label>
         <label className="field">
-          <span className="wk-meta">Nghỉ</span>
+          <span className="wk-meta">Break</span>
           <input
             className="input input-sm"
             type="number"
@@ -213,11 +213,11 @@ export function Pomodoro({ task }: { task?: string }) {
             value={durations.break}
             onChange={(e) => setDuration('break', e.target.value)}
             disabled={status !== 'idle'}
-            aria-label="Số phút nghỉ"
+            aria-label="Break minutes"
           />
         </label>
       </div>
-      <div className="wk-meta" style={{ marginTop: 8 }}>Chỉ là đồng hồ: không lưu lịch sử, không gửi đi đâu.</div>
+      <div className="wk-meta" style={{ marginTop: 8 }}>Just a timer: no history is kept and nothing is sent anywhere.</div>
     </aside>
   );
 }

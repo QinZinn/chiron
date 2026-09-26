@@ -110,7 +110,7 @@ export const ks = {
 
   getNode: (id: string) => request<KsNode>(S, `/api/ks/nodes/${encodeURIComponent(id)}`),
 
-  // ---- ghi chép scan
+  // ---- note scan
   scanNote: (files: File[], title?: string) => {
     const form = new FormData();
     for (const f of files) form.append('files', f, f.name);
@@ -132,7 +132,7 @@ export const ks = {
       timeoutMs: EXTRACT_TIMEOUT_MS,
     }),
 
-  // ---- duyệt khái niệm
+  // ---- concept review
   editConcept: (id: string, patch: { title?: string; subject?: string; summary?: string }) =>
     request<ReviewConcept>(S, `/api/ks/extracted/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
 
