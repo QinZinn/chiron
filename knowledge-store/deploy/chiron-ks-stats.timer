@@ -1,5 +1,5 @@
 [Unit]
-Description=Chụp số liệu instrumentation lúc 23:00
+Description=Snapshot instrumentation numbers at 23:00
 
 [Timer]
 OnCalendar=23:00

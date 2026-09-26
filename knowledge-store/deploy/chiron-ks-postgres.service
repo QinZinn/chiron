@@ -1,11 +1,11 @@
-# Cụm Postgres riêng của Chiron KS, chạy dưới user thường (không phải postgres).
+# Chiron KS's own Postgres cluster, running as a regular user (not postgres).
 #
-# BẪY ĐÃ TRẢ GIÁ: mặc định unix_socket_directories = '/run/postgresql' (bị comment
-# trong postgresql.conf). Thư mục đó không tồn tại với user thường →
-# "FATAL: could not create lock file". Sửa dòng 68 của postgresql.conf thành PGDATA.
+# A TRAP WE PAID FOR: the default unix_socket_directories = '/run/postgresql' (commented
+# out in postgresql.conf). That directory does not exist for a regular user →
+# "FATAL: could not create lock file". Change line 68 of postgresql.conf to PGDATA.
 #
-# Port là 5432 (mặc định initdb). Nếu thấy 55432 ở đâu đó, đó là cụm của lần build
-# trước — KHÔNG dùng lại.
+# The port is 5432 (initdb's default). If you see 55432 anywhere, that is the cluster from
+# an earlier build — do NOT reuse it.
 
 [Unit]
 Description=Chiron Knowledge Store — Postgres

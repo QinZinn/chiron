@@ -237,7 +237,7 @@ def test_study_set_id_thieu_thi_bao_loi_kem_cach_sua():
 def test_study_set_id_la_ten_set_thi_bao_loi_ro(conn):
     """Giả định ban đầu của KS là gửi tên "KS review" — Mnemosyne trả 400 vì
     serde không parse được thành Uuid. Chặn ngay ở KS với thông báo rõ."""
-    with pytest.raises(CardClientError, match="không phải UUID"):
+    with pytest.raises(CardClientError, match="is not a UUID"):
         study_set_id_from_env({"KS_CARD_SYNC_STUDY_SET_ID": "KS review"})
 
 

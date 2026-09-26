@@ -1,10 +1,10 @@
--- 0003_transcripts.sql — lưu transcript raw TRƯỚC, extraction là job riêng retry được.
+-- 0003_transcripts.sql — store the raw transcript FIRST; extraction is a separate, retryable job.
 
 CREATE TYPE ks.transcript_status         AS ENUM ('pending', 'done', 'failed');
 CREATE TYPE ks.extracted_concept_status  AS ENUM ('pending_review', 'accepted', 'discarded');
 
--- session_ref UNIQUE là nền của idempotency thật: Mnemosyne retry cùng
--- session_ref bao nhiêu lần cũng an toàn tuyệt đối.
+-- session_ref UNIQUE is the basis of real idempotency: Mnemosyne can retry the same
+-- session_ref any number of times, completely safely.
 CREATE TABLE ks.transcripts (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_ref TEXT NOT NULL UNIQUE,
@@ -18,8 +18,8 @@ CREATE TABLE ks.transcripts (
 
 CREATE INDEX ON ks.transcripts (status);
 
--- Kết quả extraction CHỜ XÁC NHẬN. 'discarded' giữ row vĩnh viễn, không xoá —
--- cùng logic với edge 'rejected'.
+-- Extraction results AWAITING CONFIRMATION. 'discarded' keeps the row forever, no delete —
+-- same logic as a 'rejected' edge.
 CREATE TABLE ks.extracted_concepts (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   transcript_id UUID NOT NULL REFERENCES ks.transcripts(id),
@@ -28,7 +28,7 @@ CREATE TABLE ks.extracted_concepts (
   summary       TEXT NOT NULL,
   source_module ks.source_module NOT NULL,
   status        ks.extracted_concept_status NOT NULL DEFAULT 'pending_review',
-  node_id       UUID NULL REFERENCES ks.nodes(id),   -- điền khi accepted
+  node_id       UUID NULL REFERENCES ks.nodes(id),   -- filled in when accepted
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );

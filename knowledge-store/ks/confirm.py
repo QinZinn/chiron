@@ -1,8 +1,8 @@
-"""Xác nhận khái niệm đã rút: list / accept / discard.
+"""Confirming extracted concepts: list / accept / discard.
 
-accept đẩy khái niệm qua ingest_concepts, nên nó chịu ĐÚNG luật dò trùng và
-instrumentation như mọi đường ghi khác — không có cửa sau.
-discard giữ row status='discarded', KHÔNG xoá — cùng logic với edge 'rejected'.
+accept pushes the concept through ingest_concepts, so it is subject to EXACTLY
+the same duplicate rule and instrumentation as every other write path — no back door.
+discard keeps the row with status='discarded', it does NOT delete — same logic as a 'rejected' edge.
 """
 
 from __future__ import annotations
@@ -22,11 +22,11 @@ _SELECT = (
 
 
 class ExtractedConceptNotFound(Exception):
-    """extracted_concept id không tồn tại."""
+    """No extracted_concept with this id."""
 
 
 class AlreadyDecided(Exception):
-    """Khái niệm đã accepted/discarded — không hỏi lại câu đã trả lời."""
+    """The concept is already accepted/discarded — a question already answered is not asked again."""
 
 
 def list_extracted(
@@ -48,7 +48,7 @@ def _load(conn: psycopg.Connection, concept_id: UUID) -> ExtractedConcept:
         cur.execute(f"{_SELECT} WHERE id = %s", (concept_id,))
         row = cur.fetchone()
     if row is None:
-        raise ExtractedConceptNotFound(f"Không có extracted_concept {concept_id}")
+        raise ExtractedConceptNotFound(f"No extracted_concept {concept_id}")
     return _row_to_concept(row)
 
 
@@ -59,16 +59,16 @@ def accept(
     decision: str | None = None,
     merge_into: UUID | None = None,
 ) -> IngestedConcept:
-    """Ghi khái niệm vào đồ thị.
+    """Write the concept into the graph.
 
-    - `decision=None`: quy tắc tự động của ingest_concepts (ngưỡng 0.6). CLI và
-      mọi caller cũ đi đường này.
-    - `decision="create"`: người học chọn tạo node mới, dù có candidate vượt ngưỡng.
-    - `decision="merge"`: người học chọn gộp vào `merge_into`.
+    - `decision=None`: ingest_concepts' automatic rule (threshold 0.6). The CLI and
+      every older caller take this path.
+    - `decision="create"`: the learner chose a new node, even with a candidate over the threshold.
+    - `decision="merge"`: the learner chose to merge into `merge_into`.
     """
     concept = _load(conn, concept_id)
     if concept.status != "pending_review":
-        raise AlreadyDecided(f"{concept_id} đã ở trạng thái {concept.status}")
+        raise AlreadyDecided(f"{concept_id} is already {concept.status}")
 
     draft = ConceptDraft(
         title=concept.title,
@@ -82,10 +82,10 @@ def accept(
         item = ingest_decided(conn, draft, merge_into=None)
     elif decision == "merge":
         if merge_into is None:
-            raise ValueError("decision=merge cần node_id")
+            raise ValueError("decision=merge needs a node_id")
         item = ingest_decided(conn, draft, merge_into=merge_into)
     else:
-        raise ValueError(f"decision phải là create hoặc merge, không phải {decision!r}")
+        raise ValueError(f"decision must be create or merge, not {decision!r}")
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE ks.extracted_concepts SET status = 'accepted', node_id = %s,"
@@ -98,8 +98,8 @@ def accept(
 def candidates_for(
     conn: psycopg.Connection, concept_id: UUID
 ) -> tuple[ExtractedConcept, tuple[DuplicateCandidate, ...], DuplicateCandidate | None]:
-    """Candidate trùng của một khái niệm chờ duyệt, và candidate mà quy tắc tự
-    động sẽ gộp vào (hoặc None) — để màn duyệt hỏi TRƯỚC khi ghi."""
+    """Duplicate candidates for a pending concept, and the candidate the automatic
+    rule would merge into (or None) — so the review screen can ask BEFORE writing."""
     concept = _load(conn, concept_id)
     candidates = find_candidates(conn, concept.title)
     return concept, candidates, pick_duplicate(candidates)
@@ -145,10 +145,10 @@ def split(conn: psycopg.Connection, concept_id: UUID) -> IngestedConcept:
 
 
 def discard(conn: psycopg.Connection, concept_id: UUID) -> None:
-    """Giữ row vĩnh viễn với status='discarded'. Không xoá."""
+    """Keep the row forever with status='discarded'. Nothing is deleted."""
     concept = _load(conn, concept_id)
     if concept.status != "pending_review":
-        raise AlreadyDecided(f"{concept_id} đã ở trạng thái {concept.status}")
+        raise AlreadyDecided(f"{concept_id} is already {concept.status}")
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE ks.extracted_concepts SET status = 'discarded', updated_at = now()"
@@ -165,18 +165,18 @@ def edit_pending(
     subject: str | None = None,
     summary: str | None = None,
 ) -> ExtractedConcept:
-    """Sửa khái niệm TRƯỚC khi quyết. Đã accept/discard thì không sửa được nữa.
+    """Edit a concept BEFORE deciding on it. Once accepted/discarded it can no longer be edited.
 
-    Chỗ rẻ nhất để chữa lỗi OCR hay LLM: sửa ở đây rồi accept, thay vì accept
-    một title sai chính tả rồi để dò trùng không bao giờ khớp được nó.
+    The cheapest place to fix an OCR or LLM mistake: fix it here and then accept,
+    instead of accepting a misspelled title the duplicate check will never match.
     """
     concept = _load(conn, concept_id)
     if concept.status != "pending_review":
-        raise AlreadyDecided(f"{concept_id} đã ở trạng thái {concept.status}")
+        raise AlreadyDecided(f"{concept_id} is already {concept.status}")
     fields = {"title": title, "subject": subject, "summary": summary}
     for name, value in fields.items():
         if value is not None and not value.strip():
-            raise ValueError(f"{name} không được để trống")
+            raise ValueError(f"{name} must not be empty")
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE ks.extracted_concepts SET title = COALESCE(%s, title),"

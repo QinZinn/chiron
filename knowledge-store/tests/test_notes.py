@@ -62,7 +62,7 @@ def test_ocr_ra_note_draft_voi_van_ban_cac_trang_noi_bang_dong_trong(conn):
 
 def test_nhieu_tep_thi_tieu_de_mac_dinh_noi_ro_so_tep(conn):
     note = notes.create_from_uploads(conn, [upload("a.jpg"), upload("b.png")], FakeOcr())
-    assert note.title == "a (+1 tệp)"
+    assert note.title == "a (+1 file)"
 
 
 def test_sua_van_ban_va_tieu_de(conn):
@@ -141,9 +141,9 @@ def test_prompt_ghi_chep_khac_prompt_phien_hoc():
     assert is_note(note_content) and not is_note([{"role": "user", "content": "x"}])
     note_prompt = build_prompt(note_content)[1].content
     session_prompt = build_prompt([{"role": "user", "content": "x"}])[1].content
-    assert "GHI CHÉP: Chương 5" in note_prompt
-    assert "lỗi nhận dạng" in note_prompt, "LLM phải biết văn bản có thể còn lỗi OCR"
-    assert "BẢN GHI PHIÊN HỌC" in session_prompt, "prompt phiên học giữ nguyên"
+    assert "NOTES: Chương 5" in note_prompt
+    assert "recognition errors" in note_prompt, "the LLM must know the text may still contain OCR errors"
+    assert "STUDY SESSION TRANSCRIPT" in session_prompt, "the session prompt is unchanged"
 
 
 def test_multipart_giu_ten_tep_tieng_viet():

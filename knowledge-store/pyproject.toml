@@ -1,7 +1,7 @@
 [project]
 name = "knowledge-store"
 version = "0.1.0"
-description = "Knowledge Store — second brain lưu khái niệm học sinh đã học (hệ sinh thái Chiron)."
+description = "Knowledge Store — a second brain of the concepts a learner has studied (part of the Chiron ecosystem)."
 requires-python = ">=3.11"
 dependencies = [
     "psycopg[binary]>=3.2",

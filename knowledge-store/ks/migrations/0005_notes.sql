@@ -1,13 +1,13 @@
--- Ghi chép scan (ảnh / PDF → OCR) chờ người học sửa rồi mới rút khái niệm.
+-- Scanned notes (image / PDF → OCR) waiting for the learner to correct them before concepts are extracted.
 --
--- Luồng: note (OCR xong, người học sửa text) → bấm "rút khái niệm" → text được
--- lưu thành một transcript kind='note' → extract_concepts như mọi transcript →
--- extracted_concepts 'pending_review' → accept/discard. Tức là note KHÔNG có
--- đường riêng vào ks.nodes: nó đi qua đúng cổng xác nhận mà transcript phiên
--- học đi qua, nên lỗi OCR lẫn lỗi LLM đều phải qua mắt người học trước.
+-- Flow: note (OCR done, learner corrects the text) → presses "extract concepts" → the text is
+-- stored as a kind='note' transcript → extract_concepts like any transcript →
+-- extracted_concepts 'pending_review' → accept/discard. In other words a note has NO
+-- route of its own into ks.nodes: it goes through the same confirmation gate as
+-- study-session transcripts, so both OCR and LLM errors pass the learner's eyes first.
 
--- Khái niệm rút từ ghi chép scan. Tách khỏi 'mnemosyne' để còn biết nguồn —
--- card_sync và thống kê đều đọc source_module.
+-- Concepts extracted from scanned notes. Separate from 'mnemosyne' so the source stays known —
+-- card_sync and the stats both read source_module.
 ALTER TYPE ks.source_module ADD VALUE IF NOT EXISTS 'note_scan';
 
 CREATE TYPE ks.note_status AS ENUM ('draft', 'extracted');
@@ -15,16 +15,16 @@ CREATE TYPE ks.note_status AS ENUM ('draft', 'extracted');
 CREATE TABLE ks.notes (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title          TEXT NOT NULL,
-  -- Tên các tệp đã tải lên, theo thứ tự. Ảnh gốc KHÔNG lưu: KS giữ tri thức,
-  -- không giữ kho ảnh vở của người học.
+  -- Names of the uploaded files, in order. The original images are NOT stored: KS keeps knowledge,
+  -- not an archive of the learner's notebook photos.
   filenames      TEXT[] NOT NULL DEFAULT '{}',
-  -- Kết quả OCR nguyên văn theo trang (text, lines + confidence). Giữ nguyên
-  -- để còn so với bản đã sửa và đo xem OCR sai bao nhiêu.
+  -- Raw OCR result per page (text, lines + confidence). Kept as-is
+  -- to compare with the corrected version and measure how much OCR got wrong.
   ocr_pages      JSONB NOT NULL,
-  -- Văn bản người học đã sửa. Khởi tạo bằng text OCR; đây mới là thứ được rút.
+  -- The learner's corrected text. Starts as the OCR text; this is what gets extracted.
   text           TEXT NOT NULL,
   status         ks.note_status NOT NULL DEFAULT 'draft',
-  -- Điền khi đã rút khái niệm. Rút lại dùng lại chính transcript này.
+  -- Filled in once concepts are extracted. Re-extracting reuses this same transcript.
   transcript_id  UUID NULL REFERENCES ks.transcripts(id),
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()

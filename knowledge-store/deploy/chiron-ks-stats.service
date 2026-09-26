@@ -1,8 +1,8 @@
-# Chụp số liệu instrumentation hằng ngày. Không chạm LLM (ks stats chỉ đọc DB),
-# nhưng vẫn nạp .env để dùng chung một nguồn cấu hình.
+# Daily snapshot of the instrumentation numbers. No LLM (ks stats only reads the DB),
+# but it still loads .env to share one source of configuration.
 
 [Unit]
-Description=Chiron Knowledge Store — số liệu instrumentation
+Description=Chiron Knowledge Store — instrumentation numbers
 After=chiron-ks-postgres.service
 Requires=chiron-ks-postgres.service
 

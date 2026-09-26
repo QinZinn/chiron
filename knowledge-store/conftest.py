@@ -1,6 +1,6 @@
-"""Fixture chung: DB test thật (không mock Postgres — trigram là hành vi của Postgres).
+"""Shared fixtures: a real test DB (Postgres is not mocked — trigram matching is Postgres behaviour).
 
-Mỗi test chạy trong một transaction và rollback ở cuối, nên test không thấy nhau.
+Each test runs in a transaction that is rolled back at the end, so tests do not see each other.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ def _test_url() -> str:
 
 @pytest.fixture(scope="session")
 def migrated_url() -> str:
-    """Dựng lại schema từ số 0 rồi chạy toàn bộ migration. Một lần mỗi session."""
+    """Rebuild the schema from scratch and run every migration. Once per session."""
     url = _test_url()
     with psycopg.connect(url) as conn:
         with conn.cursor() as cur:
@@ -34,7 +34,7 @@ def migrated_url() -> str:
 
 @pytest.fixture
 def conn(migrated_url):
-    """Connection cho một test. Rollback ở cuối — không để lại rác."""
+    """A connection for one test. Rolled back at the end — nothing left behind."""
     with psycopg.connect(migrated_url) as connection:
         yield connection
         connection.rollback()
@@ -42,12 +42,12 @@ def conn(migrated_url):
 
 @pytest.fixture(autouse=True)
 def _clean_committed_rows(migrated_url):
-    """Một số đường đi tự mở connection và tự commit (save_transcript, các route
-    HTTP) — rollback của fixture `conn` không dọn được. Xoá phần đã commit sau
-    mỗi test để test không thấy nhau.
+    """Some paths open their own connection and commit (save_transcript, the HTTP
+    routes) — the `conn` fixture's rollback cannot clean those up. Delete what was committed after
+    each test so tests do not see each other.
 
-    Autouse nên fixture này dựng TRƯỚC `conn`, do đó teardown chạy SAU khi `conn`
-    đã rollback — không giành lock với transaction của test.
+    Autouse, so this fixture is set up BEFORE `conn`, and its teardown therefore runs AFTER `conn`
+    has rolled back — no lock contention with the test's transaction.
     """
     yield
     with psycopg.connect(migrated_url) as cleanup:

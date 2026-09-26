@@ -1,5 +1,5 @@
 [Unit]
-Description=Chạy card-sync mỗi giờ
+Description=Run card-sync every hour
 
 [Timer]
 OnCalendar=hourly

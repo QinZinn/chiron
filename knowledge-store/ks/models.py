@@ -1,4 +1,4 @@
-"""Kiểu dữ liệu của KS. Tất cả frozen — không mutate sau khi dựng."""
+"""KS data types. All frozen — never mutated after construction."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from uuid import UUID
 class SourceModule(str, Enum):
     MNEMOSYNE = "mnemosyne"
     LEXIFLASH = "lexiflash"
-    NOTE_SCAN = "note_scan"  # ghi chép scan qua OCR (ks/notes.py)
+    NOTE_SCAN = "note_scan"  # notes scanned through OCR (ks/notes.py)
 
 
 class RelationType(str, Enum):
@@ -30,13 +30,13 @@ class EdgeStatus(str, Enum):
     REJECTED = "rejected"
 
 
-# Quan hệ đối xứng: lưu một chiều, query hai chiều.
+# Symmetric relations: stored in one direction, queried in both.
 SYMMETRIC_RELATIONS = frozenset({RelationType.RELATED, RelationType.CONTRASTS_WITH})
 
 
 @dataclass(frozen=True)
 class ConceptDraft:
-    """Một khái niệm chờ ghi. 4 field, tất cả bắt buộc, không optional."""
+    """A concept waiting to be written. 4 fields, all required, none optional."""
 
     title: str
     subject: str
@@ -46,7 +46,7 @@ class ConceptDraft:
 
 @dataclass(frozen=True)
 class DuplicateCandidate:
-    """Node có sẵn giống draft. score là similarity trigram trên title."""
+    """An existing node similar to a draft. score is trigram similarity on the title."""
 
     node_id: UUID
     title: str
@@ -55,15 +55,16 @@ class DuplicateCandidate:
 
 @dataclass(frozen=True)
 class IngestedConcept:
-    """Kết quả ghi một draft.
+    """The result of writing one draft.
 
-    candidates populate CẢ KHI created=True — near-miss dưới ngưỡng cũng phải
-    log, nếu chỉ log ca merge thì dữ liệu một chiều, không đo được false negative.
+    candidates is populated EVEN WHEN created=True — near-misses below the
+    threshold must be logged too; logging only merges gives one-sided data and
+    no way to measure false negatives.
     """
 
     draft: ConceptDraft
     node_id: UUID
-    created: bool  # True = tạo mới, False = khớp node có sẵn
+    created: bool  # True = newly created, False = matched an existing node
     candidates: tuple[DuplicateCandidate, ...]
 
 
@@ -74,7 +75,7 @@ class IngestResult:
 
 @dataclass(frozen=True)
 class NodeSummary:
-    """Cho GET /nodes — KHÔNG có edges."""
+    """For GET /nodes — WITHOUT edges."""
 
     id: UUID
     title: str
@@ -84,7 +85,7 @@ class NodeSummary:
 
 @dataclass(frozen=True)
 class EdgeSummary:
-    """Cho GET /edges: một cạnh ĐÃ DUYỆT, hai đầu đã resolve merge."""
+    """For GET /edges: one APPROVED edge, both ends already resolved through merges."""
 
     id: UUID
     from_node_id: UUID
@@ -94,7 +95,7 @@ class EdgeSummary:
 
 @dataclass(frozen=True)
 class SaveResult:
-    """Kết quả save_transcript. ok=False kèm error thay vì raise."""
+    """Result of save_transcript. ok=False carries error instead of raising."""
 
     ok: bool
     transcript_id: UUID | None
@@ -103,7 +104,7 @@ class SaveResult:
 
 @dataclass(frozen=True)
 class NeighborCandidate:
-    """Node đưa vào prompt gợi ý edge. score là similarity trigram."""
+    """A node included in the edge-suggestion prompt. score is trigram similarity."""
 
     node_id: UUID
     title: str
@@ -114,7 +115,7 @@ class NeighborCandidate:
 
 @dataclass(frozen=True)
 class EdgeSuggestion:
-    """Một cạnh LLM đề xuất, đã ghi vào ks.edges với status='pending'."""
+    """One edge the LLM suggested, written to ks.edges with status='pending'."""
 
     edge_id: UUID
     from_node_id: UUID
@@ -126,7 +127,7 @@ class EdgeSuggestion:
 
 @dataclass(frozen=True)
 class SuggestionRun:
-    """Kết quả một lần suggest_edges. KHÔNG raise khi LLM lỗi — outcome ghi lại."""
+    """Result of one suggest_edges run. Does NOT raise on LLM errors — the outcome records it."""
 
     node_id: UUID
     candidates: tuple[NeighborCandidate, ...]
@@ -137,7 +138,7 @@ class SuggestionRun:
 
 @dataclass(frozen=True)
 class PendingEdge:
-    """Cạnh chờ duyệt, kèm tên hai đầu để người đọc quyết được."""
+    """An edge awaiting review, with both ends' titles so a reader can decide."""
 
     edge_id: UUID
     from_node_id: UUID
@@ -150,7 +151,7 @@ class PendingEdge:
 
 @dataclass(frozen=True)
 class Neighbor:
-    """Node kề qua một cạnh đã approved. direction: 'out' | 'in' | 'both'."""
+    """A node adjacent through an approved edge. direction: 'out' | 'in' | 'both'."""
 
     node_id: UUID
     title: str
@@ -160,7 +161,7 @@ class Neighbor:
 
 @dataclass(frozen=True)
 class ExtractedConcept:
-    """Khái niệm LLM rút ra từ transcript, CHỜ người xác nhận."""
+    """A concept the LLM extracted from a transcript, AWAITING human confirmation."""
 
     id: UUID
     transcript_id: UUID
@@ -174,7 +175,7 @@ class ExtractedConcept:
 
 @dataclass(frozen=True)
 class ExtractionResult:
-    """Kết quả một lần chạy extract. KHÔNG raise khi LLM lỗi — outcome ghi lại."""
+    """Result of one extract run. Does NOT raise on LLM errors — the outcome records it."""
 
     transcript_id: UUID
     concepts: tuple[ExtractedConcept, ...]

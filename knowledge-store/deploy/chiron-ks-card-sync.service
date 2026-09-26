@@ -1,13 +1,13 @@
-# Đẩy node đã duyệt sang Mnemosyne thành card.
-# USER unit — mọi lệnh quản lý phải có `--user`. Xem NOTES.md.
+# Push reviewed nodes to Mnemosyne as cards.
+# USER unit — every management command needs `--user`. See NOTES.md.
 #
-# KHÔNG chạm LLM phía KS (Mnemosyne mới là bên gọi LLM), nhưng cần
-# KS_MNEMOSYNE_URL + KS_MNEMOSYNE_TOKEN trong .env.
+# Does NOT touch the LLM on the KS side (Mnemosyne is the one calling the LLM), but needs
+# KS_MNEMOSYNE_URL + KS_MNEMOSYNE_TOKEN in .env.
 #
-# Type=oneshot — scheduler là việc của systemd, không nhét vào code module.
+# Type=oneshot — scheduling is systemd's job, not something to stuff into module code.
 
 [Unit]
-Description=Chiron Knowledge Store — đồng bộ node sang card Mnemosyne
+Description=Chiron Knowledge Store — sync nodes to Mnemosyne cards
 After=chiron-ks-postgres.service
 Requires=chiron-ks-postgres.service
 

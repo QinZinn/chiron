@@ -1,14 +1,14 @@
-# HTTP layer cho Mnemosyne (Rust/Actix — runtime khác, bắt buộc qua HTTP).
+# HTTP layer for Mnemosyne (Rust/Actix — a different runtime, so it must go over HTTP).
 #
-# USER unit (~/.config/systemd/user/), không phải system unit — lệch brief §10
-# có chủ đích. Mọi lệnh quản lý phải có `--user`. Cần `loginctl enable-linger`
-# để sống qua logout. Xem NOTES.md.
+# USER unit (~/.config/systemd/user/), not a system unit — a deliberate departure from
+# brief §10. Every management command needs `--user`. Needs `loginctl enable-linger`
+# to survive logout. See NOTES.md.
 #
-# Type=simple: `ks serve` block vô hạn, KHÔNG phải cron job.
-# Hai route ghi không chạm LLM nên unit này KHÔNG cần biến LLM nào.
+# Type=simple: `ks serve` blocks forever, it is NOT a cron job.
+# The two write routes do not touch the LLM, so this unit needs NO LLM variables.
 #
-# BẪY: sửa code xong service vẫn chạy code CŨ cho tới khi `systemctl --user
-# restart chiron-ks-http`. Verify bằng curl mà quên restart là test nhầm code cũ.
+# TRAP: after a code change the service keeps running the OLD code until `systemctl --user
+# restart chiron-ks-http`. Verifying with curl without restarting tests the old code.
 
 [Unit]
 Description=Chiron Knowledge Store — HTTP API

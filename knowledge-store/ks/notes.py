@@ -1,11 +1,11 @@
-"""Ghi chép scan: ảnh/PDF → OCR → người học sửa → rút khái niệm → duyệt.
+"""Scanned notes: image/PDF → OCR → learner corrects → extract concepts → review.
 
-Không có đường tắt vào ks.nodes. `extract` lưu văn bản đã sửa thành một
-transcript kind='note' rồi gọi đúng extract_concepts mà transcript phiên học
-dùng, nên kết quả rơi vào ks.extracted_concepts ở trạng thái 'pending_review' và
-chỉ thành node khi người học accept (ks/confirm.py). Hai lớp kiểm tra — sửa text
-OCR, rồi duyệt từng khái niệm — là chủ đích, không phải thừa: OCR sai dấu tiếng
-Việt và LLM hiểu sai đều không được lọt thẳng vào KS.
+There is no shortcut into ks.nodes. `extract` stores the corrected text as a
+transcript with kind='note' and calls the same extract_concepts that study-session
+transcripts use, so results land in ks.extracted_concepts as 'pending_review' and
+only become nodes when the learner accepts them (ks/confirm.py). The two checks —
+correcting the OCR text, then reviewing each concept — are deliberate, not
+redundant: neither OCR misreadings nor LLM misunderstandings go straight into KS.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ class NoteNotFound(Exception):
 
 
 class EmptyNote(ValueError):
-    """Không còn chữ nào để rút — OCR không đọc được gì, hoặc người học xoá hết."""
+    """No text left to extract — OCR read nothing, or the learner deleted it all."""
 
 
 @dataclass(frozen=True)
@@ -81,14 +81,14 @@ def _row(row) -> Note:
 
 
 def _default_title(filenames: list[str]) -> str:
-    first = filenames[0] if filenames else "Ghi chép"
-    stem = first.rsplit(".", 1)[0] or "Ghi chép"
-    return stem if len(filenames) == 1 else f"{stem} (+{len(filenames) - 1} tệp)"
+    first = filenames[0] if filenames else "Notes"
+    stem = first.rsplit(".", 1)[0] or "Notes"
+    return stem if len(filenames) == 1 else f"{stem} (+{len(filenames) - 1} file{'s' if len(filenames) > 2 else ''})"
 
 
 def join_pages(pages: list[dict[str, Any]]) -> str:
-    """Văn bản khởi tạo cho người học sửa. Trang cách nhau bằng dòng trống để
-    LLM không nối câu cuối trang này với câu đầu trang sau."""
+    """Initial text for the learner to correct. Pages are separated by a blank line
+    so the LLM does not join the last sentence of one page to the first of the next."""
     return "\n\n".join(p.get("text", "").strip() for p in pages if p.get("text", "").strip())
 
 
@@ -99,7 +99,7 @@ def create_from_uploads(
     *,
     title: str | None = None,
 ) -> Note:
-    """OCR rồi lưu note ở trạng thái 'draft'. OcrError văng ra cho HTTP layer."""
+    """OCR, then store the note as 'draft'. OcrError propagates to the HTTP layer."""
     result = ocr.recognise(uploads)
     pages = result.get("pages", [])
     filenames = [u.filename for u in uploads]
@@ -118,7 +118,7 @@ def get(conn: psycopg.Connection, note_id: UUID) -> Note:
         cur.execute(f"SELECT {_COLUMNS} FROM ks.notes WHERE id = %s", (note_id,))
         row = cur.fetchone()
     if row is None:
-        raise NoteNotFound(f"Không có ghi chép {note_id}")
+        raise NoteNotFound(f"No note {note_id}")
     return _row(row)
 
 
@@ -129,9 +129,9 @@ def list_notes(conn: psycopg.Connection, *, limit: int = 50) -> list[Note]:
 
 
 def update(conn: psycopg.Connection, note_id: UUID, *, title: str | None, text: str | None) -> Note:
-    """Sửa tiêu đề/văn bản. Sửa sau khi đã rút vẫn được — rút lại sẽ dùng bản mới."""
-    # Tiêu đề rỗng sau khi trim coi như không đổi: một note không có tên thì
-    # không tìm lại được trong danh sách.
+    """Edit the title/text. Editing after extraction is fine — re-extracting uses the new text."""
+    # A title that is empty after trimming counts as unchanged: a note without a
+    # name cannot be found again in the list.
     new_title = title.strip()[:MAX_TITLE_CHARS] if title is not None else None
     with conn.cursor() as cur:
         cur.execute(
@@ -141,20 +141,20 @@ def update(conn: psycopg.Connection, note_id: UUID, *, title: str | None, text: 
         )
         row = cur.fetchone()
     if row is None:
-        raise NoteNotFound(f"Không có ghi chép {note_id}")
+        raise NoteNotFound(f"No note {note_id}")
     return _row(row)
 
 
 def extract(conn: psycopg.Connection, note_id: UUID, provider: LLMProvider) -> ExtractionResult:
-    """Lưu văn bản đã sửa thành transcript kind='note' rồi rút khái niệm.
+    """Store the corrected text as a kind='note' transcript, then extract concepts.
 
-    Rút lại cùng một note dùng lại transcript đó và ghi đè content bằng văn bản
-    hiện tại: extract_concepts chỉ dọn kết quả 'pending_review' cũ, nên thứ
-    người học đã accept/discard ở lần trước được giữ nguyên.
+    Re-extracting the same note reuses that transcript and overwrites its content
+    with the current text: extract_concepts only clears old 'pending_review'
+    results, so whatever the learner accepted/discarded last time is kept.
     """
     note = get(conn, note_id)
     if not note.text.strip():
-        raise EmptyNote("Ghi chép không còn chữ nào để rút khái niệm")
+        raise EmptyNote("The note has no text left to extract concepts from")
     content = json.dumps({"kind": "note", "note_id": str(note.id), "title": note.title, "text": note.text},
                          ensure_ascii=False)
 
@@ -171,8 +171,8 @@ def extract(conn: psycopg.Connection, note_id: UUID, provider: LLMProvider) -> E
             )
         else:
             transcript_id = note.transcript_id
-            # attempts về 0: đây là lần rút mới do người học yêu cầu, không phải
-            # một lần retry của job — không được chết vì lượt thử của bản cũ.
+            # attempts back to 0: this is a fresh extraction the learner asked for,
+            # not a job retry — it must not die on the old version's attempts.
             cur.execute(
                 "UPDATE ks.transcripts SET content = %s, status = 'pending', attempts = 0,"
                 " last_error = NULL, updated_at = now() WHERE id = %s",
@@ -187,7 +187,7 @@ def extract(conn: psycopg.Connection, note_id: UUID, provider: LLMProvider) -> E
 
 
 def concepts_for(conn: psycopg.Connection, note_id: UUID) -> list[dict[str, Any]]:
-    """Khái niệm đã rút từ note này, mọi trạng thái — để màn duyệt thấy cả thứ đã quyết."""
+    """Concepts extracted from this note, in every status — so the review screen also sees decided ones."""
     with conn.cursor() as cur:
         cur.execute(
             "SELECT c.id, c.title, c.subject, c.summary, c.status, c.node_id"

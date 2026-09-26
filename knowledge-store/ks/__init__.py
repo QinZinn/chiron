@@ -1,1 +1,1 @@
-"""Knowledge Store — lưu khái niệm học sinh đã học. Postgres, không Neo4j."""
+"""Knowledge Store — the concepts a learner has studied. Postgres, not Neo4j."""
