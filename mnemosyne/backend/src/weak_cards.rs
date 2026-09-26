@@ -103,6 +103,20 @@ const RECENT_ANSWERS_QUERY: &str = r#"SELECT is_correct
    ORDER BY created_at DESC
    LIMIT $3"#;
 
+/// The last N answers (`$3`) of each card in `$2` for learner `$1`, newest first
+/// within each card — what [`assess`] judges, for many cards in one query.
+/// Used by `GET /weak_cards` and `GET /due?order=hardest`, so both judge with
+/// the same rows.
+pub const RECENT_ANSWERS_FOR_CARDS_QUERY: &str = r#"SELECT card_id, is_correct, created_at
+   FROM (
+     SELECT card_id, is_correct, created_at,
+            row_number() OVER (PARTITION BY card_id ORDER BY created_at DESC) AS rn
+     FROM learning_events
+     WHERE user_id = $1 AND card_id = ANY($2)
+   ) ranked
+   WHERE rn <= $3
+   ORDER BY card_id, created_at DESC"#;
+
 /// Open the set's weak-card item, or bump the open one. The conflict target is
 /// the partial unique index, so this is the only place the one-open-item rule
 /// is enforced — and Postgres enforces it even for concurrent reviews.

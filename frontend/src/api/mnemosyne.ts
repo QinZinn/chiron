@@ -42,9 +42,13 @@ export interface DueCard {
   next_review_at: string | null;
 }
 
+/** How `GET /due` arranges its batch. The set of cards is the same for all three. */
+export type DueOrder = 'due' | 'interleave' | 'hardest';
+
 export interface DueResponse {
   due_cards: DueCard[];
   count: number;
+  order: DueOrder;
 }
 
 export type Rating = 'again' | 'hard' | 'good' | 'easy';
@@ -227,7 +231,8 @@ export const mnemosyne = {
 
   listStudySets: () => request<StudySet[]>(S, `${base}/study_sets`),
 
-  due: (limit = 100) => request<DueResponse>(S, `${base}/due?limit=${limit}`),
+  due: (limit = 100, order: DueOrder = 'due') =>
+    request<DueResponse>(S, `${base}/due?limit=${limit}&order=${order}`),
 
   /** The browser knows its own timezone; the server must not guess it. */
   stats: (days = 14) =>

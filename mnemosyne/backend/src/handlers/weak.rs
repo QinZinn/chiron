@@ -19,7 +19,10 @@ use uuid::Uuid;
 
 use super::error_response;
 use crate::auth::AuthedUser;
-use crate::weak_cards::{assess, Weakness, WEAK_CARD_ERROR_THRESHOLD, WEAK_CARD_WINDOW};
+use crate::weak_cards::{
+    assess, Weakness, RECENT_ANSWERS_FOR_CARDS_QUERY as RECENT_QUERY, WEAK_CARD_ERROR_THRESHOLD,
+    WEAK_CARD_WINDOW,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct WeakQuery {
@@ -103,19 +106,6 @@ const CARDS_QUERY: &str = r#"SELECT tc.todo_id AS task_row_id, tc.card_id, c.que
    JOIN cards c ON c.id = tc.card_id
    WHERE tc.todo_id = ANY($1)
    ORDER BY tc.added_at"#;
-
-/// The last N answers per listed card, newest first — the same shape
-/// `weak_cards::assess` judges. One query for every card in the response
-/// instead of one per card.
-const RECENT_QUERY: &str = r#"SELECT card_id, is_correct, created_at
-   FROM (
-     SELECT card_id, is_correct, created_at,
-            row_number() OVER (PARTITION BY card_id ORDER BY created_at DESC) AS rn
-     FROM learning_events
-     WHERE user_id = $1 AND card_id = ANY($2)
-   ) ranked
-   WHERE rn <= $3
-   ORDER BY card_id, created_at DESC"#;
 
 #[derive(Debug, FromRow)]
 struct RecentRow {

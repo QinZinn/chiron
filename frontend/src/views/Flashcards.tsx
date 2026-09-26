@@ -4,7 +4,7 @@
  * stats row, faded rule, then the content.
  */
 import { useEffect, useState } from 'react';
-import { mnemosyne, type DueCard, type Rating, type ReviewResponse } from '../api/mnemosyne';
+import { mnemosyne, type DueCard, type DueOrder, type Rating, type ReviewResponse } from '../api/mnemosyne';
 import { useApp } from '../state/app';
 import { useAsync } from '../lib/useAsync';
 import { relative } from '../lib/time';
@@ -16,6 +16,30 @@ const RATINGS: { id: Rating; label: string; hint: string; cls: string; key: stri
   { id: 'good', label: 'Được', hint: 'nhớ đúng', cls: 'rate-good', key: '3' },
   { id: 'easy', label: 'Dễ', hint: 'nhớ ngay', cls: 'rate-easy', key: '4' },
 ];
+
+const ORDERS: { id: DueOrder; label: string; hint: string }[] = [
+  { id: 'due', label: 'Theo lịch ôn (mặc định)', hint: 'Thẻ mới trước, rồi thẻ quá hạn lâu nhất.' },
+  { id: 'interleave', label: 'Xen kẽ bộ thẻ', hint: 'Hai thẻ liền nhau thuộc hai bộ khác nhau khi có thể (interleaving).' },
+  { id: 'hardest', label: 'Thẻ khó trước', hint: 'Thẻ sai nhiều nhất trong 5 lượt gần nhất lên đầu (Eat That Frog).' },
+];
+const ORDER_KEY = 'chiron.dueOrder';
+
+function loadOrder(): DueOrder {
+  try {
+    const v = localStorage.getItem(ORDER_KEY);
+    return ORDERS.some((o) => o.id === v) ? (v as DueOrder) : 'due';
+  } catch {
+    return 'due';
+  }
+}
+
+function saveOrder(order: DueOrder) {
+  try {
+    localStorage.setItem(ORDER_KEY, order);
+  } catch {
+    // Storage blocked: the choice lasts until the page reloads.
+  }
+}
 
 export function FlashcardsView() {
   const { user } = useApp();
@@ -31,7 +55,8 @@ export function FlashcardsView() {
 
 function Review() {
   const { studySets, refreshDue, stats } = useApp();
-  const dueQ = useAsync(() => mnemosyne.due(100), []);
+  const [order, setOrder] = useState<DueOrder>(loadOrder);
+  const dueQ = useAsync(() => mnemosyne.due(100, order), [order]);
   const [queue, setQueue] = useState<DueCard[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [rating, setRating] = useState<Rating>();
@@ -137,6 +162,24 @@ function Review() {
         <button className="btn btn-secondary btn-soft" onClick={dueQ.reload}>
           <i className="ph ph-arrow-clockwise" />Tải lại
         </button>
+      </div>
+      <div className="toolbar due-order">
+        <label htmlFor="due-order" className="wk-meta">Thứ tự ôn</label>
+        <select
+          id="due-order"
+          className="input"
+          value={order}
+          onChange={(e) => {
+            const next = e.target.value as DueOrder;
+            setOrder(next);
+            saveOrder(next);
+          }}
+        >
+          {ORDERS.map((o) => (
+            <option key={o.id} value={o.id}>{o.label}</option>
+          ))}
+        </select>
+        <span className="wk-meta">{ORDERS.find((o) => o.id === order)?.hint}</span>
       </div>
       <div className="stats">
         <div><div className="stat-k">Đến hạn</div><div className="stat-v" style={{ color: 'var(--yel)' }}>{queue.length}{capped && done === 0 ? '+' : ''}</div></div>
