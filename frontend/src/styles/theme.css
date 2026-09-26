@@ -489,3 +489,10 @@ ul.todo-list { list-style: none; margin: 0; padding: 0; }
 .cmap-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
 .cmap-key-contrasts_with { color: var(--red); }
 .cmap-key-related { color: var(--frost2); }
+
+/* ───────────────────────────────────────────────────────────── duplicate choice */
+.dup { border: 0; margin: 10px 0 0; padding: 10px 12px; border-radius: 9px; background: rgba(235, 203, 139, .06); box-shadow: inset 0 0 0 1px rgba(235, 203, 139, .22); display: flex; flex-direction: column; gap: 6px; }
+.dup legend { padding: 0; margin-bottom: 4px; float: left; width: 100%; }
+.dup-opt { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--tx2); padding: 4px 6px; border-radius: 7px; cursor: pointer; }
+.dup-opt input { margin-top: 3px; }
+.dup-on { background: var(--a08); }

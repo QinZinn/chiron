@@ -20,6 +20,7 @@ from ks import confirm as confirm_mod, notes as notes_mod, query as query_mod, s
 from ks.db import connect
 from ks.ingest import ingest_concepts
 from ks.llm import LLMError, LLMProvider, provider_from_env
+from ks.ingest import MergeTargetInvalid
 from ks.models import SYMMETRIC_RELATIONS, ConceptDraft, SourceModule
 from ks.ocr_client import OcrClient, OcrError, Upload, client_from_env
 from ks.transcripts import save_transcript
@@ -510,21 +511,76 @@ def create_app(
             return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
         return jsonify(_concept_dict(concept)), 200
 
-    @app.post("/extracted/<concept_id>/accept")
+    @app.get("/extracted/<concept_id>/candidates")
     @require_token
-    def post_accept(concept_id: str):
-        """Ghi vào đồ thị qua ingest_concepts: có dò trùng, có thể khớp node sẵn có."""
+    def get_candidates(concept_id: str):
+        """Node gần giống của một khái niệm, và node mà quy tắc 0.6 SẼ gộp vào.
+
+        Để màn duyệt hỏi người học trước khi ghi, thay vì báo "đã gộp" sau đó.
+        """
         parsed, err = _uuid_or_400(concept_id, "concept")
         if err:
             return err
         try:
             with connect() as conn:
-                item = confirm_mod.accept(conn, parsed)
+                _concept, candidates, suggested = confirm_mod.candidates_for(conn, parsed)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, subject, summary FROM ks.nodes WHERE id = ANY(%s)",
+                        ([c.node_id for c in candidates],),
+                    )
+                    extra = {r[0]: (r[1], r[2]) for r in cur.fetchall()}
+        except confirm_mod.ExtractedConceptNotFound as exc:
+            return jsonify({"error": "concept_not_found", "detail": str(exc)}), 404
+        except psycopg.Error as exc:
+            return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
+        return jsonify({
+            "threshold": settings.DUPLICATE_THRESHOLD,
+            "suggested_node_id": str(suggested.node_id) if suggested else None,
+            "candidates": [
+                {
+                    "node_id": str(c.node_id),
+                    "title": c.title,
+                    "score": round(c.score, 3),
+                    "subject": extra.get(c.node_id, ("", ""))[0],
+                    "summary": extra.get(c.node_id, ("", ""))[1],
+                }
+                for c in candidates
+            ],
+        }), 200
+
+    @app.post("/extracted/<concept_id>/accept")
+    @require_token
+    def post_accept(concept_id: str):
+        """Ghi vào đồ thị.
+
+        Không có body: quy tắc tự động (ngưỡng 0.6), như trước. Có body
+        `{"decision": "create"}` hoặc `{"decision": "merge", "node_id": …}`:
+        người học đã chọn, ngưỡng không quyết nữa.
+        """
+        parsed, err = _uuid_or_400(concept_id, "concept")
+        if err:
+            return err
+        body = request.get_json(silent=True) or {}
+        decision = body.get("decision")
+        merge_into = None
+        if decision is not None:
+            if decision not in ("create", "merge"):
+                return jsonify({"error": "invalid_decision", "detail": "decision phải là create hoặc merge"}), 400
+            if decision == "merge":
+                merge_into, err = _uuid_or_400(str(body.get("node_id") or ""), "node")
+                if err:
+                    return err
+        try:
+            with connect() as conn:
+                item = confirm_mod.accept(conn, parsed, decision=decision, merge_into=merge_into)
                 conn.commit()
         except confirm_mod.AlreadyDecided as exc:
             return jsonify({"error": "already_decided", "detail": str(exc)}), 409
         except confirm_mod.ExtractedConceptNotFound as exc:
             return jsonify({"error": "concept_not_found", "detail": str(exc)}), 404
+        except MergeTargetInvalid as exc:
+            return jsonify({"error": "invalid_merge_target", "detail": str(exc)}), 400
         except psycopg.Error as exc:
             return jsonify({"error": "database_unavailable", "detail": str(exc)}), 503
         return jsonify({

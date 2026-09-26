@@ -525,3 +525,52 @@ do sơ đồ). 3 tên quá chung (#3–5). 3 cặp trùng một phần (#2 với
   2 contrasts_with); cạnh của node đã merge chuyển sang node đích.
 - **Dữ liệu thật hiện có 0 node, 0 cạnh.** 20 khái niệm từ vở đang chờ duyệt.
   Chưa có bằng chứng nào về bản đồ trên dữ liệu học thật.
+
+
+## Bộ dò trùng gộp sai trên dữ liệu thật; màn duyệt hỏi trước (2026-09-26)
+
+**Dữ liệu.** Người học chấp nhận 20 khái niệm từ vở Hoá + Sinh. Quy tắc tự động
+(`similarity >= 0.6`) gộp 5 khái niệm vào node có sẵn, và **cả 5 lần đều sai**:
+
+| Khái niệm | Bị gộp vào | similarity |
+|---|---|---:|
+| Trao đổi chất ở sinh vật đa bào | … đơn bào (khái niệm trái nghĩa) | 0,85 |
+| Quang tự dưỡng | Tự dưỡng (khái niệm cha) | 0,64 |
+| Hóa tự dưỡng | Tự dưỡng | ≥ 0,6 |
+| Phân bón vô cơ | Phân bón | 0,60 |
+| Phân loại phân bón | Phân bón | ≥ 0,6 |
+
+Trigram trên tiêu đề không phân biệt được một khái niệm với khái niệm cha của
+nó, hay với khái niệm trái nghĩa có tên gần giống. Vở học đầy những cặp như vậy.
+
+**Quyết định của người dùng:** giữ ngưỡng 0.6 cho đường tự động, nhưng màn duyệt
+phải hỏi trước khi ghi.
+
+- `GET /extracted/{id}/candidates`: node gần giống (điểm ≥ 0.3, tối đa 5), kèm
+  `suggested_node_id` là node mà ngưỡng sẽ gộp vào.
+- `POST /extracted/{id}/accept` với `{"decision":"create"}` hoặc
+  `{"decision":"merge","node_id":…}`. Không có body thì dùng quy tắc tự động như
+  trước (CLI `ks accept`, Mnemosyne).
+- Giao diện: khi có candidate vượt ngưỡng thì **không chọn sẵn**, và nút chấp
+  nhận khoá tới khi người học chọn. Dưới ngưỡng thì mặc định tạo mới.
+- `ks.ingest_log.chosen_by` (migration 0006): `rule` hay `learner`. Một dòng
+  `chosen_by='learner'`, `decision='created'`, `top_score >= threshold` chính là
+  một false positive của ngưỡng, có kèm điểm. Từ đây đo được ngưỡng sai bao
+  nhiêu lần trên dữ liệu thật.
+
+Test: `tests/test_review_dedup.py` (7 test, dùng đúng các cặp tên ở bảng trên).
+Kiểm trên trình duyệt với một DB test: 3 khái niệm có candidate vượt ngưỡng (nút
+khoá, hiện "quy tắc tự động sẽ chọn"), 1 khái niệm không có (nút mở); chọn tạo
+mới 2 cái, gộp tay 1 cái; `ingest_log` ghi đủ 4 dòng `learner` với đúng
+`top_score`.
+
+**Chưa làm:** 5 node đã gộp sai trên dữ liệu thật vẫn còn nguyên, chờ người dùng
+quyết có tách ra hay không.
+
+## Gợi ý cạnh cũng bị cắt ở 4000 token (2026-09-26)
+
+Chạy `suggest-edges` cho 15 node thật: 8/15 lần cắt, reasoning 3630–4000, tức
+**toàn bộ node Sinh học**. Người dùng chọn `EDGE_SUGGESTION_MAX_TOKENS=20000`.
+Chạy lại 8 node đó: 8/8 `ok`, 6–35 s mỗi node, thêm 30 cạnh `pending`; tổng cộng
+47 cạnh chờ duyệt. `edge_suggestion_run` không ghi số token, nên chưa biết
+20000 còn dư bao nhiêu.

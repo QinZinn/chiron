@@ -11,8 +11,8 @@ from uuid import UUID
 
 import psycopg
 
-from ks.ingest import ingest_concepts
-from ks.models import ConceptDraft, ExtractedConcept, IngestedConcept, SourceModule
+from ks.ingest import find_candidates, ingest_concepts, ingest_decided, pick_duplicate
+from ks.models import ConceptDraft, DuplicateCandidate, ExtractedConcept, IngestedConcept, SourceModule
 from ks.transcripts import _row_to_concept
 
 _SELECT = (
@@ -52,8 +52,20 @@ def _load(conn: psycopg.Connection, concept_id: UUID) -> ExtractedConcept:
     return _row_to_concept(row)
 
 
-def accept(conn: psycopg.Connection, concept_id: UUID) -> IngestedConcept:
-    """Ghi khái niệm vào đồ thị qua ingest_concepts (dò trùng + log đầy đủ)."""
+def accept(
+    conn: psycopg.Connection,
+    concept_id: UUID,
+    *,
+    decision: str | None = None,
+    merge_into: UUID | None = None,
+) -> IngestedConcept:
+    """Ghi khái niệm vào đồ thị.
+
+    - `decision=None`: quy tắc tự động của ingest_concepts (ngưỡng 0.6). CLI và
+      mọi caller cũ đi đường này.
+    - `decision="create"`: người học chọn tạo node mới, dù có candidate vượt ngưỡng.
+    - `decision="merge"`: người học chọn gộp vào `merge_into`.
+    """
     concept = _load(conn, concept_id)
     if concept.status != "pending_review":
         raise AlreadyDecided(f"{concept_id} đã ở trạng thái {concept.status}")
@@ -64,7 +76,16 @@ def accept(conn: psycopg.Connection, concept_id: UUID) -> IngestedConcept:
         summary=concept.summary,
         source_module=concept.source_module,
     )
-    item = ingest_concepts(conn, [draft]).ingested[0]
+    if decision is None:
+        item = ingest_concepts(conn, [draft]).ingested[0]
+    elif decision == "create":
+        item = ingest_decided(conn, draft, merge_into=None)
+    elif decision == "merge":
+        if merge_into is None:
+            raise ValueError("decision=merge cần node_id")
+        item = ingest_decided(conn, draft, merge_into=merge_into)
+    else:
+        raise ValueError(f"decision phải là create hoặc merge, không phải {decision!r}")
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE ks.extracted_concepts SET status = 'accepted', node_id = %s,"
@@ -72,6 +93,16 @@ def accept(conn: psycopg.Connection, concept_id: UUID) -> IngestedConcept:
             (item.node_id, concept_id),
         )
     return item
+
+
+def candidates_for(
+    conn: psycopg.Connection, concept_id: UUID
+) -> tuple[ExtractedConcept, tuple[DuplicateCandidate, ...], DuplicateCandidate | None]:
+    """Candidate trùng của một khái niệm chờ duyệt, và candidate mà quy tắc tự
+    động sẽ gộp vào (hoặc None) — để màn duyệt hỏi TRƯỚC khi ghi."""
+    concept = _load(conn, concept_id)
+    candidates = find_candidates(conn, concept.title)
+    return concept, candidates, pick_duplicate(candidates)
 
 
 def discard(conn: psycopg.Connection, concept_id: UUID) -> None:
