@@ -105,6 +105,45 @@ def candidates_for(
     return concept, candidates, pick_duplicate(candidates)
 
 
+class NotMerged(Exception):
+    """The concept created its own node; there is nothing to split off."""
+
+
+def split(conn: psycopg.Connection, concept_id: UUID) -> IngestedConcept:
+    """Undo a wrong merge: give an accepted concept a node of its own.
+
+    For a concept the duplicate rule merged into an existing node that is really
+    a different concept (a parent, or a near-namesake like "multicellular" vs
+    "unicellular"). A new node is created from the concept's own title, subject
+    and summary, the concept is pointed at it, and the decision is logged as the
+    learner's. The node it had been merged into is left untouched.
+    """
+    concept = _load(conn, concept_id)
+    if concept.status != "accepted" or concept.node_id is None:
+        raise AlreadyDecided(f"{concept_id} is {concept.status}, not an accepted concept")
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM ks.extracted_concepts c JOIN ks.nodes n ON n.id = c.node_id"
+            " WHERE c.id = %s AND n.title = c.title",
+            (concept_id,),
+        )
+        if cur.fetchone()[0]:
+            raise NotMerged(f"{concept_id} already has its own node {concept.node_id}")
+    draft = ConceptDraft(
+        title=concept.title,
+        subject=concept.subject,
+        summary=concept.summary,
+        source_module=concept.source_module,
+    )
+    item = ingest_decided(conn, draft, merge_into=None)
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE ks.extracted_concepts SET node_id = %s, updated_at = now() WHERE id = %s",
+            (item.node_id, concept_id),
+        )
+    return item
+
+
 def discard(conn: psycopg.Connection, concept_id: UUID) -> None:
     """Giữ row vĩnh viễn với status='discarded'. Không xoá."""
     concept = _load(conn, concept_id)

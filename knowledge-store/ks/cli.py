@@ -182,6 +182,14 @@ def cmd_accept(args) -> int:
     return 0
 
 
+def cmd_split(args) -> int:
+    with db.connect() as conn:
+        item = confirm_mod.split(conn, UUID(args.concept_id))
+        conn.commit()
+    print(f"split off into new node: {item.node_id}")
+    return 0
+
+
 def cmd_discard(args) -> int:
     with db.connect() as conn:
         confirm_mod.discard(conn, UUID(args.concept_id))
@@ -296,6 +304,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("accept", help="Chấp nhận khái niệm → ghi vào đồ thị")
     p.add_argument("concept_id")
     p.set_defaults(func=cmd_accept)
+
+    p = sub.add_parser("split", help="Undo a wrong merge: give an accepted concept its own node")
+    p.add_argument("concept_id")
+    p.set_defaults(func=cmd_split)
 
     p = sub.add_parser("discard", help="Bỏ khái niệm (giữ row vĩnh viễn)")
     p.add_argument("concept_id")
