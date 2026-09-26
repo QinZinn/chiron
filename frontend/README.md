@@ -1,69 +1,69 @@
 # Chiron frontend
 
-Giao diện thống nhất cho hệ sinh thái Chiron (Mnemosyne, Knowledge Store).
-Vite + React + TypeScript. Thiết kế: Claude Design project
-`4709e4d2-d436-43d1-acc6-94d9de853713` (`Chiron.dc.html`) — design system
-Nocturne (`src/styles/nocturne.css`, chép nguyên) + bảng màu Nord
+The unified interface for the Chiron ecosystem (Mnemosyne, Knowledge Store).
+Vite + React + TypeScript. Design: Claude Design project
+`4709e4d2-d436-43d1-acc6-94d9de853713` (`Chiron.dc.html`) — the Nocturne
+design system (`src/styles/nocturne.css`, copied verbatim) + the Nord palette
 (`src/styles/theme.css`).
 
-## Chạy
+## Running
 
 ```bash
-cp .env.example .env   # điền CHIRON_KS_TOKEN — xem comment trong file
+cp .env.example .env   # fill in CHIRON_KS_TOKEN — see the comments in the file
 npm install
-npm run dev            # http://localhost:5173  (cổng cố định — CORS của Mnemosyne cần đúng cổng này)
-npm run build && npm run preview   # bản build, http://localhost:4173
+npm run dev            # http://localhost:5173  (fixed port — Mnemosyne's CORS needs exactly this one)
+npm run build && npm run preview   # production build, http://localhost:4173
 ```
 
-Phải chạy qua `dev` hoặc `preview`: Kiến thức và Scan ghi chép đi qua proxy trong Vite
-server (`server/chironProxy.ts`), mở thẳng `dist/index.html` thì không có proxy.
+It must run through `dev` or `preview`: Knowledge and Note scan go through a proxy
+in the Vite server (`server/chironProxy.ts`); opening `dist/index.html` directly
+has no proxy.
 
-## Kết nối
+## Connections
 
-| Module | Cách gọi | Ghi chú |
+| Module | How it is called | Notes |
 |---|---|---|
-| Mnemosyne `:8081` | Browser gọi thẳng | Không có secret. CORS chỉ cho `localhost`/`127.0.0.1` cổng 5173 và 4173 |
-| Knowledge Store | Proxy `/api/ks/*` | Proxy gắn `Bearer CHIRON_KS_TOKEN`. GET `/health`, `/nodes`, `/nodes/{id}`, `/edges` và các route của Scan ghi chép (allowlist trong `server/chironProxy.ts`) |
+| Mnemosyne `:8081` | Directly from the browser | No secret. CORS only allows `localhost`/`127.0.0.1` on ports 5173 and 4173 |
+| Knowledge Store | Proxy `/api/ks/*` | The proxy adds `Bearer CHIRON_KS_TOKEN`. GET `/health`, `/nodes`, `/nodes/{id}`, `/edges` and the Note scan routes (allowlist in `server/chironProxy.ts`) |
 
-Frontend không gọi dịch vụ bên ngoài nào.
+The frontend calls no outside service.
 
-Secret không bao giờ tới browser: `vite.config.ts` chỉ đưa ra browser một
-allowlist cấu hình public (`src/config.ts`).
+Secrets never reach the browser: `vite.config.ts` exposes only an allowlist of
+public configuration to it (`src/config.ts`).
 
-## Trạng thái từng khu vực
+## Status of each area
 
-| Khu vực | Nguồn | Trạng thái |
+| Area | Source | Status |
 |---|---|---|
-| Chat · Học bài | Mnemosyne `/socratic/*` | Hoạt động |
-| Chat · Hỏi bài | Mnemosyne `/chat/*` (`mode: ask`) | Hoạt động |
-| Chat · Giải bài | Mnemosyne `/chat/*` (`mode: solve`) | Hoạt động |
-| Thẻ ghi nhớ | Mnemosyne `GET /due`, `POST /review` | Hoạt động |
-| Quiz | Mnemosyne `/quiz/*` | Hoạt động |
-| Kiến thức | KS `GET /nodes`, `/nodes/{id}`, `/edges` | Hoạt động: danh sách theo môn, hoặc bản đồ khái niệm (chỉ cạnh đã duyệt) |
-| Điểm yếu | Mnemosyne `GET /weak_cards` | Hoạt động |
-| Việc cần ôn | Mnemosyne `/todos` + Pomodoro (thuần frontend) | Hoạt động: việc tự sinh từ thẻ yếu, thêm tay, tick xong; Pomodoro chỉ là đồng hồ, không lưu lịch sử |
-| Sửa / xoá | Mnemosyne `PATCH`, `DELETE` | Sửa và xoá thẻ, đổi tên và xoá bộ thẻ, xoá câu quiz, xoá phiên, sửa hồ sơ |
-| Scan ghi chép | KS `/notes`, `/extracted` qua proxy → service OCR | Hoạt động: OCR → sửa văn bản → rút khái niệm → duyệt |
-| Giảng lại (Feynman) | Mnemosyne `/study_sets/{id}/feynman_evaluate` | Hoạt động |
-| Số liệu học tập | Mnemosyne `GET /stats` | Hoạt động (hiện ở Thẻ ghi nhớ và Điểm yếu) |
-| Cài đặt | localStorage + `GET /me` | Đăng nhập bằng token, màu nhấn, thu gọn thanh bên, nền sao, trạng thái kết nối |
+| Chat · Study | Mnemosyne `/socratic/*` | Working |
+| Chat · Ask | Mnemosyne `/chat/*` (`mode: ask`) | Working |
+| Chat · Solve | Mnemosyne `/chat/*` (`mode: solve`) | Working |
+| Flashcards | Mnemosyne `GET /due`, `POST /review` | Working |
+| Quiz | Mnemosyne `/quiz/*` | Working |
+| Knowledge | KS `GET /nodes`, `/nodes/{id}`, `/edges` | Working: a list grouped by subject, or a concept map (approved edges only) |
+| Weak spots | Mnemosyne `GET /weak_cards` | Working |
+| To-do | Mnemosyne `/todos` + Pomodoro (frontend only) | Working: items generated from weak cards, added by hand, ticked off; the Pomodoro is only a timer and keeps no history |
+| Edit / delete | Mnemosyne `PATCH`, `DELETE` | Edit and delete cards, rename and delete study sets, delete quiz questions, delete sessions, edit the profile |
+| Note scan | KS `/notes`, `/extracted` via the proxy → OCR service | Working: OCR → correct the text → extract concepts → review |
+| Teach back (Feynman) | Mnemosyne `/study_sets/{id}/feynman_evaluate` | Working |
+| Blurting | Mnemosyne `/study_sets/{id}/blurting` | Working |
+| Study stats | Mnemosyne `GET /stats` | Working (shown on Flashcards and Weak spots) |
+| Settings | localStorage + `GET /me` | Token sign-in, accent colour, collapsed sidebar, star background, connection status |
 
-Mỗi khu vực xử lý lỗi riêng: module nào tắt thì chỉ khu vực đó báo
-"không kết nối được", phần còn lại vẫn chạy.
+Each area handles its own errors: when a module is down only that area reports
+"cannot connect"; everything else keeps working.
 
-## Những phần lệch khỏi bản thiết kế (có chủ đích)
+## Deliberate departures from the design
 
-- Nút chọn model "Chiron 2 · Cân bằng" → chip tĩnh "Socratic · Mnemosyne":
-  Mnemosyne không có lựa chọn model, dropdown sẽ là nút bấm không làm gì.
-- Tag trạng thái đồng bộ lịch trong bản thiết kế → trạng thái kết nối Mnemosyne
-  thật.
-- Bỏ nút đính kèm / ảnh / micro: chưa backend nào nhận.
-- Màn Điểm yếu (1c) chỉ giữ khung + thông báo sắp có, không có số liệu mẫu.
-- Các màn Thẻ ghi nhớ, Quiz, Kiến thức, Cài đặt không có trong bản
-  thiết kế; chúng dùng lại bố cục của màn 1c (header, tiêu đề + mô tả, hàng
-  số liệu, đường kẻ mờ, danh sách thẻ `.wk`).
-- Mode mặc định là Học bài (bản 1a để "Giải bài"): hai mode kia chưa dùng được.
-- "Gần đây" lấy từ `GET /socratic` và `GET /chat`, không phải từ localStorage,
-  nên đổi trình duyệt vẫn thấy đủ và trạng thái "đã kết thúc" luôn đúng.
-- Mnemosyne cần token: token nằm trong localStorage của trình duyệt (dán ở màn
-  Cài đặt), không đặt trong `.env`.
+- The "Chiron 2 · Balanced" model picker → a static "Socratic · Mnemosyne" chip:
+  Mnemosyne has no model choice, so a dropdown would be a button that does nothing.
+- The design's calendar-sync status tag → the real Mnemosyne connection status.
+- No attachment / image / microphone buttons: no backend accepts them yet.
+- The Flashcards, Quiz, Knowledge and Settings screens are not in the design;
+  they reuse the layout of screen 1c (header, title + description, stats row,
+  faint rule, list of `.wk` cards).
+- The default mode is Study (mock 1a used "Solve").
+- "Recent" comes from `GET /socratic` and `GET /chat`, not from localStorage,
+  so switching browsers still shows everything and the "ended" state is always right.
+- Mnemosyne needs a token: it lives in the browser's localStorage (pasted on the
+  Settings screen), not in `.env`.

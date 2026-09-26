@@ -1,24 +1,24 @@
-# Mnemosyne HTTP API (Rust/Actix) — học bài, thẻ ghi nhớ, quiz.
+# Mnemosyne HTTP API (Rust/Actix) — studying, flashcards, quizzes.
 #
-# USER unit (~/.config/systemd/user/), giống các unit của Knowledge Store: mọi
-# lệnh quản lý phải có `--user`, và cần `loginctl enable-linger` để sống qua
-# logout. Xem knowledgeStore/deploy/ cho cùng quy ước.
+# USER unit (~/.config/systemd/user/), like the Knowledge Store units: every
+# management command needs `--user`, and `loginctl enable-linger` is needed to survive
+# logout. See knowledgeStore/deploy/ for the same conventions.
 #
-# Type=simple: server block vô hạn, KHÔNG phải cron job.
+# Type=simple: the server blocks forever, it is NOT a cron job.
 #
-# Chạy binary RELEASE, không phải `cargo run`: cargo cần toàn bộ toolchain và
-# thư mục nguồn lúc khởi động, còn ở đây chỉ cần đúng một file. Build trước:
+# Runs the RELEASE binary, not `cargo run`: cargo needs the whole toolchain and
+# the source tree at startup, whereas this needs exactly one file. Build first:
 #   cd ~/Projects/Chiron/mnemosyne && cargo build --release
 #
-# BẪY: build lại xong service vẫn chạy binary CŨ cho tới khi
+# TRAP: after a rebuild the service keeps running the OLD binary until
 # `systemctl --user restart chiron-mnemosyne`.
 
 [Unit]
-Description=Chiron Mnemosyne — API học tập (FSRS, Socratic, quiz)
-# Cùng cụm Postgres với Knowledge Store: một server, hai database riêng.
+Description=Chiron Mnemosyne — learning API (FSRS, Socratic, quiz)
+# Same Postgres cluster as the Knowledge Store: one server, two separate databases.
 After=chiron-ks-postgres.service
 Requires=chiron-ks-postgres.service
-# Migration phải chạy xong trước khi server nhận request.
+# Migrations must finish before the server accepts requests.
 After=chiron-mnemosyne-migrate.service
 Wants=chiron-mnemosyne-migrate.service
 
@@ -27,9 +27,9 @@ Type=simple
 WorkingDirectory=%h/Projects/Chiron/mnemosyne
 EnvironmentFile=%h/Projects/Chiron/mnemosyne/.env
 ExecStart=%h/Projects/Chiron/mnemosyne/target/release/backend
-# Server chết vì lỗi tạm thời (DB vừa khởi động lại) thì tự dựng lên; chết vì
-# cấu hình sai (thiếu DEEPSEEK_API_KEY) thì nó panic ngay và systemd sẽ bỏ cuộc
-# sau StartLimit thay vì quay vòng vô hạn.
+# If the server dies from a transient error (the DB just restarted) it comes back up; if it dies
+# from bad configuration (missing DEEPSEEK_API_KEY) it panics at once and systemd gives up
+# after StartLimit instead of looping forever.
 Restart=on-failure
 RestartSec=5
 

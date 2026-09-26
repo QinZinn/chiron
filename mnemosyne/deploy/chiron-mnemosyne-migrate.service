@@ -1,13 +1,13 @@
-# Áp dụng migration còn thiếu rồi thoát. Chạy trước chiron-mnemosyne.service.
+# Applies any missing migrations, then exits. Runs before chiron-mnemosyne.service.
 #
-# Type=oneshot + RemainAfterExit=yes: systemd coi là "đã xong" thay vì "đã
-# chết", nên unit server phụ thuộc vào nó không bị kéo restart theo.
+# Type=oneshot + RemainAfterExit=yes: systemd treats it as "done" rather than
+# "dead", so the server unit that depends on it is not dragged into a restart.
 #
-# An toàn khi chạy lại: mỗi migration được ghi vào bảng schema_migrations trong
-# cùng transaction với chính nó, nên lần chạy sau bỏ qua những cái đã áp dụng.
+# Safe to re-run: each migration is recorded in the schema_migrations table in
+# the same transaction as the migration itself, so later runs skip those already applied.
 
 [Unit]
-Description=Chiron Mnemosyne — áp dụng migration database
+Description=Chiron Mnemosyne — apply database migrations
 After=chiron-ks-postgres.service
 Requires=chiron-ks-postgres.service
 
