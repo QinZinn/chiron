@@ -98,10 +98,16 @@ class ProviderConfig:
 # ---------------------------------------------------------------- http
 
 
+# Một lần rút khái niệm 8500 token mất ~30 s (đo 2026-09-25, ~280 token/s), nên
+# ngân sách EXTRACTION_MAX_TOKENS=16000 cần gần 60 s — đúng mức timeout cũ. 150 s
+# chừa đủ chỗ mà vẫn dưới timeout 180 s của proxy frontend cho /extract.
+HTTP_TIMEOUT_SECONDS = 150
+
+
 def _default_post(url: str, headers: dict[str, str], body: str) -> tuple[int, Any]:
     req = urllib.request.Request(url, data=body.encode("utf-8"), headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as resp:
             return (resp.status, json.loads(resp.read().decode("utf-8")))
     except urllib.error.HTTPError as exc:
         text = exc.read().decode("utf-8", errors="replace")

@@ -421,3 +421,91 @@ non-ASCII, thay vì im lặng hỏng.
 Khác với bug `hmac.compare_digest` (§9 của brief): bug đó là header CLIENT gửi lên
 có ký tự non-ASCII làm crash 500; đã chặn bằng cách so trên bytes. Hai lỗi độc lập,
 đều có test riêng.
+
+## Rút khái niệm từ ghi chép scan — đo thật 2026-09-25
+
+**Dữ liệu.** 3 trang vở viết tay thật của người học: 1 trang Hoá (phân bón),
+2 trang Sinh (trao đổi chất, kiểu Cornell). Chạy qua đúng đường của ứng dụng:
+`POST /notes` → `PATCH /notes/{id}` → `POST /notes/{id}/extract`, với
+deepseek-v4-flash. Hai note:
+
+- **A — đã sửa:** văn bản OCR được thay bằng bản gõ lại đúng như vở, tức việc
+  người học làm ở bước sửa (3051 ký tự).
+- **B — OCR thô:** không sửa gì (CER khoảng 22 %, xem `ocr/NOTES.md`).
+
+**Truncation là thật, và `EXTRACTION_MAX_TOKENS=4000` không đủ.** Với 4000, cả A
+lẫn B đều trả `extraction_failed`:
+`deepseek: phản hồi bị cắt vì cạn max_tokens … completion_tokens=4000, reasoning_tokens=4000`.
+Model dùng hết ngân sách để suy luận. Lỗi được nhận đúng là truncation, không
+bị báo nhầm thành lỗi parse. Đo lại với ngân sách 16000 (gọi thẳng provider):
+
+| Đầu vào | Ký tự | completion | reasoning | Thời gian |
+|---|---:|---:|---:|---:|
+| 3 trang, lần 1 | 3050 | 8270 | 6871 | 32 s |
+| 3 trang, lần 2 | 3050 | 8577 | 6880 | 29 s |
+| Trang Hoá | 914 | 2382 | 1754 | 9 s |
+| Trang Sinh 1 | 922 | 944 | 297 | 3 s |
+| Trang Sinh 2 | 1210 | 8723 | 7824 | 30 s |
+
+Tách theo trang không giúp được: riêng một trang đã cần 8723 token. Đã nâng
+`EXTRACTION_MAX_TOKENS` lên 16000 và timeout HTTP tới LLM lên 150 s (`ks/llm.py`).
+Sau khi sửa: A mất 31 s và ra 20 khái niệm, B mất 52 s và ra 17 khái niệm.
+
+**A — 20 khái niệm, nguyên văn, kèm đánh giá**
+
+| # | Khái niệm (nguyên văn) | Đánh giá |
+|---|---|---|
+| 1 | [Hóa học] Phân bón — Là sản phẩm có chức năng cung cấp dinh dưỡng cho cây trồng hoặc cải tạo đất. Nếu thiếu phân bón, cây sẽ kém phát triển, bệnh, chết. | Đúng |
+| 2 | [Hóa học] Phân loại phân bón — Phân bón được phân loại theo hàm lượng nguyên tố trong cây, gồm đa lượng, trung lượng, vi lượng. Phân loại dựa vào nguồn gốc gồm vô cơ và hữu cơ. | Đúng, nhưng **trùng một phần** với 3–7 (khái niệm "ô" chứa các khái niệm con) |
+| 3 | [Hóa học] Đa lượng — Theo phân loại theo hàm lượng nguyên tố trong cây, chiếm khối lượng tương đối lớn (>1000 mg/kg), bao gồm N, P, K. | Nội dung đúng; **tên quá chung**: "Đa lượng" đứng một mình, lẽ ra là "Phân bón đa lượng" / "Nguyên tố đa lượng" |
+| 4 | [Hóa học] Trung lượng — … (100-1000 mg/kg), gồm Ca, Mg, S. | Như 3 |
+| 5 | [Hóa học] Vi lượng — … (<100 mg/kg), gồm B, Cu, Fe, Cl, Mn, Na, Zn, Ni, Mo,... | Như 3 |
+| 6 | [Hóa học] Phân bón vô cơ — Làm từ sản phẩm hóa học vô cơ và được sản xuất theo quy trình công nghiệp. | Đúng |
+| 7 | [Hóa học] Phân bón hữu cơ — Làm từ các chất hữu cơ, chất thải hữu cơ qua chế biến, pha trộn, lên men và bổ sung thêm khoáng chất. | Đúng |
+| 8 | [Hóa học] Vai trò của phân bón — Tăng độ phì nhiêu của đất, bổ sung chất dinh dưỡng cho cây và điều khiển vòng tuần hoàn dinh dưỡng trong đất. | Đúng |
+| 9 | [Sinh học] Trao đổi chất và chuyển hóa năng lượng ở sinh vật — Duy trì sự sống, giúp sinh vật tồn tại và phát triển; cung cấp nguyên liệu và năng lượng cho cơ thể. | Đúng, nhưng tên là tên bài còn nội dung là mục "Vai trò"; hơi lệch |
+| 10 | [Sinh học] Dấu hiệu đặc trưng của trao đổi chất — Gồm 7 đặc trưng: thu nhận, vận chuyển, biến đổi, tổng hợp và tích lũy, phân giải và giải phóng, đào thải, điều hòa. | Đúng |
+| 11 | [Sinh học] Các giai đoạn chuyển hóa trong sinh giới — Gồm tổng hợp (từ ánh sáng), phân giải (tích lũy năng lượng trong chất hữu cơ) và huy động (tích lũy năng lượng trong ATP). | **Mơ hồ, dễ hiểu sai.** Vở vẽ mỗi giai đoạn có đầu vào (←) và đầu ra (→): ánh sáng → tổng hợp → năng lượng trong chất hữu cơ → phân giải → ATP → huy động → hoạt động sống. Văn bản chỉ giữ một chiều, nên câu đọc như thể "phân giải = tích lũy năng lượng trong chất hữu cơ". Nguyên nhân: sơ đồ mũi tên bị làm phẳng thành chữ, ngay cả trong bản gõ lại |
+| 12 | [Sinh học] Nguồn năng lượng chủ yếu của sinh giới — Năng lượng ánh sáng là nguồn năng lượng chủ yếu của sinh giới, được chuyển hóa và tích lũy trong hợp chất hữu cơ được toàn bộ các sinh vật sử dụng. | Đúng |
+| 13 | [Sinh học] Trao đổi chất ở sinh vật đơn bào — Toàn bộ quá trình trao đổi chất diễn ra ở cấp độ tế bào. | Đúng |
+| 14 | [Sinh học] Trao đổi chất ở sinh vật đa bào — Quá trình diễn ra ở cả cấp cơ thể và tế bào, gồm 3 giai đoạn: môi trường ngoài ⇄ cơ thể, môi trường trong ⇄ tế bào, tế bào ⇄ tế bào. | Đúng, và nối đúng câu "Có 3 giai đoạn" ở cuối trang 1 với danh sách ở đầu trang 2 |
+| 15 | [Sinh học] Các phương thức trao đổi chất — Có 2 phương thức trao đổi là tự dưỡng và dị dưỡng. | Đúng, **trùng một phần** với 16 và 20 |
+| 16 | [Sinh học] Tự dưỡng — Là phương thức tự sống, tự hấp thụ, tự tồn tại; gồm quang tự dưỡng và hóa tự dưỡng. | Đúng, lấy đúng từ cột gợi ý Cornell |
+| 17 | [Sinh học] Quang tự dưỡng — Dùng chất vô cơ, nước, CO2 và ánh sáng; điển hình là thực vật. | Đúng |
+| 18 | [Sinh học] Hóa tự dưỡng — Dùng nguồn carbon (CO2) và chất vô cơ (H2S, NO2-, ...); điển hình là một số vi khuẩn. | Đúng |
+| 19 | [Sinh học] Vai trò của tự dưỡng — Cung cấp O2, bảo đảm hoạt động sống của hầu hết sinh vật; cung cấp thức ăn, nơi ở và sinh sản cho động vật; điều hòa khí hậu tạo nhiệt độ, độ ẩm thuận lợi cho sinh vật. | Đúng |
+| 20 | [Sinh học] Dị dưỡng — Lấy chất hữu cơ từ sinh vật tự dưỡng hoặc động vật khác; thông qua hấp thu, tiêu hóa, đồng hóa các chất để xây dựng cơ thể và sử dụng năng lượng; điển hình là động vật. | Đúng; bỏ mất ý ở cột gợi ý ("cần các yếu tố dị loại") |
+
+Tổng kết A: không khái niệm nào bịa kiến thức ngoài vở. 1 khái niệm mơ hồ (#11,
+do sơ đồ). 3 tên quá chung (#3–5). 3 cặp trùng một phần (#2 với 3–7, #15 với
+16/20, #9 lệch tên). Người học vẫn phải duyệt; đó đúng là việc của bước
+`pending_review`.
+
+**B — 17 khái niệm từ OCR thô: những gì sai** (cả 17 vẫn nằm trong
+`ks.extracted_concepts` với status `discarded`, note `75a80c37…`):
+
+- **#3–5 bịa đơn vị:** "(>1000 mg/l)", "(100-1000 mg/l)", "(<100 mg/l)". Vở ghi
+  `mg/kg`; OCR đọc thành "ông lấy"/"mg lấy" và model đoán ra `mg/l`. Sai kiến
+  thức mà trông rất hợp lý.
+- **#16 Dị dưỡng sai hẳn:** "dùng nguồn cacbon và chất vô cơ để hấp thu, sử dụng
+  năng lượng; điển hình ở một số vi khuẩn". Đó là nội dung của hoá tự dưỡng.
+  Nguyên nhân: OCR nối dòng gợi ý Cornell "Dị dưỡng: cần các yếu tố" vào dòng
+  "Dùng nguồn carbon…" cùng độ cao.
+- **#17 "Dinh dưỡng":** OCR đọc "Dị dưỡng" (mục thứ hai) thành "Dinh văng", nên
+  model đặt tên sai và tạo khái niệm trùng với #16.
+- **#14, #15 rỗng:** "Quang tự dưỡng — Một hình thức của tự dưỡng.", "Hóa tự
+  dưỡng — Một hình thức của tự dưỡng." Vô dụng.
+- **#7** lấy "bổ sung khoáng chất" (một bước làm phân hữu cơ) làm vai trò của
+  phân bón, và mất "điều khiển vòng tuần hoàn dinh dưỡng".
+- **#9 trùng #8** (cùng nội dung "vai trò"). **#12** đặt tên sai ("Mối quan hệ
+  giữa trao đổi chất và chuyển hóa năng lượng" cho mục nói về cấp tế bào/cơ thể).
+
+**Kết luận.**
+
+1. Với văn bản đã sửa, chất lượng dùng được: 16/20 khái niệm đúng và gọn, còn
+   lại mơ hồ, quá chung hoặc trùng; không có khái niệm nào sai kiến thức.
+2. Bỏ qua bước sửa là nguy hiểm, không chỉ kém: văn bản OCR thô sinh ra lỗi
+   **trông hợp lý** (`mg/l`, dị dưỡng ↔ hoá tự dưỡng). Người duyệt không đối
+   chiếu vở thì khó phát hiện.
+3. Hai nguồn lỗi còn lại không nằm ở LLM: **sơ đồ mũi tên** mất chiều khi làm
+   phẳng thành chữ, và **cột gợi ý Cornell** bị trộn vào dòng ghi chép.
